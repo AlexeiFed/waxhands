@@ -1,19 +1,26 @@
 @echo off
-echo Starting Wax Hands PWA in production mode...
+echo Wax Hands PWA - Production Server
+echo ================================
 
-REM Start backend
-cd backend
-echo Starting backend...
-set NODE_ENV=production
-start /B node dist/index.js
+echo.
+echo Структура проекта:
+echo - frontend/     - Frontend файлы
+echo - backend/      - Backend приложение  
+echo - uploads/      - Загруженные файлы
+echo - .env          - Environment переменные
 
-REM Wait for backend to start
-timeout /t 5 /nobreak >nul
+echo.
+echo Для запуска на сервере:
+echo 1. cd production/backend
+echo 2. npm install --only=production
+echo 3. NODE_ENV=production node index.js
 
-echo Backend started
-echo App available at: http://localhost:3001
-echo Frontend files in: dist/
-echo Backend API: http://localhost:3001/api
-echo WebSocket: ws://localhost:3001/api/chat/ws
+echo.
+echo Для настройки Nginx:
+echo - frontend/ → /var/www/waxhands.ru/
+echo - backend/ → http://localhost:3001
+echo - uploads/ → /var/www/waxhands.ru/uploads/
 
-pause
+echo.
+echo Нажмите любую клавишу для выхода...
+pause >nul
