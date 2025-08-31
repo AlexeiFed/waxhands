@@ -24,6 +24,7 @@ import { Chat } from '@/types/chat';
 import { SchoolModal } from '@/components/ui/school-modal';
 import { SchoolFilters } from '@/components/ui/school-filters';
 import { AddServiceModal } from '@/components/ui/add-service-modal';
+import { AddUserModal } from '@/components/ui/add-user-modal';
 import { ServiceCard } from '@/components/ui/service-card';
 import { StyleOptionModal } from '@/components/ui/style-option-modal';
 import MasterClassesTab from '@/components/admin/MasterClassesTab';
@@ -91,8 +92,8 @@ const Dashboard: React.FC = () => {
     const { user, logout } = useAuth();
     const { toast } = useToast();
 
-    // Отладка импорта логотипа
-    console.log('Dashboard: logoImage импортирован:', logoImage);
+    // Отладка импорта логотипа (убрано для оптимизации)
+    // console.log('Dashboard: logoImage импортирован:', logoImage);
     const [searchTerm, setSearchTerm] = useState('');
     const [usersSearchTerm, setUsersSearchTerm] = useState('');
     const [schoolsSearchTerm, setSchoolsSearchTerm] = useState('');
@@ -101,6 +102,7 @@ const Dashboard: React.FC = () => {
     const [selectedTab, setSelectedTab] = useState('overview');
     const [schoolModalOpen, setSchoolModalOpen] = useState(false);
     const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+    const [addUserModalOpen, setAddUserModalOpen] = useState(false);
 
     // Состояние для статистики заявок
     const [workshopRequestsStats, setWorkshopRequestsStats] = useState({
@@ -125,15 +127,15 @@ const Dashboard: React.FC = () => {
 
     // Отладка WebSocket состояния и принудительная загрузка статистики
     useEffect(() => {
-        console.log('🔌 Dashboard: WebSocket состояние заявок:', {
-            isConnected: wsRequestsConnected,
-            timestamp: new Date().toISOString()
-        });
+        // console.log('🔌 Dashboard: WebSocket состояние заявок:', {
+        //     isConnected: wsRequestsConnected,
+        //     timestamp: new Date().toISOString()
+        // });
 
-        // При подключении WebSocket загружаем статистику
+        // При подключении WebSocket загружаем статистику только один раз
         if (wsRequestsConnected) {
-            console.log('🔌 Dashboard: WebSocket подключен, загружаем статистику заявок...');
-            loadWorkshopRequestsStats();
+            // console.log('🔌 Dashboard: WebSocket подключен, загружаем статистику заявок...');
+            // loadWorkshopRequestsStats(); // Убираю повторную загрузку
         }
     }, [wsRequestsConnected]);
 
@@ -166,7 +168,9 @@ const Dashboard: React.FC = () => {
         isLoadingChats: isLoadingAdminChats,
         isLoadingMessages: isLoadingAdminMessages,
         sendMessage: adminSendMessage,
-        updateChatStatus: adminUpdateChatStatus
+        updateChatStatus: adminUpdateChatStatus,
+        deleteChat,
+        isDeletingChat
     } = useAdminChat(selectedAdminChat);
 
     // WebSocket для real-time обновлений чатов
@@ -194,20 +198,20 @@ const Dashboard: React.FC = () => {
     const [masterClassDetailsOpen, setMasterClassDetailsOpen] = useState(false);
 
     // Хуки для работы с данными
-    const { users, loading: usersLoading, error: usersError, total: usersTotal, deleteUser, fetchUsers, lastFetch: usersLastFetch } = useUsers();
+    const { users, loading: usersLoading, error: usersError, total: usersTotal, deleteUser, createUser, fetchUsers, lastFetch: usersLastFetch } = useUsers();
     const { schools, loading: schoolsLoading, error: schoolsError, total: schoolsTotal, deleteSchool, createSchool, updateSchool } = useSchools();
     const { data: invoicesData, isLoading: invoicesLoading, error: invoicesError } = useInvoices({});
 
-    // Отладочная информация для счетов
-    useEffect(() => {
-        console.log('Dashboard: Данные счетов:', {
-            invoicesData,
-            total: invoicesData?.total,
-            invoices: invoicesData?.invoices,
-            loading: invoicesLoading,
-            error: invoicesError
-        });
-    }, [invoicesData, invoicesLoading, invoicesError]);
+    // Отладочная информация для счетов (убрано для оптимизации)
+    // useEffect(() => {
+    //     console.log('Dashboard: Данные счетов:', {
+    //         invoicesData,
+    //         total: invoicesData?.total,
+    //         invoices: invoicesData?.invoices,
+    //         loading: invoicesLoading,
+    //         error: invoicesError
+    //     });
+    // }, [invoicesData, invoicesLoading, invoicesError]);
 
     const {
         services,
@@ -232,7 +236,8 @@ const Dashboard: React.FC = () => {
         fetchMasterClasses,
         createMasterClass,
         updateMasterClass,
-        deleteMasterClass
+        deleteMasterClass,
+        getMasterClassById
     } = useMasterClasses();
 
     // Автоматическое обновление данных при переключении вкладок
@@ -264,7 +269,7 @@ const Dashboard: React.FC = () => {
 
     // Загружаем статистику заявок при монтировании
     useEffect(() => {
-        console.log('🚀 Dashboard: Компонент смонтирован, проверяем авторизацию...');
+        // console.log('🚀 Dashboard: Компонент смонтирован, проверяем авторизацию...');
 
         // Проверяем наличие токена авторизации
         const authToken = localStorage.getItem('authToken');
@@ -274,42 +279,36 @@ const Dashboard: React.FC = () => {
             return;
         }
 
-        console.log('✅ Dashboard: Токен авторизации найден, загружаем статистику заявок...');
+        // console.log('✅ Dashboard: Токен авторизации найден, загружаем статистику заявок...');
         loadWorkshopRequestsStats();
 
         // Загружаем сервисы для доступа к стилям и опциям
         if (services.length === 0) {
-            console.log('🔄 Dashboard: Загружаем сервисы для мастер-классов...');
+            // console.log('🔄 Dashboard: Загружаем сервисы для мастер-классов...');
             fetchServices();
         }
-
-        // Принудительно загружаем статистику с задержкой для отладки
-        setTimeout(() => {
-            console.log('⏰ Dashboard: Принудительная загрузка статистики заявок...');
-            loadWorkshopRequestsStats();
-        }, 2000);
-    }, []);
+    }, []); // Убираю зависимости, выполняется только при монтировании
 
     // Автоматическое обновление статистики заявок через WebSocket
     useEffect(() => {
         if (wsRequestsConnected) {
-            // Подписываемся на обновления заявок
+            // Подписываемся на обновления заявок только один раз
             wsRequestsSendMessage({
                 type: 'subscribe',
                 channels: ['admin:workshop_requests', 'workshop_requests:all']
             });
 
-            console.log('🔌 Dashboard: WebSocket подключен для заявок, подписка активна');
+            // console.log('🔌 Dashboard: WebSocket подключен для заявок, подписка активна');
         }
-    }, [wsRequestsConnected, wsRequestsSendMessage]);
+    }, [wsRequestsConnected]); // Убираю wsRequestsSendMessage из зависимостей
 
     // Функция загрузки статистики заявок
     const loadWorkshopRequestsStats = async () => {
         try {
-            console.log('🔄 Dashboard: Загружаем статистику заявок...');
+            // console.log('🔄 Dashboard: Загружаем статистику заявок...');
             // Проверяем токен авторизации
             const authToken = localStorage.getItem('authToken');
-            console.log('🔄 Dashboard: Токен авторизации:', authToken ? 'Есть' : 'Нет');
+            // console.log('🔄 Dashboard: Токен авторизации:', authToken ? 'Есть' : 'Нет');
 
             if (!authToken) {
                 console.error('❌ Dashboard: Токен авторизации отсутствует, перенаправляем на логин');
@@ -322,17 +321,17 @@ const Dashboard: React.FC = () => {
             const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
             const apiUrl = `${API_BASE_URL}/workshop-requests/stats/overview`;
 
-            console.log('🔄 Dashboard: API URL для статистики заявок:', apiUrl);
+            // console.log('🔄 Dashboard: API URL для статистики заявок:', apiUrl);
 
             // Проверяем доступность backend сервера
             try {
                 const healthUrl = `${API_BASE_URL}/health`;
-                console.log('🏥 Dashboard: Проверяем health endpoint:', healthUrl);
+                // console.log('🏥 Dashboard: Проверяем health endpoint:', healthUrl);
 
                 const healthCheck = await fetch(healthUrl, {
                     method: 'HEAD'
                 });
-                console.log('✅ Dashboard: Backend сервер доступен, статус:', healthCheck.status);
+                // console.log('✅ Dashboard: Backend сервер доступен, статус:', healthCheck.status);
             } catch (healthError) {
                 console.warn('⚠️ Dashboard: Backend сервер недоступен, используем fallback:', healthError);
                 // Устанавливаем fallback значения
@@ -353,13 +352,13 @@ const Dashboard: React.FC = () => {
                 }
             });
 
-            console.log('📋 Dashboard: Ответ API статистики заявок:', response.status, response.ok);
-            console.log('📋 Dashboard: Заголовки ответа:', Object.fromEntries(response.headers.entries()));
-            console.log('📋 Dashboard: Content-Type ответа:', response.headers.get('content-type'));
+            // console.log('📋 Dashboard: Ответ API статистики заявок:', response.status, response.ok);
+            // console.log('📋 Dashboard: Заголовки ответа:', Object.fromEntries(response.headers.entries()));
+            // console.log('📋 Dashboard: Content-Type ответа:', response.headers.get('content-type'));
 
             if (response.ok) {
                 const contentType = response.headers.get('content-type');
-                console.log('📋 Dashboard: Content-Type ответа:', contentType);
+                // console.log('📋 Dashboard: Content-Type ответа:', contentType);
 
                 // Проверяем, что ответ действительно JSON
                 if (!contentType || !contentType.includes('application/json')) {
@@ -378,7 +377,7 @@ const Dashboard: React.FC = () => {
                 }
 
                 const responseText = await response.text();
-                console.log('📋 Dashboard: Сырой ответ API:', responseText);
+                // console.log('📋 Dashboard: Сырой ответ API:', responseText);
 
                 let data;
                 try {
@@ -389,11 +388,11 @@ const Dashboard: React.FC = () => {
                     return;
                 }
 
-                console.log('📋 Dashboard: Данные статистики заявок:', data);
+                // console.log('📋 Dashboard: Данные статистики заявок:', data);
 
                 if (data.success && data.data) {
                     setWorkshopRequestsStats(data.data);
-                    console.log('✅ Dashboard: Статистика заявок обновлена:', data.data);
+                    // console.log('✅ Dashboard: Статистика заявок обновлена:', data.data);
                 } else {
                     console.warn('⚠️ Dashboard: Неожиданный формат ответа статистики заявок:', data);
                     // Попробуем fallback - если data есть, но не в ожидаемом формате
@@ -436,66 +435,66 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    // Отладочная информация для мастер-классов
-    useEffect(() => {
-        console.log('Dashboard: Данные мастер-классов:', {
-            count: masterClasses.length,
-            data: masterClasses,
-            loading: masterClassesLoading,
-            error: masterClassesError
-        });
+    // Отладочная информация для мастер-классов (убрано для оптимизации)
+    // useEffect(() => {
+    //     console.log('Dashboard: Данные мастер-классов:', {
+    //         count: masterClasses.length,
+    //         data: masterClasses,
+    //         loading: masterClassesLoading,
+    //         error: masterClassesError
+    //     });
 
-        // Детальная отладка участников
-        if (masterClasses.length > 0) {
-            masterClasses.forEach((mc, index) => {
-                console.log(`Dashboard: Мастер-класс ${index + 1}:`, {
-                    id: mc.id,
-                    date: mc.date,
-                    schoolName: mc.schoolName,
-                    classGroup: mc.classGroup,
-                    participantsCount: mc.participants?.length || 0,
-                    participants: mc.participants
-                });
+    //     // Детальная отладка участников
+    //     if (masterClasses.length > 0) {
+    //         masterClasses.forEach((mc, index) => {
+    //             console.log(`Dashboard: Мастер-класс ${index + 1}:`, {
+    //                 id: mc.id,
+    //                 date: mc.date,
+    //                 schoolName: mc.schoolName,
+    //                 classGroup: mc.classGroup,
+    //                 participantsCount: mc.participants?.length || 0,
+    //                 participants: mc.participants
+    //             });
 
-                if (mc.participants && mc.participants.length > 0) {
-                    mc.participants.forEach((participant, pIndex) => {
-                        console.log(`Dashboard: Участник ${pIndex + 1} в мастер-классе ${index + 1}:`, {
-                            id: participant.id,
-                            childName: participant.childName,
-                            selectedStyles: participant.selectedStyles,
-                            selectedOptions: participant.selectedOptions,
-                            totalAmount: participant.totalAmount
-                        });
-                    });
-                }
-            });
-        }
-    }, [masterClasses, masterClassesLoading, masterClassesError]);
+    //             if (mc.participants && mc.participants.length > 0) {
+    //                 mc.participants.forEach((participant, pIndex) => {
+    //                     console.log(`Dashboard: Участник ${pIndex + 1} в мастер-классе ${index + 1}:`, {
+    //                         id: participant.id,
+    //                         childName: participant.childName,
+    //                         selectedStyles: participant.selectedStyles,
+    //                         selectedOptions: participant.selectedOptions,
+    //                         totalAmount: participant.totalAmount
+    //                     });
+    //                 });
+    //             }
+    //         });
+    //     }
+    // }, [masterClasses, masterClassesLoading, masterClassesError]);
 
-    // Отладочная информация для школ
-    useEffect(() => {
-        console.log('Dashboard: Данные школ:', {
-            count: schools.length,
-            data: schools,
-            loading: schoolsLoading,
-            error: schoolsError
-        });
-        // Дополнительная отладка для поля teacherPhone
-        if (schools.length > 0) {
-            console.log('Dashboard: Пример школы с teacherPhone:', schools[0]);
-            console.log('Dashboard: Все школы teacherPhone:', schools.map(s => ({ id: s.id, name: s.name, teacherPhone: s.teacherPhone })));
-        }
-    }, [schools, schoolsLoading, schoolsError]);
+    // Отладочная информация для школ (убрано для оптимизации)
+    // useEffect(() => {
+    //     console.log('Dashboard: Данные школ:', {
+    //         count: schools.length,
+    //         data: schools,
+    //         loading: schoolsLoading,
+    //         error: schoolsError
+    //     });
+    //     // Дополнительная отладка для поля teacherPhone
+    //     if (schools.length > 0) {
+    //         console.log('Dashboard: Пример школы с teacherPhone:', schools[0]);
+    //         console.log('Dashboard: Все школы teacherPhone:', schools.map(s => ({ id: s.id, name: s.name, teacherPhone: s.teacherPhone })));
+    //     }
+    // }, [schools, schoolsLoading, schoolsError]);
 
-    // Отладочная информация для пользователей
-    useEffect(() => {
-        console.log('Dashboard: Данные пользователей:', {
-            count: users.length,
-            data: users,
-            loading: usersLoading,
-            error: usersError
-        });
-    }, [users, usersLoading, usersError]);
+    // Отладочная информация для пользователей (убрано для оптимизации)
+    // useEffect(() => {
+    //     console.log('Dashboard: Данные пользователей:', {
+    //         count: users.length,
+    //         data: users,
+    //         loading: usersLoading,
+    //         error: usersError
+    //     });
+    // }, [users, usersLoading, usersError]);
 
 
 
@@ -700,6 +699,9 @@ const Dashboard: React.FC = () => {
                 title: "Мастер-класс удален",
                 description: "Мастер-класс успешно удален из системы",
             });
+
+            // Принудительно обновляем список мастер-классов
+            await fetchMasterClasses();
         } catch (error) {
             toast({
                 title: "Ошибка",
@@ -797,6 +799,9 @@ const Dashboard: React.FC = () => {
         try {
             await createMasterClass({ ...masterClassEvent });
             toast({ title: 'Мастер-класс создан', description: 'Событие сохранено' });
+
+            // Принудительно обновляем список мастер-классов
+            await fetchMasterClasses();
         } catch {
             toast({ title: 'Ошибка', description: 'Не удалось создать событие', variant: 'destructive' });
         }
@@ -806,14 +811,43 @@ const Dashboard: React.FC = () => {
         try {
             await updateMasterClass(id, { ...updates });
             toast({ title: 'Мастер-класс обновлен', description: 'Изменения сохранены' });
+
+            // Принудительно обновляем список мастер-классов
+            await fetchMasterClasses();
         } catch {
             toast({ title: 'Ошибка', description: 'Не удалось сохранить изменения', variant: 'destructive' });
         }
     };
 
-    const handleViewMasterClassEvent = (masterClassEvent: MasterClassEvent) => {
-        setSelectedMasterClassEvent(masterClassEvent);
-        setMasterClassDetailsOpen(true);
+    const handleViewMasterClassEvent = async (masterClassEvent: MasterClassEvent) => {
+        try {
+            // Загружаем свежие данные мастер-класса с сервера
+            const freshMasterClassData = await getMasterClassById(masterClassEvent.id);
+            setSelectedMasterClassEvent(freshMasterClassData);
+            setMasterClassDetailsOpen(true);
+        } catch (error) {
+            console.error('Error loading master class details:', error);
+            // Fallback на данные из списка, если не удалось загрузить свежие данные
+            setSelectedMasterClassEvent(masterClassEvent);
+            setMasterClassDetailsOpen(true);
+        }
+    };
+
+    const handleRefreshMasterClasses = async () => {
+        try {
+            await fetchMasterClasses();
+            toast({
+                title: "Данные обновлены",
+                description: "Список мастер-классов успешно обновлен",
+            });
+        } catch (error) {
+            console.error('Error refreshing master classes:', error);
+            toast({
+                title: "Ошибка",
+                description: "Не удалось обновить список мастер-классов",
+                variant: "destructive",
+            });
+        }
     };
 
     const handleUpdateParticipant = (participantId: string, updates: Partial<MasterClassParticipant>) => {
@@ -951,7 +985,7 @@ const Dashboard: React.FC = () => {
     }
 
     return (
-        <div className="w-full max-w-none px-8 py-6 relative">
+        <div className="w-full max-w-none px-8 py-6 relative bg-gradient-wax-hands min-h-screen">
             {/* Логотип на заднем плане всего экрана 
             <div
                 className="fixed inset-0 opacity-10 pointer-events-none z-0"
@@ -967,861 +1001,973 @@ const Dashboard: React.FC = () => {
             />*/}
 
             <div className="relative z-10">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h1 className="text-3xl font-bold">Админ-панель</h1>
-                        <p className="text-muted-foreground">
-                            {/*Добро пожаловать, {user.name}!*/}
-                        </p>
+                {/* Фиксированный заголовок и навигация */}
+                <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-lg -mx-6 px-6 py-4">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-orange-500 bg-clip-text text-transparent">
+                                Админ-панель
+                            </h1>
+                            <p className="text-muted-foreground text-lg">
+                                Управление системой Wax Hands
+                            </p>
+                        </div>
+                        <Button onClick={logout} variant="outline" className="px-6 py-2 text-base">
+                            Выйти
+                        </Button>
                     </div>
-                    <Button onClick={logout} variant="outline">
-                        Выйти
-                    </Button>
+
+                    {/* Стильные объемные вкладки */}
+                    <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-0">
+                        <TabsList className="grid w-full grid-cols-9 gap-2 p-2 bg-transparent rounded-xl">
+                            <TabsTrigger
+                                value="overview"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">📊</span>
+                                    <span>Обзор</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="users"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">👥</span>
+                                    <span>Пользователи</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="schools"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🏫</span>
+                                    <span>Школы</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="services"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🎨</span>
+                                    <span>Услуги</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="master-classes"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🎭</span>
+                                    <span>Мастер-классы</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="invoices"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">💰</span>
+                                    <span>Счета</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="workshop-requests"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">📋</span>
+                                    <span>Заявки</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="about"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-pink-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">ℹ️</span>
+                                    <span>О нас</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="chat"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-cyan-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">💬</span>
+                                    <span>Чат</span>
+                                </span>
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
                 </div>
 
-                <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-                    <TabsList className="grid w-full grid-cols-9">
-                        <TabsTrigger value="overview">Обзор</TabsTrigger>
-                        <TabsTrigger value="users">Пользователи</TabsTrigger>
-                        <TabsTrigger value="schools">Школы</TabsTrigger>
-                        <TabsTrigger value="services">Услуги</TabsTrigger>
-                        <TabsTrigger value="master-classes">Мастер-классы</TabsTrigger>
-                        <TabsTrigger value="invoices">Счета</TabsTrigger>
-                        <TabsTrigger value="workshop-requests">Заявки</TabsTrigger>
-                        <TabsTrigger value="about">О нас</TabsTrigger>
-                        <TabsTrigger value="chat">Чат</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="overview" className="space-y-4 relative">
-                        {/* Секция обзора с кликабельными карточками статистики */}
-                        <div className="relative z-10 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 w-full">
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('users')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Пользователи
-                                    </CardTitle>
-                                    <Users className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    <div className="text-2xl font-bold">{usersTotal}</div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Всего пользователей
-                                    </p>
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('schools')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Школы
-                                    </CardTitle>
-                                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    <div className="text-2xl font-bold">{schoolsTotal}</div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Всего школ
-                                    </p>
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('services')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Услуги
-                                    </CardTitle>
-                                    <Wrench className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    <div className="text-2xl font-bold">{servicesTotal}</div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Всего услуг
-                                    </p>
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('master-classes')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Мастер-классы
-                                    </CardTitle>
-                                    <GraduationCap className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    <div className="text-2xl font-bold">{masterClasses.length}</div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Запланированных мастер-классов
-                                    </p>
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('invoices')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Счета
-                                    </CardTitle>
-                                    <Receipt className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    {invoicesLoading ? (
-                                        <div className="text-2xl font-bold text-muted-foreground">...</div>
-                                    ) : invoicesError ? (
-                                        <div className="text-2xl font-bold text-red-500">!</div>
-                                    ) : (
-                                        <div className="text-2xl font-bold">{invoicesData?.total ?? 0}</div>
-                                    )}
-                                    <p className="text-xs text-muted-foreground">
-                                        Всего счетов
-                                    </p>
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('chat')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Чат
-                                    </CardTitle>
-                                    <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    {adminChats && adminChats.length > 0 ? (
-                                        <div className="flex items-center space-x-2">
-                                            <div className="text-2xl font-bold text-blue-600">
-                                                {adminChats.filter(chat => chat.unreadCount > 0).length > 0 ? '🔔' : '✅'}
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {adminChats.filter(chat => chat.unreadCount > 0).length > 0
-                                                    ? 'Есть непрочитанные'
-                                                    : 'Все прочитано'
-                                                }
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center space-x-2">
-                                            <div className="text-2xl font-bold text-gray-400">-</div>
-                                            <p className="text-xs text-muted-foreground">
-                                                Нет чатов
-                                            </p>
-                                        </div>
-                                    )}
-                                </CardContentCompact>
-                            </Card>
-
-                            <Card
-                                className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                onClick={() => setSelectedTab('workshop-requests')}
-                            >
-                                <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Заявки
-                                    </CardTitle>
-                                    <div className="flex items-center gap-2">
-                                        <FileText className="h-4 w-4 text-muted-foreground" />
-                                        <div className={`w-2 h-2 rounded-full ${wsRequestsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                    </div>
-                                </CardHeaderCompact>
-                                <CardContentCompact>
-                                    <div className="text-2xl font-bold text-blue-600">{workshopRequestsStats.total}</div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                            <span className="text-xs text-yellow-600">{workshopRequestsStats.pending}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                            <span className="text-xs text-green-600">{workshopRequestsStats.approved}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                                            <span className="text-xs text-red-600">{workshopRequestsStats.rejected}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between mt-2">
-                                        <p className="text-xs text-muted-foreground">
-                                            {wsRequestsConnected ? 'Автообновление' : 'Ручное обновление'}
-                                        </p>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                loadWorkshopRequestsStats();
-                                            }}
-                                            className="h-6 w-6 p-0 hover:bg-blue-100"
-                                        >
-                                            <RefreshCw className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </CardContentCompact>
-                            </Card>
-                        </div>
-                    </TabsContent>
-
-                    <TabsContent value="users" className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <div className="relative">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Поиск пользователей..."
-                                    value={usersSearchTerm}
-                                    onChange={(e) => setUsersSearchTerm(e.target.value)}
-                                    className="pl-8"
-                                />
-                            </div>
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        console.log('🔄 Manually refreshing users...');
-                                        fetchUsers();
-                                    }}
-                                    disabled={usersLoading}
+                {/* Основной контент с увеличенным отступом сверху */}
+                <div className="pt-12">
+                    <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
+                        <TabsContent value="overview" className="space-y-4 relative">
+                            {/* Секция обзора с кликабельными карточками статистики */}
+                            <div className="relative z-10 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 w-full">
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('users')}
                                 >
-                                    {usersLoading ? 'Обновление...' : '🔄 Обновить'}
-                                </Button>
-                                <Button className="bg-blue-600 hover:bg-blue-700">
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    👤 Добавить пользователя
-                                </Button>
-                            </div>
-                        </div>
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Пользователи
+                                        </CardTitle>
+                                        <Users className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        <div className="text-2xl font-bold">{usersTotal}</div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Всего пользователей
+                                        </p>
+                                    </CardContentCompact>
+                                </Card>
 
-                        {/* Карточка фильтров пользователей */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Filter className="h-5 w-5" />
-                                    Фильтры пользователей
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="role-filter">Роль</Label>
-                                        <Select value={userFilters.role} onValueChange={(value) => setUserFilters(prev => ({ ...prev, role: value }))}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Выберите роль" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Все роли</SelectItem>
-                                                <SelectItem value="admin">Администратор</SelectItem>
-                                                <SelectItem value="executor">Исполнитель</SelectItem>
-                                                <SelectItem value="parent">Родитель</SelectItem>
-                                                <SelectItem value="child">Ребенок</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('schools')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Школы
+                                        </CardTitle>
+                                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        <div className="text-2xl font-bold">{schoolsTotal}</div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Всего школ
+                                        </p>
+                                    </CardContentCompact>
+                                </Card>
 
-                                    <div className="space-y-2">
-                                        <Label htmlFor="school-filter">Школа</Label>
-                                        <Select value={userFilters.school} onValueChange={(value) => setUserFilters(prev => ({ ...prev, school: value }))}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Выберите школу" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Все школы</SelectItem>
-                                                {(() => {
-                                                    const schoolNames = users.map(u => getUserSchoolName(u)).filter(Boolean);
-                                                    console.log('Available school names for filter:', schoolNames);
-                                                    return [...new Set(schoolNames)].map(schoolName => (
-                                                        <SelectItem key={schoolName} value={schoolName!}>
-                                                            {schoolName}
-                                                        </SelectItem>
-                                                    ));
-                                                })()}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('services')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Услуги
+                                        </CardTitle>
+                                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        <div className="text-2xl font-bold">{servicesTotal}</div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Всего услуг
+                                        </p>
+                                    </CardContentCompact>
+                                </Card>
 
-                                <div className="mt-4">
-                                    <Button
-                                        variant="outline"
-                                        onClick={() => setUserFilters({ role: 'all', school: 'all' })}
-                                        className="w-full"
-                                    >
-                                        Сбросить фильтры
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </Card>
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('master-classes')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Мастер-классы
+                                        </CardTitle>
+                                        <GraduationCap className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        <div className="text-2xl font-bold">{masterClasses.length}</div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Запланированных мастер-классов
+                                        </p>
+                                    </CardContentCompact>
+                                </Card>
 
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Пользователи ({usersTotal})</CardTitle>
-                                <CardDescription>
-                                    Управление пользователями системы
-                                    {usersLastFetch && (
-                                        <span className="block text-xs text-muted-foreground mt-1">
-                                            Последнее обновление: {usersLastFetch.toLocaleTimeString()}
-                                        </span>
-                                    )}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {usersLoading ? (
-                                    <div className="text-center py-4">Загрузка...</div>
-                                ) : usersError ? (
-                                    <div className="text-center py-4 text-red-500">{usersError}</div>
-                                ) : (
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Пользователь</TableHead>
-                                                <TableHead>Роль</TableHead>
-                                                <TableHead>Контакт</TableHead>
-                                                <TableHead>Школа/Садик</TableHead>
-                                                <TableHead>Класс/Группа</TableHead>
-                                                <TableHead>Действия</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredUsers.map((user) => (
-                                                <TableRow key={user.id}>
-                                                    <TableCell>
-                                                        <div className="flex items-center space-x-2">
-                                                            {getRoleIcon(user.role)}
-                                                            <div>
-                                                                <div className="font-medium">
-                                                                    {user.name} {user.surname}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge className={getRoleColor(user.role)}>
-                                                            {user.role}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {user.phone || user.email || '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {getUserSchoolName(user) || '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {user.class || '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <div className="flex space-x-2">
-                                                            <AlertDialog>
-                                                                <AlertDialogTrigger asChild>
-                                                                    <Button size="sm" variant="outline" className="text-red-600">
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </Button>
-                                                                </AlertDialogTrigger>
-                                                                <AlertDialogContent>
-                                                                    <AlertDialogHeader>
-                                                                        <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
-                                                                        <AlertDialogDescription>
-                                                                            Это действие нельзя отменить. Пользователь будет удален навсегда.
-                                                                        </AlertDialogDescription>
-                                                                    </AlertDialogHeader>
-                                                                    <AlertDialogFooter>
-                                                                        <AlertDialogCancel>Отмена</AlertDialogCancel>
-                                                                        <AlertDialogAction
-                                                                            onClick={() => handleDeleteUser(user.id)}
-                                                                            className="bg-red-600 hover:bg-red-700"
-                                                                        >
-                                                                            Удалить
-                                                                        </AlertDialogAction>
-                                                                    </AlertDialogFooter>
-                                                                </AlertDialogContent>
-                                                            </AlertDialog>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('invoices')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Счета
+                                        </CardTitle>
+                                        <Receipt className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        {invoicesLoading ? (
+                                            <div className="text-2xl font-bold text-muted-foreground">...</div>
+                                        ) : invoicesError ? (
+                                            <div className="text-2xl font-bold text-red-500">!</div>
+                                        ) : (
+                                            <div className="text-2xl font-bold">{invoicesData?.total ?? 0}</div>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">
+                                            Всего счетов
+                                        </p>
+                                    </CardContentCompact>
+                                </Card>
 
-                    <TabsContent value="schools" className="space-y-4">
-
-                        <div className="flex justify-between items-center">
-                            <div className="relative">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Поиск школ..."
-                                    value={schoolsSearchTerm}
-                                    onChange={(e) => setSchoolsSearchTerm(e.target.value)}
-                                    className="pl-8"
-                                />
-                            </div>
-                            <Button onClick={handleAddSchool} className="bg-green-600 hover:bg-green-700">
-                                <Plus className="w-4 h-4 mr-2" />
-                                🏫 Добавить школу
-                            </Button>
-                        </div>
-
-                        {/* Фильтры школ */}
-                        {schools.length > 0 && (
-                            <SchoolFilters
-                                schools={schools}
-                                onFiltersChange={handleSchoolFiltersChange}
-                            />
-                        )}
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Школы ({filteredSchools.length} из {schools.length})</CardTitle>
-                                <CardDescription>
-                                    Управление школами в системе
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {schoolsLoading ? (
-                                    <div className="text-center py-4">Загрузка...</div>
-                                ) : schoolsError ? (
-                                    <div className="text-center py-4 text-red-500">{schoolsError}</div>
-                                ) : filteredSchools.length === 0 ? (
-                                    <div className="text-center py-4 text-gray-500">
-                                        Нет школ для отображения. Попробуйте изменить фильтры или поисковый запрос.
-                                    </div>
-                                ) : (
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Название</TableHead>
-                                                <TableHead>Адрес</TableHead>
-                                                <TableHead>Контактное лицо</TableHead>
-                                                <TableHead>Телефон</TableHead>
-                                                <TableHead>Классы/группы</TableHead>
-                                                <TableHead>Примечания</TableHead>
-                                                <TableHead>Действия</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredSchools.map((school) => (
-                                                <TableRow key={school.id}>
-                                                    <TableCell className="font-medium">
-                                                        {school.name}
-                                                    </TableCell>
-                                                    <TableCell>{school.address}</TableCell>
-                                                    <TableCell>{school.teacher || '-'}</TableCell>
-                                                    <TableCell>{school.teacherPhone || '-'}</TableCell>
-                                                    <TableCell>
-                                                        {school.classes.length > 0 ? school.classes.join(', ') : '-'}
-                                                    </TableCell>
-                                                    <TableCell>{school.notes || '-'}</TableCell>
-                                                    <TableCell>
-                                                        <div className="flex space-x-2">
-                                                            <Button size="sm" variant="outline" onClick={() => handleEditSchool(school)}>
-                                                                <Edit className="w-4 h-4" />
-                                                            </Button>
-                                                            <AlertDialog>
-                                                                <AlertDialogTrigger asChild>
-                                                                    <Button size="sm" variant="outline" className="text-red-600">
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </Button>
-                                                                </AlertDialogTrigger>
-                                                                <AlertDialogContent>
-                                                                    <AlertDialogHeader>
-                                                                        <AlertDialogTitle>Удалить школу?</AlertDialogTitle>
-                                                                        <AlertDialogDescription>
-                                                                            Это действие нельзя отменить. Школа будет удалена навсегда.
-                                                                        </AlertDialogDescription>
-                                                                    </AlertDialogHeader>
-                                                                    <AlertDialogFooter>
-                                                                        <AlertDialogCancel>Отмена</AlertDialogCancel>
-                                                                        <AlertDialogAction
-                                                                            onClick={() => handleDeleteSchool(school.id)}
-                                                                            className="bg-red-600 hover:bg-red-700"
-                                                                        >
-                                                                            Удалить
-                                                                        </AlertDialogAction>
-                                                                    </AlertDialogFooter>
-                                                                </AlertDialogContent>
-                                                            </AlertDialog>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="services" className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <div className="relative">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Поиск услуг..."
-                                    value={servicesSearchTerm}
-                                    onChange={(e) => setServicesSearchTerm(e.target.value)}
-                                    className="pl-8"
-                                />
-                            </div>
-                            <Button onClick={handleAddService}>
-                                <Plus className="w-4 h-4 mr-2" />
-                                Добавить услугу
-                            </Button>
-                        </div>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Услуги</CardTitle>
-                                <CardDescription>
-                                    Управление услугами в системе
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {servicesLoading ? (
-                                    <div className="text-center py-4">Загрузка...</div>
-                                ) : servicesError ? (
-                                    <div className="text-center py-4 text-red-500">{servicesError}</div>
-                                ) : filteredServices.length === 0 ? (
-                                    <div className="text-center py-8 text-muted-foreground">
-                                        <Wrench className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                                        <p>Услуги не найдены</p>
-                                        <Button onClick={handleAddService} className="mt-4">
-                                            <Plus className="w-4 h-4 mr-2" />
-                                            Добавить первую услугу
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 gap-4">
-                                        {filteredServices.map((service) => (
-                                            <div key={service.id} className="w-full">
-                                                <ServiceCard
-                                                    service={service}
-                                                    onAddStyle={handleAddStyle}
-                                                    onAddOption={handleAddOption}
-                                                    onViewStyle={handleViewStyle}
-                                                    onViewOption={handleViewOption}
-                                                    onReorderStyles={(serviceId, order) => reorderServiceStyles(serviceId, order)}
-                                                    onReorderOptions={(serviceId, order) => reorderServiceOptions(serviceId, order)}
-                                                    onDelete={handleDeleteService}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="master-classes" className="space-y-4">
-                        <MasterClassesTab
-                            services={services}
-                            schools={schools}
-                            masterClasses={masterClasses}
-                            onAddMasterClass={handleAddMasterClassEvent}
-                            onEditMasterClass={handleEditMasterClassEvent}
-                            onViewMasterClass={handleViewMasterClassEvent}
-                            onDeleteMasterClass={handleDeleteMasterClass}
-                        />
-                    </TabsContent>
-
-                    <TabsContent value="invoices" className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h2 className="text-2xl font-bold">Счета</h2>
-                                <p className="text-muted-foreground">
-                                    {invoicesLoading ? 'Загрузка...' :
-                                        invoicesError ? 'Ошибка загрузки' :
-                                            `Всего счетов: ${invoicesData?.total ?? 0}`}
-                                </p>
-                            </div>
-                        </div>
-                        <InvoicesTab />
-                    </TabsContent>
-
-                    <TabsContent value="workshop-requests" className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-2xl font-bold">Заявки на проведение мастер-классов</h2>
-                        </div>
-                        <WorkshopRequestsTab />
-                    </TabsContent>
-
-                    <TabsContent value="about" className="space-y-4">
-                        <AboutTab />
-                    </TabsContent>
-
-                    <TabsContent value="chat" className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h2 className="text-2xl font-bold">Управление чатами</h2>
-                                <p className="text-muted-foreground">
-                                    Поддержка пользователей
-                                </p>
-                            </div>
-                        </div>
-                        <div className="bg-white rounded-lg shadow border border-gray-200 w-full h-[calc(100vh-300px)] flex flex-col">
-                            {/* Заголовок с фильтрами */}
-                            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                                <div className="flex items-center space-x-3">
-                                    <MessageCircle className="w-6 h-6 text-blue-600" />
-                                    <div>
-                                        <h3 className="text-lg font-semibold text-gray-900">Управление чатами</h3>
-                                        <p className="text-sm text-gray-600">Поддержка пользователей</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <span className="text-sm text-gray-600">Фильтр:</span>
-                                    <Select value={chatStatusFilter} onValueChange={setChatStatusFilter}>
-                                        <SelectTrigger className="w-32">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">Все</SelectItem>
-                                            <SelectItem value="pending">Ожидают</SelectItem>
-                                            <SelectItem value="active">Активные</SelectItem>
-                                            <SelectItem value="closed">Закрытые</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 flex overflow-hidden">
-                                {/* Список чатов */}
-                                <div className="w-96 border-r border-gray-200 flex flex-col">
-                                    <div className="p-4 border-b border-gray-200">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h4 className="font-semibold text-gray-900">Чаты</h4>
-                                            <Badge variant="secondary">
-                                                {adminChats.length} всего
-                                            </Badge>
-                                        </div>
-                                        <div className="text-sm text-gray-600">
-                                            {adminChats.filter(c => c.status === 'pending').length} ожидают ответа
-                                        </div>
-                                        {/* Отладочная информация для непрочитанных */}
-                                        <div className="text-xs text-gray-400 mt-2 p-2 bg-gray-100 rounded">
-                                            Debug: Всего непрочитанных: {adminChats.reduce((sum, chat) => sum + (chat.unreadCount || 0), 0)}
-                                        </div>
-                                        {/* Статус WebSocket */}
-                                        <div className="text-xs mt-2 p-2 rounded flex items-center space-x-2">
-                                            <div className={cn(
-                                                "w-2 h-2 rounded-full",
-                                                wsConnected ? "bg-green-500" : wsConnecting ? "bg-yellow-500" : "bg-red-500"
-                                            )} />
-                                            <span className={cn(
-                                                wsConnected ? "text-green-600" : wsConnecting ? "text-yellow-600" : "text-red-600"
-                                            )}>
-                                                WebSocket: {wsConnected ? "Подключен" : wsConnecting ? "Подключение..." : "Отключен"}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto">
-                                        {isLoadingAdminChats ? (
-                                            <div className="p-4 text-center text-gray-500">
-                                                Загрузка чатов...
-                                            </div>
-                                        ) : adminChats.length === 0 ? (
-                                            <div className="p-4 text-center text-gray-500">
-                                                Нет чатов
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('chat')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Чат
+                                        </CardTitle>
+                                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        {adminChats && adminChats.length > 0 ? (
+                                            <div className="flex items-center space-x-2">
+                                                <div className="text-2xl font-bold text-blue-600">
+                                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0 ? '🔔' : '✅'}
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0
+                                                        ? 'Есть непрочитанные'
+                                                        : 'Все прочитано'
+                                                    }
+                                                </p>
                                             </div>
                                         ) : (
-                                            adminChats.map((chat) => (
-                                                <div
-                                                    key={chat.id}
-                                                    onClick={() => setSelectedAdminChat(chat)}
-                                                    className={cn(
-                                                        "p-4 border-b border-gray-100 cursor-pointer transition-colors",
-                                                        selectedAdminChat?.id === chat.id && "bg-blue-50 border-blue-200"
-                                                    )}
-                                                >
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <div className="flex items-center space-x-2">
-                                                            <div className={cn(
-                                                                "w-2 h-2 rounded-full",
-                                                                getChatStatusColor(chat.status)
-                                                            )} />
-                                                            <span className="text-sm font-medium text-gray-900">
-                                                                {getChatStatusText(chat.status)}
+                                            <div className="flex items-center space-x-2">
+                                                <div className="text-2xl font-bold text-gray-400">-</div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Нет чатов
+                                                </p>
+                                            </div>
+                                        )}
+                                    </CardContentCompact>
+                                </Card>
+
+                                <Card
+                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
+                                    onClick={() => setSelectedTab('workshop-requests')}
+                                >
+                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            Заявки
+                                        </CardTitle>
+                                        <div className="flex items-center gap-2">
+                                            <FileText className="h-4 w-4 text-muted-foreground" />
+                                            <div className={`w-2 h-2 rounded-full ${wsRequestsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                        </div>
+                                    </CardHeaderCompact>
+                                    <CardContentCompact>
+                                        <div className="text-2xl font-bold text-blue-600">{workshopRequestsStats.total}</div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                                <span className="text-xs text-yellow-600">{workshopRequestsStats.pending}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                <span className="text-xs text-green-600">{workshopRequestsStats.approved}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                                <span className="text-xs text-red-600">{workshopRequestsStats.rejected}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <p className="text-xs text-muted-foreground">
+                                                {wsRequestsConnected ? 'Автообновление' : 'Ручное обновление'}
+                                            </p>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    loadWorkshopRequestsStats();
+                                                }}
+                                                className="h-6 w-6 p-0 hover:bg-blue-100"
+                                            >
+                                                <RefreshCw className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+                                    </CardContentCompact>
+                                </Card>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="users" className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Поиск пользователей..."
+                                        value={usersSearchTerm}
+                                        onChange={(e) => setUsersSearchTerm(e.target.value)}
+                                        className="pl-8"
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            console.log('🔄 Manually refreshing users...');
+                                            fetchUsers();
+                                        }}
+                                        disabled={usersLoading}
+                                    >
+                                        {usersLoading ? 'Обновление...' : '🔄 Обновить'}
+                                    </Button>
+                                    <Button
+                                        className="bg-blue-600 hover:bg-blue-700"
+                                        onClick={() => setAddUserModalOpen(true)}
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        👤 Добавить пользователя
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Карточка фильтров пользователей */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Filter className="h-5 w-5" />
+                                        Фильтры пользователей
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="role-filter">Роль</Label>
+                                            <Select value={userFilters.role} onValueChange={(value) => setUserFilters(prev => ({ ...prev, role: value }))}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Выберите роль" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Все роли</SelectItem>
+                                                    <SelectItem value="admin">Администратор</SelectItem>
+                                                    <SelectItem value="executor">Исполнитель</SelectItem>
+                                                    <SelectItem value="parent">Родитель</SelectItem>
+                                                    <SelectItem value="child">Ребенок</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="school-filter">Школа</Label>
+                                            <Select value={userFilters.school} onValueChange={(value) => setUserFilters(prev => ({ ...prev, school: value }))}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Выберите школу" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Все школы</SelectItem>
+                                                    {(() => {
+                                                        const schoolNames = users.map(u => getUserSchoolName(u)).filter(Boolean);
+                                                        console.log('Available school names for filter:', schoolNames);
+                                                        return [...new Set(schoolNames)].map(schoolName => (
+                                                            <SelectItem key={schoolName} value={schoolName!}>
+                                                                {schoolName}
+                                                            </SelectItem>
+                                                        ));
+                                                    })()}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setUserFilters({ role: 'all', school: 'all' })}
+                                            className="w-full"
+                                        >
+                                            Сбросить фильтры
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Пользователи ({usersTotal})</CardTitle>
+                                    <CardDescription>
+                                        Управление пользователями системы
+                                        {usersLastFetch && (
+                                            <span className="block text-xs text-muted-foreground mt-1">
+                                                Последнее обновление: {usersLastFetch.toLocaleTimeString()}
+                                            </span>
+                                        )}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {usersLoading ? (
+                                        <div className="text-center py-4">Загрузка...</div>
+                                    ) : usersError ? (
+                                        <div className="text-center py-4 text-red-500">{usersError}</div>
+                                    ) : (
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Пользователь</TableHead>
+                                                    <TableHead>Роль</TableHead>
+                                                    <TableHead>Контакт</TableHead>
+                                                    <TableHead>Школа/Садик</TableHead>
+                                                    <TableHead>Класс/Группа</TableHead>
+                                                    <TableHead>Действия</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {filteredUsers.map((user) => (
+                                                    <TableRow key={user.id}>
+                                                        <TableCell>
+                                                            <div className="flex items-center space-x-2">
+                                                                {getRoleIcon(user.role)}
+                                                                <div>
+                                                                    <div className="font-medium">
+                                                                        {user.name} {user.surname}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge className={getRoleColor(user.role)}>
+                                                                {user.role}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {user.phone || user.email || '-'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {getUserSchoolName(user) || '-'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {user.class || '-'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex space-x-2">
+                                                                <AlertDialog>
+                                                                    <AlertDialogTrigger asChild>
+                                                                        <Button size="sm" variant="outline" className="text-red-600">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </Button>
+                                                                    </AlertDialogTrigger>
+                                                                    <AlertDialogContent>
+                                                                        <AlertDialogHeader>
+                                                                            <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                                                                            <AlertDialogDescription>
+                                                                                Это действие нельзя отменить. Пользователь будет удален навсегда.
+                                                                            </AlertDialogDescription>
+                                                                        </AlertDialogHeader>
+                                                                        <AlertDialogFooter>
+                                                                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                                                            <AlertDialogAction
+                                                                                onClick={() => handleDeleteUser(user.id)}
+                                                                                className="bg-red-600 hover:bg-red-700"
+                                                                            >
+                                                                                Удалить
+                                                                            </AlertDialogAction>
+                                                                        </AlertDialogFooter>
+                                                                    </AlertDialogContent>
+                                                                </AlertDialog>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        <TabsContent value="schools" className="space-y-4">
+
+                            <div className="flex justify-between items-center">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Поиск школ..."
+                                        value={schoolsSearchTerm}
+                                        onChange={(e) => setSchoolsSearchTerm(e.target.value)}
+                                        className="pl-8"
+                                    />
+                                </div>
+                                <Button onClick={handleAddSchool} className="bg-green-600 hover:bg-green-700">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    🏫 Добавить школу
+                                </Button>
+                            </div>
+
+                            {/* Фильтры школ */}
+                            {schools.length > 0 && (
+                                <SchoolFilters
+                                    schools={schools}
+                                    onFiltersChange={handleSchoolFiltersChange}
+                                />
+                            )}
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Школы ({filteredSchools.length} из {schools.length})</CardTitle>
+                                    <CardDescription>
+                                        Управление школами в системе
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {schoolsLoading ? (
+                                        <div className="text-center py-4">Загрузка...</div>
+                                    ) : schoolsError ? (
+                                        <div className="text-center py-4 text-red-500">{schoolsError}</div>
+                                    ) : filteredSchools.length === 0 ? (
+                                        <div className="text-center py-4 text-gray-500">
+                                            Нет школ для отображения. Попробуйте изменить фильтры или поисковый запрос.
+                                        </div>
+                                    ) : (
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Название</TableHead>
+                                                    <TableHead>Адрес</TableHead>
+                                                    <TableHead>Контактное лицо</TableHead>
+                                                    <TableHead>Телефон</TableHead>
+                                                    <TableHead>Классы/группы</TableHead>
+                                                    <TableHead>Примечания</TableHead>
+                                                    <TableHead>Действия</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {filteredSchools.map((school) => (
+                                                    <TableRow key={school.id}>
+                                                        <TableCell className="font-medium">
+                                                            {school.name}
+                                                        </TableCell>
+                                                        <TableCell>{school.address}</TableCell>
+                                                        <TableCell>{school.teacher || '-'}</TableCell>
+                                                        <TableCell>{school.teacherPhone || '-'}</TableCell>
+                                                        <TableCell>
+                                                            {school.classes.length > 0 ? school.classes.join(', ') : '-'}
+                                                        </TableCell>
+                                                        <TableCell>{school.notes || '-'}</TableCell>
+                                                        <TableCell>
+                                                            <div className="flex space-x-2">
+                                                                <Button size="sm" variant="outline" onClick={() => handleEditSchool(school)}>
+                                                                    <Edit className="w-4 h-4" />
+                                                                </Button>
+                                                                <AlertDialog>
+                                                                    <AlertDialogTrigger asChild>
+                                                                        <Button size="sm" variant="outline" className="text-red-600">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </Button>
+                                                                    </AlertDialogTrigger>
+                                                                    <AlertDialogContent>
+                                                                        <AlertDialogHeader>
+                                                                            <AlertDialogTitle>Удалить школу?</AlertDialogTitle>
+                                                                            <AlertDialogDescription>
+                                                                                Это действие нельзя отменить. Школа будет удалена навсегда.
+                                                                            </AlertDialogDescription>
+                                                                        </AlertDialogHeader>
+                                                                        <AlertDialogFooter>
+                                                                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                                                            <AlertDialogAction
+                                                                                onClick={() => handleDeleteSchool(school.id)}
+                                                                                className="bg-red-600 hover:bg-red-700"
+                                                                            >
+                                                                                Удалить
+                                                                            </AlertDialogAction>
+                                                                        </AlertDialogFooter>
+                                                                    </AlertDialogContent>
+                                                                </AlertDialog>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        <TabsContent value="services" className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Поиск услуг..."
+                                        value={servicesSearchTerm}
+                                        onChange={(e) => setServicesSearchTerm(e.target.value)}
+                                        className="pl-8"
+                                    />
+                                </div>
+                                <Button onClick={handleAddService}>
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Добавить услугу
+                                </Button>
+                            </div>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Услуги</CardTitle>
+                                    <CardDescription>
+                                        Управление услугами в системе
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {servicesLoading ? (
+                                        <div className="text-center py-4">Загрузка...</div>
+                                    ) : servicesError ? (
+                                        <div className="text-center py-4 text-red-500">{servicesError}</div>
+                                    ) : filteredServices.length === 0 ? (
+                                        <div className="text-center py-8 text-muted-foreground">
+                                            <Wrench className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                                            <p>Услуги не найдены</p>
+                                            <Button onClick={handleAddService} className="mt-4">
+                                                <Plus className="w-4 h-4 mr-2" />
+                                                Добавить первую услугу
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {filteredServices.map((service) => (
+                                                <div key={service.id} className="w-full">
+                                                    <ServiceCard
+                                                        service={service}
+                                                        onAddStyle={handleAddStyle}
+                                                        onAddOption={handleAddOption}
+                                                        onViewStyle={handleViewStyle}
+                                                        onViewOption={handleViewOption}
+                                                        onReorderStyles={(serviceId, order) => reorderServiceStyles(serviceId, order)}
+                                                        onReorderOptions={(serviceId, order) => reorderServiceOptions(serviceId, order)}
+                                                        onDelete={handleDeleteService}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        <TabsContent value="master-classes" className="space-y-4">
+                            <MasterClassesTab
+                                services={services}
+                                schools={schools}
+                                masterClasses={masterClasses}
+                                onAddMasterClass={handleAddMasterClassEvent}
+                                onEditMasterClass={handleEditMasterClassEvent}
+                                onViewMasterClass={handleViewMasterClassEvent}
+                                onDeleteMasterClass={handleDeleteMasterClass}
+                                onRefreshMasterClasses={handleRefreshMasterClasses}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="invoices" className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-2xl font-bold">Счета</h2>
+                                    <p className="text-muted-foreground">
+                                        {invoicesLoading ? 'Загрузка...' :
+                                            invoicesError ? 'Ошибка загрузки' :
+                                                `Всего счетов: ${invoicesData?.total ?? 0}`}
+                                    </p>
+                                </div>
+                            </div>
+                            <InvoicesTab />
+                        </TabsContent>
+
+                        <TabsContent value="workshop-requests" className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-2xl font-bold">Заявки на проведение мастер-классов</h2>
+                            </div>
+                            <WorkshopRequestsTab />
+                        </TabsContent>
+
+                        <TabsContent value="about" className="space-y-4">
+                            <AboutTab />
+                        </TabsContent>
+
+                        <TabsContent value="chat" className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-2xl font-bold">Управление чатами</h2>
+                                    <p className="text-muted-foreground">
+                                        Поддержка пользователей
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-lg shadow border border-gray-200 w-full h-[calc(100vh-300px)] flex flex-col">
+                                {/* Заголовок с фильтрами */}
+                                <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                                    <div className="flex items-center space-x-3">
+                                        <MessageCircle className="w-6 h-6 text-blue-600" />
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900">Управление чатами</h3>
+                                            <p className="text-sm text-gray-600">Поддержка пользователей</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="text-sm text-gray-600">Фильтр:</span>
+                                        <Select value={chatStatusFilter} onValueChange={setChatStatusFilter}>
+                                            <SelectTrigger className="w-32">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Все</SelectItem>
+                                                <SelectItem value="pending">Ожидают</SelectItem>
+                                                <SelectItem value="active">Активные</SelectItem>
+                                                <SelectItem value="closed">Закрытые</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 flex overflow-hidden">
+                                    {/* Список чатов */}
+                                    <div className="w-96 border-r border-gray-200 flex flex-col">
+                                        <div className="p-4 border-b border-gray-200">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="font-semibold text-gray-900">Чаты</h4>
+                                                <Badge variant="secondary">
+                                                    {adminChats.length} всего
+                                                </Badge>
+                                            </div>
+                                            <div className="text-sm text-gray-600">
+                                                {adminChats.filter(c => c.status === 'pending').length} ожидают ответа
+                                            </div>
+                                            {/* Отладочная информация для непрочитанных */}
+                                            <div className="text-xs text-gray-400 mt-2 p-2 bg-gray-100 rounded">
+                                                Debug: Всего непрочитанных: {adminChats.reduce((sum, chat) => sum + (chat.unreadCount || 0), 0)}
+                                            </div>
+                                            {/* Статус WebSocket */}
+                                            <div className="text-xs mt-2 p-2 rounded flex items-center space-x-2">
+                                                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                                                <span className="text-gray-600">
+                                                    WebSocket: Отключен
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto">
+                                            {isLoadingAdminChats ? (
+                                                <div className="p-4 text-center text-gray-500">
+                                                    Загрузка чатов...
+                                                </div>
+                                            ) : adminChats.length === 0 ? (
+                                                <div className="p-4 text-center text-gray-500">
+                                                    Нет чатов
+                                                </div>
+                                            ) : (
+                                                adminChats.map((chat) => (
+                                                    <div
+                                                        key={chat.id}
+                                                        onClick={() => setSelectedAdminChat(chat)}
+                                                        className={cn(
+                                                            "p-4 border-b border-gray-100 cursor-pointer transition-colors",
+                                                            selectedAdminChat?.id === chat.id && "bg-blue-50 border-blue-200"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div className="flex items-center space-x-2">
+                                                                <div className={cn(
+                                                                    "w-2 h-2 rounded-full",
+                                                                    getChatStatusColor(chat.status)
+                                                                )} />
+                                                                <span className="text-sm font-medium text-gray-900">
+                                                                    {getChatStatusText(chat.status)}
+                                                                </span>
+                                                            </div>
+                                                            {getChatUnreadCount(chat) > 0 && (
+                                                                <Badge variant="destructive" className="text-xs">
+                                                                    {getChatUnreadCount(chat)}
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm font-medium text-gray-900">
+                                                            {chat.user?.name && chat.user?.surname
+                                                                ? `${chat.user.name} ${chat.user.surname}`.trim()
+                                                                : chat.user?.name || 'Пользователь'
+                                                            }
+                                                        </p>
+                                                        {chat.lastMessage && (
+                                                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                                                                {chat.lastMessage}
+                                                            </p>
+                                                        )}
+                                                        <div className="flex items-center justify-end mt-2">
+                                                            <span className="text-xs text-gray-400">
+                                                                {formatChatDateTime(chat.lastMessageAt)}
                                                             </span>
                                                         </div>
-                                                        {getChatUnreadCount(chat) > 0 && (
-                                                            <Badge variant="destructive" className="text-xs">
-                                                                {getChatUnreadCount(chat)}
-                                                            </Badge>
-                                                        )}
                                                     </div>
-                                                    <p className="text-sm font-medium text-gray-900">
-                                                        {chat.user?.name && chat.user?.surname
-                                                            ? `${chat.user.name} ${chat.user.surname}`.trim()
-                                                            : chat.user?.name || 'Пользователь'
-                                                        }
-                                                    </p>
-                                                    {chat.lastMessage && (
-                                                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                                                            {chat.lastMessage}
-                                                        </p>
-                                                    )}
-                                                    <div className="flex items-center justify-end mt-2">
-                                                        <span className="text-xs text-gray-400">
-                                                            {formatChatDateTime(chat.lastMessageAt)}
-                                                        </span>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Область сообщений */}
+                                    <div className="flex-1 flex flex-col">
+                                        {selectedAdminChat ? (
+                                            <>
+                                                {/* Заголовок чата */}
+                                                <div className="p-4 border-b border-gray-200 bg-gray-50">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <h4 className="font-semibold text-gray-900">
+                                                                {selectedAdminChat.user?.name && selectedAdminChat.user?.surname
+                                                                    ? `${selectedAdminChat.user.name} ${selectedAdminChat.user.surname}`.trim()
+                                                                    : selectedAdminChat.user?.name || 'Пользователь'
+                                                                }
+                                                            </h4>
+                                                            <div className="flex items-center space-x-2 mt-1">
+                                                                <div className={cn(
+                                                                    "w-2 h-2 rounded-full",
+                                                                    getChatStatusColor(selectedAdminChat.status)
+                                                                )} />
+                                                                <span className="text-sm text-gray-600">
+                                                                    {getChatStatusText(selectedAdminChat.status)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <Select
+                                                                value={selectedAdminChat.status}
+                                                                onValueChange={(value: 'active' | 'closed' | 'pending') =>
+                                                                    handleAdminChatStatusUpdate(selectedAdminChat.id, value)
+                                                                }
+                                                                disabled={isUpdatingAdminChatStatus}
+                                                            >
+                                                                <SelectTrigger className="w-32">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="pending">Ожидает</SelectItem>
+                                                                    <SelectItem value="active">Активен</SelectItem>
+                                                                    <SelectItem value="closed">Закрыт</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                            <AlertDialog>
+                                                                <AlertDialogTrigger asChild>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                        disabled={isDeletingChat}
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </Button>
+                                                                </AlertDialogTrigger>
+                                                                <AlertDialogContent>
+                                                                    <AlertDialogHeader>
+                                                                        <AlertDialogTitle>Удалить чат?</AlertDialogTitle>
+                                                                        <AlertDialogDescription>
+                                                                            Это действие нельзя отменить. Чат и все сообщения будут удалены навсегда.
+                                                                        </AlertDialogDescription>
+                                                                    </AlertDialogHeader>
+                                                                    <AlertDialogFooter>
+                                                                        <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                                                        <AlertDialogAction
+                                                                            onClick={() => deleteChat(selectedAdminChat.id)}
+                                                                            className="bg-red-600 hover:bg-red-700"
+                                                                        >
+                                                                            Удалить
+                                                                        </AlertDialogAction>
+                                                                    </AlertDialogFooter>
+                                                                </AlertDialogContent>
+                                                            </AlertDialog>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => setSelectedAdminChat(null)}
+                                                            >
+                                                                Закрыть
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            ))
+
+                                                {/* Сообщения */}
+                                                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+                                                    {isLoadingAdminMessages ? (
+                                                        <div className="text-center text-gray-500">
+                                                            Загрузка сообщений...
+                                                        </div>
+                                                    ) : adminMessages.length === 0 ? (
+                                                        <div className="text-center text-gray-500">
+                                                            Нет сообщений
+                                                        </div>
+                                                    ) : (
+                                                        adminMessages.map((msg) => (
+                                                            <div
+                                                                key={msg.id}
+                                                                className={cn(
+                                                                    "flex",
+                                                                    msg.senderType === 'admin' ? "justify-end" : "justify-start"
+                                                                )}
+                                                            >
+                                                                <div
+                                                                    className={cn(
+                                                                        "max-w-[70%] sm:max-w-xs lg:max-w-md px-4 py-2 rounded-lg break-words",
+                                                                        msg.senderType === 'admin'
+                                                                            ? "bg-blue-600 text-white"
+                                                                            : "bg-gray-100 text-gray-900"
+                                                                    )}
+                                                                >
+                                                                    <div className="flex items-center space-x-2 mb-1">
+                                                                        {msg.senderType === 'admin' ? (
+                                                                            <Shield className="w-3 h-3" />
+                                                                        ) : (
+                                                                            <User className="w-3 h-3" />
+                                                                        )}
+                                                                        <span className="text-xs opacity-75">
+                                                                            {msg.senderType === 'admin' ? 'Администратор' :
+                                                                                `${msg.sender?.name || ''} ${msg.sender?.surname || ''}`.trim() || 'Пользователь'
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-sm break-words whitespace-pre-wrap">{msg.message}</p>
+                                                                    <div className="flex items-center justify-end mt-1">
+                                                                        <Clock className="w-3 h-3 opacity-50 mr-1" />
+                                                                        <span className="text-xs opacity-75">
+                                                                            {formatChatDateTime(msg.createdAt)}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+
+                                                {/* Поле ввода */}
+                                                <div className="p-4 border-t border-gray-200">
+                                                    <form onSubmit={handleAdminSendMessage} className="flex space-x-2">
+                                                        <Input
+                                                            value={adminMessage}
+                                                            onChange={(e) => setAdminMessage(e.target.value)}
+                                                            placeholder="Введите сообщение..."
+                                                            className="flex-1"
+                                                            disabled={isSendingAdminMessage}
+                                                        />
+                                                        <Button
+                                                            type="submit"
+                                                            disabled={!adminMessage.trim() || isSendingAdminMessage}
+                                                            className="bg-blue-600 hover:bg-blue-700"
+                                                        >
+                                                            <Send className="w-4 h-4" />
+                                                        </Button>
+                                                    </form>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="flex-1 flex items-center justify-center">
+                                                <div className="text-center text-gray-500">
+                                                    <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                                                    <p>Выберите чат для просмотра</p>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
-
-                                {/* Область сообщений */}
-                                <div className="flex-1 flex flex-col">
-                                    {selectedAdminChat ? (
-                                        <>
-                                            {/* Заголовок чата */}
-                                            <div className="p-4 border-b border-gray-200 bg-gray-50">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-900">
-                                                            {selectedAdminChat.user?.name && selectedAdminChat.user?.surname
-                                                                ? `${selectedAdminChat.user.name} ${selectedAdminChat.user.surname}`.trim()
-                                                                : selectedAdminChat.user?.name || 'Пользователь'
-                                                            }
-                                                        </h4>
-                                                        <div className="flex items-center space-x-2 mt-1">
-                                                            <div className={cn(
-                                                                "w-2 h-2 rounded-full",
-                                                                getChatStatusColor(selectedAdminChat.status)
-                                                            )} />
-                                                            <span className="text-sm text-gray-600">
-                                                                {getChatStatusText(selectedAdminChat.status)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center space-x-2">
-                                                        <Select
-                                                            value={selectedAdminChat.status}
-                                                            onValueChange={(value: 'active' | 'closed' | 'pending') =>
-                                                                handleAdminChatStatusUpdate(selectedAdminChat.id, value)
-                                                            }
-                                                            disabled={isUpdatingAdminChatStatus}
-                                                        >
-                                                            <SelectTrigger className="w-32">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="pending">Ожидает</SelectItem>
-                                                                <SelectItem value="active">Активен</SelectItem>
-                                                                <SelectItem value="closed">Закрыт</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => setSelectedAdminChat(null)}
-                                                        >
-                                                            Закрыть
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Сообщения */}
-                                            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                                                {isLoadingAdminMessages ? (
-                                                    <div className="text-center text-gray-500">
-                                                        Загрузка сообщений...
-                                                    </div>
-                                                ) : adminMessages.length === 0 ? (
-                                                    <div className="text-center text-gray-500">
-                                                        Нет сообщений
-                                                    </div>
-                                                ) : (
-                                                    adminMessages.map((msg) => (
-                                                        <div
-                                                            key={msg.id}
-                                                            className={cn(
-                                                                "flex",
-                                                                msg.senderType === 'admin' ? "justify-end" : "justify-start"
-                                                            )}
-                                                        >
-                                                            <div
-                                                                className={cn(
-                                                                    "max-w-[70%] sm:max-w-xs lg:max-w-md px-4 py-2 rounded-lg break-words",
-                                                                    msg.senderType === 'admin'
-                                                                        ? "bg-blue-600 text-white"
-                                                                        : "bg-gray-100 text-gray-900"
-                                                                )}
-                                                            >
-                                                                <div className="flex items-center space-x-2 mb-1">
-                                                                    {msg.senderType === 'admin' ? (
-                                                                        <Shield className="w-3 h-3" />
-                                                                    ) : (
-                                                                        <User className="w-3 h-3" />
-                                                                    )}
-                                                                    <span className="text-xs opacity-75">
-                                                                        {msg.senderType === 'admin' ? 'Администратор' :
-                                                                            `${msg.sender?.name || ''} ${msg.sender?.surname || ''}`.trim() || 'Пользователь'
-                                                                        }
-                                                                    </span>
-                                                                </div>
-                                                                <p className="text-sm break-words whitespace-pre-wrap">{msg.message}</p>
-                                                                <div className="flex items-center justify-end mt-1">
-                                                                    <Clock className="w-3 h-3 opacity-50 mr-1" />
-                                                                    <span className="text-xs opacity-75">
-                                                                        {formatChatDateTime(msg.createdAt)}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-
-                                            {/* Поле ввода */}
-                                            <div className="p-4 border-t border-gray-200">
-                                                <form onSubmit={handleAdminSendMessage} className="flex space-x-2">
-                                                    <Input
-                                                        value={adminMessage}
-                                                        onChange={(e) => setAdminMessage(e.target.value)}
-                                                        placeholder="Введите сообщение..."
-                                                        className="flex-1"
-                                                        disabled={isSendingAdminMessage}
-                                                    />
-                                                    <Button
-                                                        type="submit"
-                                                        disabled={!adminMessage.trim() || isSendingAdminMessage}
-                                                        className="bg-blue-600 hover:bg-blue-700"
-                                                    >
-                                                        <Send className="w-4 h-4" />
-                                                    </Button>
-                                                </form>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="flex-1 flex items-center justify-center">
-                                            <div className="text-center text-gray-500">
-                                                <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                                                <p>Выберите чат для просмотра</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
                             </div>
-                        </div>
-                    </TabsContent>
-                </Tabs>
+                        </TabsContent>
+                    </Tabs>
+                </div>
+
                 <SchoolModal
                     isOpen={schoolModalOpen}
                     onOpenChange={setSchoolModalOpen}
@@ -1875,6 +2021,24 @@ const Dashboard: React.FC = () => {
                     </SheetContent>
                 </Sheet>
 
+                {/* Модальное окно добавления пользователя */}
+                <AddUserModal
+                    isOpen={addUserModalOpen}
+                    onOpenChange={setAddUserModalOpen}
+                    onSubmit={async (userData) => {
+                        try {
+                            await createUser({
+                                name: userData.name,
+                                surname: userData.surname,
+                                role: userData.role
+                            });
+                        } catch (error) {
+                            console.error('Error creating user:', error);
+                            throw error;
+                        }
+                    }}
+                    trigger={null}
+                />
 
             </div>
         </div>

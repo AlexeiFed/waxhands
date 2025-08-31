@@ -5,9 +5,17 @@
  * @created: 2024-12-19
  */
 
-import express from 'express';
-import { WorkshopRequestsController } from '../controllers/workshopRequests';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import express, { Request, Response } from 'express';
+import { WorkshopRequestsController } from '../controllers/workshopRequests.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+
+// Расширенный интерфейс Request с пользователем
+interface AuthenticatedRequest extends Omit<Request, 'user'> {
+    user?: {
+        userId: string;
+        role: string;
+    };
+}
 
 const router = express.Router();
 
@@ -15,10 +23,17 @@ const router = express.Router();
 router.post('/',
     authenticateToken,
     requireRole('parent'),
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { school_name, class_group, desired_date, notes } = req.body;
             const parent_id = req.user?.userId;
+
+            if (!parent_id) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Пользователь не аутентифицирован'
+                });
+            }
 
             // Валидация
             if (!school_name || !class_group || !desired_date) {
@@ -75,7 +90,7 @@ router.get('/parent/:parentId',
     authenticateToken,
     requireRole('parent'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { parentId } = req.params;
             const requestingUserId = req.user?.userId;
@@ -94,7 +109,14 @@ router.get('/parent/:parentId',
                 role: req.user?.role
             });
 
-            const result = await WorkshopRequestsController.getRequestsByParentId(parentId!);
+            if (!parentId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Не указан идентификатор родителя'
+                });
+            }
+
+            const result = await WorkshopRequestsController.getRequestsByParentId(parentId);
 
             console.log('📡 GET /workshop-requests/parent/:parentId: Результат контроллера:', {
                 success: result.success,
@@ -122,7 +144,7 @@ router.get('/',
     authenticateToken,
     requireRole('admin'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             console.log('🔍 GET /workshop-requests: Запрос от пользователя:', {
                 userId: req.user?.userId,
@@ -158,9 +180,17 @@ router.get('/my',
     authenticateToken,
     requireRole('parent'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const parent_id = req.user?.userId;
+
+            if (!parent_id) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Пользователь не аутентифицирован'
+                });
+            }
+
             const result = await WorkshopRequestsController.getRequestsByParentId(parent_id);
 
             if (result.success) {
@@ -183,7 +213,7 @@ router.get('/stats/parent/:parentId',
     authenticateToken,
     requireRole('parent'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { parentId } = req.params;
             const requestingUserId = req.user?.userId;
@@ -202,7 +232,14 @@ router.get('/stats/parent/:parentId',
                 role: req.user?.role
             });
 
-            const result = await WorkshopRequestsController.getRequestsStatsByParentId(parentId!);
+            if (!parentId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Не указан идентификатор родителя'
+                });
+            }
+
+            const result = await WorkshopRequestsController.getRequestsStatsByParentId(parentId);
 
             console.log('📊 GET /stats/parent/:parentId: Результат контроллера:', result);
 
@@ -228,7 +265,7 @@ router.get('/stats/overview',
     authenticateToken,
     requireRole('admin'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             console.log('📊 GET /stats/overview: Запрос статистики заявок от пользователя:', {
                 userId: req.user?.userId,
@@ -260,10 +297,17 @@ router.get('/stats/overview',
 router.get('/:id',
     authenticateToken,
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { id } = req.params;
-            const request = await WorkshopRequestsController.getRequestById(id!);
+            if (!id) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Не указан идентификатор заявки'
+                });
+            }
+
+            const request = await WorkshopRequestsController.getRequestById(id);
 
             if (!request) {
                 return res.status(404).json({
@@ -273,7 +317,7 @@ router.get('/:id',
             }
 
             // Проверяем права доступа
-            if (req.user.role !== 'admin' && request.parent_id !== req.user.userId) {
+            if (req.user?.role !== 'admin' && request.parent_id !== req.user?.userId) {
                 return res.status(403).json({
                     success: false,
                     error: 'Доступ запрещен'
@@ -299,17 +343,24 @@ router.patch('/:id/status',
     authenticateToken,
     requireRole('admin'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { id } = req.params;
             const { status, admin_notes } = req.body;
-            const admin_id = req.user.userId;
+            const admin_id = req.user?.userId;
 
             // Валидация статуса
             if (status && !['pending', 'approved', 'rejected'].includes(status)) {
                 return res.status(400).json({
                     success: false,
                     error: 'Неверный статус заявки'
+                });
+            }
+
+            if (!id) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Не указан идентификатор заявки'
                 });
             }
 
@@ -338,9 +389,16 @@ router.delete('/:id',
     authenticateToken,
     requireRole('admin'),
     noCache,
-    async (req: any, res) => {
+    async (req: AuthenticatedRequest, res: Response) => {
         try {
             const { id } = req.params;
+            if (!id) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Не указан идентификатор заявки'
+                });
+            }
+
             const result = await WorkshopRequestsController.deleteRequest(id);
 
             if (result.success) {

@@ -104,22 +104,61 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             // Если это родитель с детьми, сохраняем детей в localStorage
             if (userData.role === 'parent' && userData.children && response.user.children) {
-                localStorage.setItem('registered_children', JSON.stringify(response.user.children));
-                console.log('👶 Дети сохранены в localStorage:', response.user.children);
+                try {
+                    localStorage.setItem('registered_children', JSON.stringify(response.user.children));
+                    console.log('👶 Дети сохранены в localStorage:', response.user.children);
+                } catch (storageError) {
+                    console.warn('⚠️ Failed to save children to localStorage:', storageError);
+                    // Fallback: пытаемся сохранить в sessionStorage
+                    try {
+                        sessionStorage.setItem('registered_children', JSON.stringify(response.user.children));
+                        console.log('👶 Дети сохранены в sessionStorage');
+                    } catch (sessionError) {
+                        console.error('❌ Failed to save children to sessionStorage:', sessionError);
+                    }
+                }
             }
 
             setUser({ ...response.user, role: response.user.role as UserRole });
             setIsAuthenticated(true);
+            
+            console.log('✅ Registration successful');
         } catch (error) {
-            console.error('Registration failed:', error);
+            console.error('❌ Registration failed:', error);
             throw error;
         } finally {
             setLoading(false);
         }
     };
 
+    // Функция для получения сохраненных детей с fallback
+    const getRegisteredChildren = (): Array<{ id: string; name: string; [key: string]: unknown }> | null => {
+        try {
+            // Сначала пытаемся получить из localStorage
+            const children = localStorage.getItem('registered_children');
+            if (children) {
+                return JSON.parse(children);
+            }
+        } catch (error) {
+            console.warn('⚠️ Failed to read children from localStorage:', error);
+        }
+
+        try {
+            // Fallback: пытаемся получить из sessionStorage
+            const children = sessionStorage.getItem('registered_children');
+            if (children) {
+                return JSON.parse(children);
+            }
+        } catch (error) {
+            console.warn('⚠️ Failed to read children from sessionStorage:', error);
+        }
+
+        return null;
+    };
+
     // Функция выхода
     const logout = () => {
+        console.log('🚪 Logging out...');
         api.auth.logout();
         setUser(null);
         setIsAuthenticated(false);
@@ -132,7 +171,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const updatedUser = await api.auth.updateProfile(data);
             setUser({ ...updatedUser, role: updatedUser.role as UserRole });
         } catch (error) {
-            console.error('Profile update failed:', error);
+            console.error('❌ Profile update failed:', error);
             throw error;
         } finally {
             setLoading(false);

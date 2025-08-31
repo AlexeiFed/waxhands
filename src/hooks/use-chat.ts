@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './use-toast';
 import { useNotificationSound } from './use-notification-sound';
 import { WS_BASE_URL } from '../lib/config';
+import { useWebSocketChat } from './use-websocket-chat';
 
 export const useChat = (userId?: string) => {
     const { user } = useAuth();
@@ -244,18 +245,35 @@ export const useChat = (userId?: string) => {
         }
     }, [messagesData?.messages, scrollToBottom, playMessageSound, selectedChat]);
 
-    // Умное автоматическое обновление только при активном использовании
-    // WebSocket для real-time обновлений сообщений (заменяет polling)
+    // WebSocket для real-time обновлений сообщений
+    const { isConnected: wsConnected } = useWebSocketChat(selectedChat?.id, userId, false);
+
+    // Автоматическое обновление сообщений при получении WebSocket уведомлений
     useEffect(() => {
         if (!selectedChat?.id) return;
 
         console.log('🔌 WebSocket: инициализация real-time обновлений сообщений...');
 
-        // TODO: Здесь будет WebSocket соединение для real-time обновлений
-        // Пока отключаем polling для экономии ресурсов
+        if (wsConnected) {
+            console.log('✅ WebSocket подключен для чата:', selectedChat.id);
+            // При получении нового сообщения обновляем данные
+            const handleNewMessage = () => {
+                console.log('📨 Получено новое сообщение, обновляем данные...');
+                refetchMessages();
+                refetchChats();
+                refetchUnread();
+            };
 
-        console.log('⏸️ Polling сообщений отключен - переход на WebSocket режим');
-    }, [selectedChat?.id]);
+            // Добавляем обработчик для WebSocket сообщений
+            window.addEventListener('chat-message-received', handleNewMessage);
+
+            return () => {
+                window.removeEventListener('chat-message-received', handleNewMessage);
+            };
+        } else {
+            console.log('⏸️ WebSocket не подключен для чата:', selectedChat.id);
+        }
+    }, [selectedChat?.id, wsConnected, refetchMessages, refetchChats, refetchUnread]);
 
     // WebSocket для real-time обновлений списка чатов (заменяет polling)
     useEffect(() => {
@@ -500,6 +518,29 @@ export const useAdminChat = (externalSelectedChat?: Chat | null) => {
         }
     });
 
+    // Удаление чата
+    const deleteChatMutation = useMutation({
+        mutationFn: (chatId: string) => chatApi.deleteChat(chatId),
+        onSuccess: () => {
+            refetchChats();
+            if (currentSelectedChat?.id === currentSelectedChat?.id) {
+                setSelectedChat(null);
+            }
+            toast({
+                title: 'Успешно',
+                description: 'Чат удален',
+            });
+        },
+        onError: (error) => {
+            console.error('Ошибка удаления чата:', error);
+            toast({
+                title: 'Ошибка',
+                description: 'Не удалось удалить чат',
+                variant: 'destructive'
+            });
+        }
+    });
+
     // Отправка сообщения
     const sendMessage = useCallback(async (message: string) => {
         if (!currentSelectedChat?.id || !message.trim()) return;
@@ -574,7 +615,7 @@ export const useAdminChat = (externalSelectedChat?: Chat | null) => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         // Исправляем URL для WebSocket - используем правильный порт для backend
-        const wsUrl = `${WS_BASE_URL}/api/chat/ws?userId=${user.id}&isAdmin=true`;
+        const wsUrl = `${WS_BASE_URL}?userId=${user.id}&isAdmin=true`;
 
         console.log('🔌 Подключаемся к WebSocket URL:', wsUrl);
 
@@ -630,7 +671,7 @@ export const useAdminChat = (externalSelectedChat?: Chat | null) => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         // Исправляем URL для WebSocket - используем правильный порт для backend
-        const wsUrl = `${WS_BASE_URL}/api/chat/ws?userId=${user.id}&isAdmin=true`;
+        const wsUrl = `${WS_BASE_URL}?userId=${user.id}&isAdmin=true`;
 
         console.log('🔌 Подключаемся к WebSocket URL для списка чатов:', wsUrl);
 
@@ -768,6 +809,8 @@ export const useAdminChat = (externalSelectedChat?: Chat | null) => {
         // Мутации
         isSendingMessage: sendMessageMutation.isPending,
         isUpdatingStatus: updateStatusMutation.isPending,
+        deleteChat: deleteChatMutation.mutate,
+        isDeletingChat: deleteChatMutation.isPending,
 
         // Временные логи для диагностики
         _debug: {

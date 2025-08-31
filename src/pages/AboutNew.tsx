@@ -11,7 +11,8 @@ import { useAboutContent, useAboutMedia, useAboutWebSocket } from '@/hooks/use-a
 import { useServices } from '@/hooks/use-services';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileImage, FileVideo, Play, Sparkles, Star, Palette, Gift, Users, X } from 'lucide-react';
+import { FileImage, FileVideo, Play, Sparkles, Star, Palette, Gift, Users, X, Hand } from 'lucide-react';
+import { ExpandableText } from '@/components/ui/expandable-text';
 
 // CSS для скрытия скроллбара на мобильных
 const scrollbarHideStyles = `
@@ -30,10 +31,32 @@ const AboutNew: React.FC = () => {
     const { lastUpdate } = useAboutWebSocket();
     const { services, loading: servicesLoading } = useServices();
 
+    // Fallback контент если данные не загрузились
+    const displayContent = content || {
+        title: 'Восковые Ручки',
+        subtitle: '✨ Магия творчества ✨',
+        description: 'Создай свою уникальную 3D копию руки в восковом исполнении!',
+        studio_title: 'О нашей студии',
+        studio_description: 'Студия «МК Восковые ручки» — это место, где рождается магия творчества!',
+        advantages_title: 'Наши преимущества',
+        advantages_list: ['Быстрое создание', 'Выездные мастер-классы', 'Уникальные сувениры'],
+        process_title: 'Как проходит мастер-класс',
+        process_steps: [
+            { title: 'Подготовка', description: 'Настройка оборудования' },
+            { title: 'Создание', description: 'Работа с воском' },
+            { title: 'Готово!', description: 'Уникальный сувенир' }
+        ],
+        safety_title: 'Безопасность и качество',
+        safety_description: 'Используем только безопасные материалы для детей'
+    };
+
+    // Fallback для медиа
+    const displayMedia = media || [];
+
     // Состояние для галереи
     const [galleryOpen, setGalleryOpen] = useState(false);
     const [galleryType, setGalleryType] = useState<'images' | 'videos'>('images');
-    const [galleryItems, setGalleryItems] = useState<string[]>([]);
+    const [galleryItems, setGalleryItems] = useState<Array<{ file_path: string, type: string }>>([]);
     const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0);
 
     // Автоматическое обновление при получении WebSocket уведомлений
@@ -46,7 +69,7 @@ const AboutNew: React.FC = () => {
 
     // Отладочная информация для услуг
     React.useEffect(() => {
-        if (services.length > 0) {
+        if (services && services.length > 0) {
             console.log('🔍 AboutNew: Полученные услуги:', services);
             services.forEach((service, serviceIndex) => {
                 console.log(`🔍 Услуга ${serviceIndex + 1}:`, {
@@ -55,7 +78,7 @@ const AboutNew: React.FC = () => {
                     optionsCount: service.options?.length || 0
                 });
 
-                if (service.styles) {
+                if (service.styles && Array.isArray(service.styles)) {
                     service.styles.forEach((style, styleIndex) => {
                         console.log(`  🎨 Стиль ${styleIndex + 1}:`, {
                             name: style.name,
@@ -66,7 +89,7 @@ const AboutNew: React.FC = () => {
                     });
                 }
 
-                if (service.options) {
+                if (service.options && Array.isArray(service.options)) {
                     service.options.forEach((option, optionIndex) => {
                         console.log(`  ✨ Опция ${optionIndex + 1}:`, {
                             name: option.name,
@@ -79,6 +102,21 @@ const AboutNew: React.FC = () => {
             });
         }
     }, [services]);
+
+    // Показываем загрузку пока данные не готовы
+    if (contentLoading || mediaLoading || servicesLoading) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-pink-100 to-blue-100">
+                <ParentHeader />
+                <div className="container mx-auto px-4 pt-28 pb-16 flex items-center justify-center">
+                    <div className="text-center space-y-6">
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mx-auto"></div>
+                        <p className="text-xl text-gray-600">Загружаем информацию о студии...</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const getMediaUrl = (filePath: string) => {
         console.log('🔗 getMediaUrl вызван с:', filePath);
@@ -98,42 +136,64 @@ const AboutNew: React.FC = () => {
             return result;
         }
 
-        // Если путь начинается с /uploads/ (как в backend)
-        if (filePath.startsWith('/uploads/')) {
-            // Путь уже правильный для backend
-            console.log('  → Backend uploads путь:', filePath);
-            return filePath;
-        }
-
-        // Если путь начинается с uploads/ (без слеша)
+        // Обработка путей из папки uploads (без @)
         if (filePath.startsWith('uploads/')) {
-            const result = `/${filePath}`;
+            // Заменяем uploads/ на правильный URL к backend
+            const result = filePath.replace('uploads/', '/uploads/');
             console.log('  → uploads путь преобразован:', result);
             return result;
         }
 
-        console.log('  → Неизвестный формат пути:', filePath);
-        return filePath;
+        // Если путь уже содержит полный URL
+        if (filePath.startsWith('http')) {
+            console.log('  → Полный URL:', filePath);
+            return filePath;
+        }
+
+        // По умолчанию добавляем правильный базовый URL для production
+        // В production используем основной домен с /uploads/ для backend uploads
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://waxhands.ru' : 'http://localhost:3001';
+        const result = `${baseUrl}${filePath}`;
+        console.log('  → Добавлен базовый URL:', result);
+        return result;
     };
 
-    // Функция для открытия галереи
+    // Fallback изображения для аватарок
+    const getAvatarUrl = (filePath: string | null | undefined) => {
+        if (!filePath) {
+            // Возвращаем fallback SVG изображение для аватарок
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNGM0Y0RjYiLz4KPGNpcmNsZSBjeD0iNDAiIGN5PSIzMCIgcj0iMTIiIGZpbGw9IiNEN0Q4RDAiLz4KPHBhdGggZD0iTTI0IDUwQzI0IDQ1LjU4MjYgMjguNTgyNiA0MSAzMyA0MUg0N0M1MS40MTc0IDQxIDU2IDQ1LjU4MjYgNTYgNTBWNjBIMjRWNTBaIiBmaWxsPSIjRDdEOEQwIi8+CjxwYXRoIGQ9Ik0zMiA0NEMzMiA0MS43OTAxIDMzLjc5MDEgNDAgMzYgNDBINDRDNDYuMjA5OSA0MCA0OCA0MS43OTAxIDQ4IDQ0VjQ4SDMyVjQ0WiIgZmlsbD0iI0Q3RDhEMCIvPgo8L3N2Zz4K';
+        }
+        return getMediaUrl(filePath);
+    };
+
+    // Fallback изображения для медиа
+    const getMediaFallback = (type: 'images' | 'videos') => {
+        if (type === 'images') {
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik01MCAxMDBDNzcuNjE0MiAxMDAgMTAwIDEyMi4zODU4IDEwMCAxNTBDMTAwIDE3Ny42MTQyIDc3LjYxNDIgMjAwIDUwIDIwMEMyMi4zODU4IDIwMCAwIDE3Ny42MTQyIDAgMTUwQzAgMTIyLjM4NTggMjIuMzg1OCAxMDAgNTAgMTAwWiIgZmlsbD0iI0Q3RDhEMCIvPgo8L3N2Zz4K';
+        } else {
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04MCAxMDBMMTYwIDE1MEw4MCAyMDBWMTUwWiIgZmlsbD0iI0Q3RDhEMCIvPgo8L3N2Zz4K';
+        }
+    };
+
     const handleOpenGallery = (type: 'images' | 'videos', items: string[]) => {
         // Преобразуем пути в полные URL для корректного отображения
-        const fullUrls = items.map(item => `http://localhost:3001${item}`);
+        const fullUrls = (items || []).map(filePath => ({
+            file_path: getMediaUrl(filePath),
+            type: type
+        }));
         setGalleryType(type);
         setGalleryItems(fullUrls);
         setCurrentGalleryIndex(0);
         setGalleryOpen(true);
     };
 
-    // Функция для закрытия галереи
     const handleCloseGallery = () => {
         setGalleryOpen(false);
         setGalleryItems([]);
         setCurrentGalleryIndex(0);
     };
 
-    // Функция для навигации по галерее
     const handleNextGallery = () => {
         setCurrentGalleryIndex((prev) => (prev + 1) % galleryItems.length);
     };
@@ -142,42 +202,13 @@ const AboutNew: React.FC = () => {
         setCurrentGalleryIndex((prev) => (prev - 1 + galleryItems.length) % galleryItems.length);
     };
 
-    if (contentLoading || mediaLoading || servicesLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-orange-50 to-purple-50">
-                <ParentHeader />
-                <div className="container mx-auto px-4 py-8">
-                    <div className="flex items-center justify-center h-64">
-                        <div className="text-center">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2"></div>
-                            <p>Загрузка контента...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (!content) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-orange-50 to-purple-50">
-                <ParentHeader />
-                <div className="container mx-auto px-4 py-8">
-                    <div className="text-center py-8">
-                        <p className="text-red-500">Ошибка загрузки контента</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 to-purple-50 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
             <style>{scrollbarHideStyles}</style>
 
             {/* Animated Background Stars */}
             <div className="absolute inset-0 pointer-events-none">
-                {[...Array(20)].map((_, i) => (
+                {Array.from({ length: 20 }).map((_, i) => (
                     <div
                         key={i}
                         className="absolute animate-float"
@@ -221,27 +252,20 @@ const AboutNew: React.FC = () => {
                 {/* Hero секция */}
                 <div className="text-center space-y-8 mb-16">
                     <div className="space-y-6">
-                        <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-6 py-3 shadow-card border border-orange-200">
-                            <Sparkles className="w-6 h-6 text-orange-600 animate-spin-slow" />
-                            <span className="text-lg font-semibold text-gray-800">
-                                🎨 Творческие мастер-классы для детей
-                            </span>
-                        </div>
-
                         <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold leading-tight">
                             <span className="bg-gradient-to-r from-orange-600 via-purple-600 to-blue-600 bg-clip-text text-transparent animate-pulse">
-                                {content.title}
+                                {displayContent.title}
                             </span>
-                            <span className="text-3xl md:text-4xl text-gray-600 font-normal">
+                            {/*          <span className="text-3xl md:text-4xl text-gray-600 font-normal">
                                 ✨ Магия творчества ✨
-                            </span>
+                            </span> */}
                         </h1>
 
                         <p className="text-xl md:text-2xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-                            {content.subtitle}
+                            {displayContent.subtitle}
                         </p>
                         <p className="text-lg text-gray-700 max-w-3xl mx-auto">
-                            {content.description}
+                            {displayContent.description}
                         </p>
                     </div>
                 </div>
@@ -254,12 +278,13 @@ const AboutNew: React.FC = () => {
                     <Card className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-red-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2">
                         <CardContent className="p-0">
                             <h3 className="text-2xl font-bold text-red-800 mb-6 flex items-center">
-                                <span className="text-3xl mr-3">❤️</span>
-                                {content.studio_title}
+                                <Hand className="w-8 h-8 text-red-500 mr-3" />
+                                {displayContent.studio_title}
                             </h3>
-                            <p className="text-red-700 text-lg leading-relaxed">
-                                {content.studio_description}
-                            </p>
+                            <ExpandableText
+                                text={displayContent.studio_description || ''}
+                                className="text-red-700 text-lg leading-relaxed"
+                            />
                         </CardContent>
                     </Card>
 
@@ -268,13 +293,16 @@ const AboutNew: React.FC = () => {
                         <CardContent className="p-0">
                             <h3 className="text-2xl font-bold text-purple-800 mb-6 flex items-center">
                                 <span className="text-3xl mr-3">🏆</span>
-                                {content.advantages_title}
+                                {displayContent.advantages_title}
                             </h3>
                             <ul className="space-y-4">
-                                {content.advantages_list.map((advantage, index) => (
+                                {(displayContent.advantages_list || []).map((advantage, index) => (
                                     <li key={index} className="flex items-start space-x-3">
                                         <div className="w-2 h-2 bg-purple-500 rounded-full mt-3 flex-shrink-0"></div>
-                                        <p className="text-purple-700 text-lg">{advantage}</p>
+                                        <ExpandableText
+                                            text={advantage || ''}
+                                            className="text-purple-700 text-lg"
+                                        />
                                     </li>
                                 ))}
                             </ul>
@@ -286,17 +314,20 @@ const AboutNew: React.FC = () => {
                         <CardContent className="p-0">
                             <h3 className="text-2xl font-bold text-blue-800 mb-6 flex items-center">
                                 <span className="text-3xl mr-3">⏰</span>
-                                {content.process_title}
+                                {displayContent.process_title}
                             </h3>
                             <div className="space-y-6">
-                                {content.process_steps.map((step, index) => (
+                                {(displayContent.process_steps || []).map((step, index) => (
                                     <div key={index} className="flex items-start space-x-4">
                                         <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
                                             {index + 1}
                                         </div>
                                         <div>
                                             <h4 className="font-semibold text-blue-800 mb-2 text-lg">{step.title}</h4>
-                                            <p className="text-blue-700 text-lg">{step.description}</p>
+                                            <ExpandableText
+                                                text={step.description || ''}
+                                                className="text-blue-700 text-lg"
+                                            />
                                         </div>
                                     </div>
                                 ))}
@@ -309,17 +340,18 @@ const AboutNew: React.FC = () => {
                         <CardContent className="p-0">
                             <h3 className="text-2xl font-bold text-green-800 mb-6 flex items-center">
                                 <span className="text-3xl mr-3">🛡️</span>
-                                {content.safety_title}
+                                {displayContent.safety_title}
                             </h3>
-                            <p className="text-green-700 text-lg leading-relaxed">
-                                {content.safety_description}
-                            </p>
+                            <ExpandableText
+                                text={displayContent.safety_description || ''}
+                                className="text-green-700 text-lg leading-relaxed"
+                            />
                         </CardContent>
                     </Card>
                 </div>
 
                 {/* Медиа галерея - в конце страницы */}
-                {media.length > 0 && (
+                {(displayMedia || []).length > 0 && (
                     <div className="mt-16">
                         <div className="text-center mb-12">
                             <h2 className="text-4xl font-bold text-gray-800 mb-4">
@@ -333,8 +365,8 @@ const AboutNew: React.FC = () => {
                         {/* Мобильная версия - горизонтальное прокручивание */}
                         <div className="md:hidden">
                             <div className="flex gap-4 overflow-x-auto pb-4 px-4 -mx-4 scrollbar-hide">
-                                {media
-                                    .sort((a, b) => a.order_index - b.order_index)
+                                {(displayMedia || [])
+                                    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
                                     .map((item, index) => (
                                         <Card key={item.id} className="min-w-[280px] flex-shrink-0 overflow-hidden group bg-white/90 backdrop-blur-sm rounded-2xl shadow-card border border-orange-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2">
                                             <CardContent className="p-0">
@@ -347,28 +379,24 @@ const AboutNew: React.FC = () => {
                                                                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                                                 onError={(e) => {
                                                                     const target = e.target as HTMLImageElement;
-                                                                    target.src = '/placeholder.svg';
+                                                                    target.src = getMediaFallback('images');
                                                                     target.alt = 'Изображение недоступно';
                                                                 }}
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div className="aspect-[4/3] relative bg-gray-100">
+                                                        <div className="aspect-[4/3] relative">
                                                             <video
                                                                 src={getMediaUrl(item.file_path)}
                                                                 className="w-full h-full object-cover"
-                                                                poster="/placeholder.svg"
+                                                                poster={getMediaUrl(item.file_path)}
                                                                 controls
+                                                                preload="metadata"
                                                                 onError={(e) => {
                                                                     const target = e.target as HTMLVideoElement;
-                                                                    target.poster = '/placeholder.svg';
+                                                                    target.poster = getMediaFallback('videos');
                                                                 }}
                                                             />
-                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                                <div className="bg-black/50 rounded-full p-3">
-                                                                    <Play className="w-8 h-8 text-white" />
-                                                                </div>
-                                                            </div>
                                                         </div>
                                                     )}
 
@@ -389,9 +417,10 @@ const AboutNew: React.FC = () => {
                                                         {item.title}
                                                     </h3>
                                                     {item.description && (
-                                                        <p className="text-gray-600 leading-relaxed">
-                                                            {item.description}
-                                                        </p>
+                                                        <ExpandableText
+                                                            text={item.description}
+                                                            className="text-gray-600 leading-relaxed"
+                                                        />
                                                     )}
                                                     <div className="mt-4 flex items-center justify-between">
                                                         <Badge variant="secondary" className="capitalize">
@@ -410,8 +439,8 @@ const AboutNew: React.FC = () => {
 
                         {/* Десктопная версия - вертикальная сетка */}
                         <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                            {media
-                                .sort((a, b) => a.order_index - b.order_index)
+                            {(displayMedia || [])
+                                .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
                                 .map((item, index) => (
                                     <Card key={item.id} className="group relative bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden shadow-card border border-orange-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2">
                                         <CardContent className="p-0">
@@ -424,28 +453,24 @@ const AboutNew: React.FC = () => {
                                                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                                             onError={(e) => {
                                                                 const target = e.target as HTMLImageElement;
-                                                                target.src = '/placeholder.svg';
+                                                                target.src = getMediaFallback('images');
                                                                 target.alt = 'Изображение недоступно';
                                                             }}
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <div className="aspect-[4/3] relative bg-gray-100">
+                                                    <div className="aspect-[4/3] relative">
                                                         <video
                                                             src={getMediaUrl(item.file_path)}
                                                             className="w-full h-full object-cover"
-                                                            poster="/placeholder.svg"
+                                                            poster={getMediaUrl(item.file_path)}
                                                             controls
+                                                            preload="metadata"
                                                             onError={(e) => {
                                                                 const target = e.target as HTMLVideoElement;
-                                                                target.poster = '/placeholder.svg';
+                                                                target.poster = getMediaFallback('videos');
                                                             }}
                                                         />
-                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                            <div className="bg-black/50 rounded-full p-3">
-                                                                <Play className="w-8 h-8 text-white" />
-                                                            </div>
-                                                        </div>
                                                     </div>
                                                 )}
 
@@ -466,9 +491,10 @@ const AboutNew: React.FC = () => {
                                                     {item.title}
                                                 </h3>
                                                 {item.description && (
-                                                    <p className="text-gray-600 leading-relaxed">
-                                                        {item.description}
-                                                    </p>
+                                                    <ExpandableText
+                                                        text={item.description || ''}
+                                                        className="text-gray-600 leading-relaxed"
+                                                    />
                                                 )}
                                                 <div className="mt-4 flex items-center justify-between">
                                                     <Badge variant="secondary" className="capitalize">
@@ -487,7 +513,7 @@ const AboutNew: React.FC = () => {
                 )}
 
                 {/* Секция "О нашем мастер-классе" - услуги и цены */}
-                {services.length > 0 && (
+                {services && services.length > 0 && (
                     <div className="mt-16">
                         <div className="text-center mb-12">
                             <h2 className="text-4xl font-bold text-gray-800 mb-4">
@@ -499,7 +525,7 @@ const AboutNew: React.FC = () => {
                         </div>
 
                         <div className="space-y-8">
-                            {services.map((service) => (
+                            {(services || []).map((service) => (
                                 <Card key={service.id} className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-card border border-orange-200 hover:shadow-xl transition-all duration-300">
                                     <CardContent className="p-8">
                                         <div className="text-center mb-8">
@@ -517,28 +543,28 @@ const AboutNew: React.FC = () => {
                                         </div>
 
                                         {/* Стили услуги */}
-                                        {service.styles && service.styles.length > 0 && (
+                                        {service.styles && Array.isArray(service.styles) && service.styles.length > 0 && (
                                             <div className="mb-8">
                                                 <h4 className="text-2xl font-bold text-purple-800 mb-6 text-center">
                                                     Варианты ручек
                                                 </h4>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                    {service.styles.map((style) => (
+                                                    {(service.styles || []).map((style) => (
                                                         <Card key={style.id} className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 hover:border-purple-300 transition-all duration-300 transform hover:-translate-y-1">
                                                             <CardContent className="p-6 text-center">
                                                                 {/* Аватар стиля */}
                                                                 <div className="w-20 h-20 bg-gradient-to-br from-purple-200 to-pink-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
                                                                     {style.avatar ? (
                                                                         <img
-                                                                            src={`http://localhost:3001${style.avatar}`}
+                                                                            src={getAvatarUrl(style.avatar)}
                                                                             alt={style.name}
                                                                             className="w-full h-full object-cover rounded-full"
                                                                             style={{ zIndex: 1 }}
                                                                             onError={(e) => {
                                                                                 const target = e.target as HTMLImageElement;
-                                                                                target.style.display = 'none';
-                                                                                target.nextElementSibling?.classList.remove('hidden');
+                                                                                target.src = getMediaFallback('images');
+                                                                                target.alt = 'Аватар недоступен';
                                                                             }}
                                                                         />
                                                                     ) : null}
@@ -551,14 +577,16 @@ const AboutNew: React.FC = () => {
 
                                                                 {/* Полное описание */}
                                                                 {style.fullDescription && (
-                                                                    <p className="text-gray-600 mb-4 text-sm leading-relaxed">
-                                                                        {style.fullDescription}
-                                                                    </p>
+                                                                    <ExpandableText
+                                                                        text={style.fullDescription}
+                                                                        maxLines={5}
+                                                                        className="text-gray-600 mb-4 text-sm leading-relaxed"
+                                                                    />
                                                                 )}
 
                                                                 {/* Иконки медиа */}
                                                                 <div className="flex items-center justify-center gap-3 mb-4">
-                                                                    {style.images && style.images.length > 0 && (
+                                                                    {style.images && Array.isArray(style.images) && style.images.length > 0 && (
                                                                         <button
                                                                             onClick={() => handleOpenGallery('images', style.images || [])}
                                                                             className="w-8 h-8 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform duration-200 cursor-pointer"
@@ -567,7 +595,7 @@ const AboutNew: React.FC = () => {
                                                                             <FileImage className="w-5 h-5 text-white" />
                                                                         </button>
                                                                     )}
-                                                                    {style.videos && style.videos.length > 0 && (
+                                                                    {style.videos && Array.isArray(style.videos) && style.videos.length > 0 && (
                                                                         <button
                                                                             onClick={() => handleOpenGallery('videos', style.videos || [])}
                                                                             className="w-8 h-8 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform duration-200 cursor-pointer"
@@ -591,28 +619,28 @@ const AboutNew: React.FC = () => {
                                         )}
 
                                         {/* Опции услуги */}
-                                        {service.options && service.options.length > 0 && (
+                                        {service.options && Array.isArray(service.options) && service.options.length > 0 && (
                                             <div>
                                                 <h4 className="text-2xl font-bold text-blue-800 mb-6 text-center">
                                                     Дополнительные услуги
                                                 </h4>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                    {service.options.map((option) => (
+                                                    {(service.options || []).map((option) => (
                                                         <Card key={option.id} className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 hover:border-blue-300 transition-all duration-300 transform hover:-translate-y-1">
                                                             <CardContent className="p-6 text-center">
                                                                 {/* Аватар опции */}
                                                                 <div className="w-20 h-20 bg-gradient-to-br from-blue-200 to-cyan-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
                                                                     {option.avatar ? (
                                                                         <img
-                                                                            src={`http://localhost:3001${option.avatar}`}
+                                                                            src={getAvatarUrl(option.avatar)}
                                                                             alt={option.name}
                                                                             className="w-full h-full object-cover rounded-full"
                                                                             style={{ zIndex: 1 }}
                                                                             onError={(e) => {
                                                                                 const target = e.target as HTMLImageElement;
-                                                                                target.style.display = 'none';
-                                                                                target.nextElementSibling?.classList.remove('hidden');
+                                                                                target.src = getMediaFallback('images');
+                                                                                target.alt = 'Аватар недоступен';
                                                                             }}
                                                                         />
                                                                     ) : null}
@@ -625,14 +653,16 @@ const AboutNew: React.FC = () => {
 
                                                                 {/* Полное описание */}
                                                                 {option.fullDescription && (
-                                                                    <p className="text-gray-600 mb-4 text-sm leading-relaxed">
-                                                                        {option.fullDescription}
-                                                                    </p>
+                                                                    <ExpandableText
+                                                                        text={option.fullDescription}
+                                                                        maxLines={5}
+                                                                        className="text-gray-600 mb-4 text-sm leading-relaxed"
+                                                                    />
                                                                 )}
 
                                                                 {/* Иконки медиа */}
                                                                 <div className="flex items-center justify-center gap-3 mb-4">
-                                                                    {option.images && option.images.length > 0 && (
+                                                                    {option.images && Array.isArray(option.images) && option.images.length > 0 && (
                                                                         <button
                                                                             onClick={() => handleOpenGallery('images', option.images || [])}
                                                                             className="w-8 h-8 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform duration-200 cursor-pointer"
@@ -641,7 +671,7 @@ const AboutNew: React.FC = () => {
                                                                             <FileImage className="w-5 h-5 text-white" />
                                                                         </button>
                                                                     )}
-                                                                    {option.videos && option.videos.length > 0 && (
+                                                                    {option.videos && Array.isArray(option.videos) && option.videos.length > 0 && (
                                                                         <button
                                                                             onClick={() => handleOpenGallery('videos', option.videos || [])}
                                                                             className="w-8 h-8 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform duration-200 cursor-pointer"
@@ -705,16 +735,25 @@ const AboutNew: React.FC = () => {
                         <div className="w-full h-full flex items-center justify-center">
                             {galleryType === 'images' ? (
                                 <img
-                                    src={galleryItems[currentGalleryIndex]}
+                                    src={galleryItems[currentGalleryIndex]?.file_path || getMediaFallback('images')}
                                     alt={`Изображение ${currentGalleryIndex + 1}`}
                                     className="max-w-full max-h-full object-contain rounded-lg"
+                                    onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.src = getMediaFallback('images');
+                                        target.alt = 'Изображение недоступно';
+                                    }}
                                 />
                             ) : (
                                 <video
-                                    src={galleryItems[currentGalleryIndex]}
+                                    src={galleryItems[currentGalleryIndex]?.file_path || getMediaFallback('videos')}
                                     controls
                                     className="max-w-full max-h-full rounded-lg"
-                                    poster="/placeholder.svg"
+                                    poster={getMediaFallback('videos')}
+                                    onError={(e) => {
+                                        const target = e.target as HTMLVideoElement;
+                                        target.poster = getMediaFallback('videos');
+                                    }}
                                 />
                             )}
                         </div>
@@ -722,7 +761,7 @@ const AboutNew: React.FC = () => {
                         {/* Индикатор текущего элемента */}
                         {galleryItems.length > 1 && (
                             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                                {galleryItems.map((_, index) => (
+                                {(galleryItems || []).map((_, index) => (
                                     <button
                                         key={index}
                                         onClick={() => setCurrentGalleryIndex(index)}

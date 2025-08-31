@@ -1,0 +1,8 @@
+{
+    "notification_type": "p2p-incoming",
+    "amount": "2.00",
+    "label": "INV-87af4bc1-d87e-4508-b874-64b3303592c7-1756277500",
+    "sha1_hash": "test",
+    "operation_id": "test-123",
+    "test_notification": "true"
+}

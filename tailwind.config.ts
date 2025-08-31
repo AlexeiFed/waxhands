@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 
 export default {
-	darkMode: ["class"],
 	content: [
 		"./pages/**/*.{ts,tsx}",
 		"./components/**/*.{ts,tsx}",
@@ -9,6 +8,7 @@ export default {
 		"./src/**/*.{ts,tsx}",
 	],
 	prefix: "",
+	plugins: [],
 	theme: {
 		container: {
 			center: true,
@@ -67,7 +67,8 @@ export default {
 			backgroundImage: {
 				'gradient-primary': 'var(--gradient-primary)',
 				'gradient-rainbow': 'var(--gradient-rainbow)',
-				'gradient-hero': 'var(--gradient-hero)'
+				'gradient-hero': 'var(--gradient-hero)',
+				'gradient-wax-hands': 'var(--gradient-wax-hands)'
 			},
 			boxShadow: {
 				'playful': 'var(--shadow-playful)',

@@ -261,9 +261,10 @@ export const useWorkshopRequests = () => {
                     setError(null);
                     return response.data as ApiResponse<boolean>;
                 } else {
+                    // Если API вернул объект без success, считаем что удаление прошло успешно
                     const wrappedResponse: ApiResponse<boolean> = {
                         success: true,
-                        data: Boolean(response.data),
+                        data: true,
                         message: 'Заявка удалена успешно'
                     };
                     setError(null);
@@ -271,8 +272,14 @@ export const useWorkshopRequests = () => {
                 }
             }
 
+            // Если ответ пустой или undefined, считаем что удаление прошло успешно
+            const wrappedResponse: ApiResponse<boolean> = {
+                success: true,
+                data: true,
+                message: 'Заявка удалена успешно'
+            };
             setError(null);
-            return null;
+            return wrappedResponse;
         } catch (err: unknown) {
             const error = err as { response?: { data?: { error?: string } }; message?: string };
             const errorMessage = error.response?.data?.error || 'Не удалось удалить заявку';

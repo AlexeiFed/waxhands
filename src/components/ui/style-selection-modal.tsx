@@ -267,11 +267,14 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
         if (!url || typeof url !== 'string') return false;
 
         try {
-            // Если URL относительный (начинается с /), преобразуем в абсолютный URL бэкенда
+            // Если URL относительный (начинается с /), преобразуем в абсолютный URL
             let absoluteUrl = url;
             if (url.startsWith('/')) {
-                // Используем URL бэкенда для относительных URL
-                absoluteUrl = `http://localhost:3001${url}`;
+                // Используем правильный URL в зависимости от окружения
+                const baseUrl = import.meta.env.VITE_API_URL || 'https://waxhands.ru';
+                // Убираем /api из базового URL для правильного формирования пути к файлам
+                const cleanBaseUrl = baseUrl.replace('/api', '');
+                absoluteUrl = `${cleanBaseUrl}${url}`;
                 console.log(`Преобразуем относительный URL ${url} в абсолютный: ${absoluteUrl}`);
             }
 
@@ -309,7 +312,9 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             console.log(`Файл ${url} существует: ${exists}`);
             if (exists) {
                 // Возвращаем абсолютный URL для существующих файлов
-                const absoluteUrl = url.startsWith('/') ? `http://localhost:3001${url}` : url;
+                const baseUrl = import.meta.env.VITE_API_URL || 'https://waxhands.ru';
+                const cleanBaseUrl = baseUrl.replace('/api', '');
+                const absoluteUrl = url.startsWith('/') ? `${cleanBaseUrl}${url}` : url;
                 existingFiles.push(absoluteUrl);
             }
         }
@@ -462,11 +467,11 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             const registrationData = {
                 workshopId: workshop.id,
                 userId: participantId,
-                style: selectedStyles.map(styleId => {
+                style: (selectedStyles || []).map(styleId => {
                     const style = availableStyles.find(s => s.id === styleId);
                     return style?.name || 'Неизвестный стиль';
                 }).join(', '),
-                options: selectedOptions.map(optionId => {
+                options: (selectedOptions || []).map(optionId => {
                     const option = workshopOptions.find(o => o.id === optionId);
                     return option?.name || 'Неизвестная опция';
                 }),
@@ -525,7 +530,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 participant_name: participantName || 'Не указано',
                 participant_id: participantId,
                 amount: totalPrice,
-                selected_styles: selectedStyles.map(styleId => {
+                selected_styles: (selectedStyles || []).map(styleId => {
                     const style = availableStyles.find(s => s.id === styleId);
                     return {
                         id: styleId,
@@ -533,7 +538,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                         price: style?.price || 0
                     };
                 }),
-                selected_options: selectedOptions.map(optionId => {
+                selected_options: (selectedOptions || []).map(optionId => {
                     const option = workshopOptions.find(o => o.id === optionId);
                     return {
                         id: optionId,

@@ -1,0 +1,14 @@
+{
+    "notification_type": "p2p-incoming",
+    "amount": "2.00",
+    "currency": "643",
+    "datetime": "2025-08-27T09:55:00Z",
+    "sender": "4100119290360987",
+    "codepro": "false",
+    "label": "INV-87af4bc1-d87e-4508-b874-64b3303592c7-1756277500",
+    "sha1_hash": "test-hash-for-testing",
+    "operation_id": "test-operation-123",
+    "test_notification": "true",
+    "withdraw_amount": "2.00",
+    "unaccepted": "false"
+}

@@ -27,7 +27,7 @@ const migrateInvoiceData = async () => {
 
             // Проверяем и обновляем стили
             if (Array.isArray(invoice.selected_styles)) {
-                updatedStyles = invoice.selected_styles.map((style: any) => {
+                updatedStyles = invoice.selected_styles.map((style: string | { id: string; name: string; price: number }) => {
                     if (typeof style === 'string') {
                         // Если это строка (ID), преобразуем в объект
                         needsUpdate = true;
@@ -43,7 +43,7 @@ const migrateInvoiceData = async () => {
 
             // Проверяем и обновляем опции
             if (Array.isArray(invoice.selected_options)) {
-                updatedOptions = invoice.selected_options.map((option: any) => {
+                updatedOptions = invoice.selected_options.map((option: string | { id: string; name: string; price: number }) => {
                     if (typeof option === 'string') {
                         // Если это строка (ID), преобразуем в объект
                         needsUpdate = true;

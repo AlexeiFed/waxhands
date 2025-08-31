@@ -23,49 +23,28 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
     const [onboardingStep, setOnboardingStep] = useState(0);
     const navigate = useNavigate();
 
-    // Постеры онбординга — все изображения из src/assets/onboarding
+    // Постеры онбординга — статические изображения из папки onboarding
     const posterImages = useMemo(() => {
-        const mods = import.meta.glob("@/assets/onboarding/*.{png,jpg,jpeg,webp}", { eager: true }) as Record<string, { default: string }>;
-        console.log('🔍 Загруженные изображения онбординга:', mods);
+        const imageMap = new Map();
 
-        const list = Object.entries(mods).map(([path, mod]) => ({
-            src: (mod as { default: string }).default,
-            order: (() => {
-                const match = path.match(/(\d+)/i);
-                return match ? parseInt(match[1], 10) : 999;
-            })(),
-        }));
+        // Добавляем изображения по номерам слайдов (только 2.png)
+        imageMap.set(2, '/onboarding/2.png');
 
-        const sortedList = list.sort((a, b) => a.order - b.order);
-        console.log('📋 Отсортированные изображения онбординга:', sortedList);
-
-        // Создаем Map для быстрого поиска по номеру
-        const imageMap = new Map(sortedList.map(img => [img.order, img.src]));
-        console.log('🗺️ Карта изображений по номерам:', imageMap);
-
+        console.log('🗺️ Карта изображений онбординга:', imageMap);
         return imageMap;
     }, []);
 
-    // Видеогалерея компании — все .mp4 из src/assets/onboarding
+    // Видеогалерея компании — все .mp4 из папки onboarding
     const videoModules = useMemo(() => {
-        const mods = import.meta.glob("@/assets/onboarding/*.mp4", { eager: true }) as Record<string, { default: string }>;
-        console.log('🎥 Загруженные видео онбординга:', mods);
+        const videoMap = new Map();
 
-        const list = Object.entries(mods).map(([path, mod]) => ({
-            src: (mod as { default: string }).default,
-            order: (() => {
-                const match = path.match(/(\d+)/i);
-                return match ? parseInt(match[1], 10) : 999;
-            })(),
-        }));
+        // Добавляем видео по номерам слайдов
+        videoMap.set(1, '/onboarding/1.mp4');
+        videoMap.set(3, '/onboarding/3.mp4');
+        videoMap.set(4, '/onboarding/4.mp4');
+        videoMap.set(5, '/onboarding/5.mp4');
 
-        const sortedList = list.sort((a, b) => a.order - b.order);
-        console.log('📋 Отсортированные видео онбординга:', sortedList);
-
-        // Создаем Map для быстрого поиска по номеру
-        const videoMap = new Map(sortedList.map(video => [video.order, video.src]));
-        console.log('🗺️ Карта видео по номерам:', videoMap);
-
+        console.log('🎥 Карта видео онбординга:', videoMap);
         return videoMap;
     }, []);
 
@@ -98,7 +77,7 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
             title: 'Украшаем, персонализируем и создаем! ✨🎉',
             text: 'Выбираем стиль: световые ручки, блестки, лакировка, надписи. Каждая ручка уникальна! Быстрое создание за 5 минут, яркие эмоции и уникальный сувенир на память. Дети в восторге!',
             icon: <Palette className="w-12 h-12 text-pink-500" />,
-            slideNumber: 6
+            slideNumber: 5
         }
     ];
 

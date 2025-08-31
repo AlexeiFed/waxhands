@@ -21,9 +21,10 @@ import { Calendar, MapPin, GraduationCap, FileText, AlertCircle } from 'lucide-r
 interface WorkshopRequestModalProps {
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    onRequestCreated?: () => void; // Callback для обновления списка заявок
 }
 
-export default function WorkshopRequestModal({ isOpen, onOpenChange }: WorkshopRequestModalProps) {
+export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCreated }: WorkshopRequestModalProps) {
     const { user } = useAuth();
     const { schools } = useSchools();
     const { createRequest, loading } = useWorkshopRequests();
@@ -120,7 +121,10 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange }: WorkshopR
 
                 // Закрываем модальное окно
                 onOpenChange(false);
-            } else if (result && result.id) {
+
+                // Вызываем callback для обновления списка заявок
+                onRequestCreated?.();
+            } else if (result && result.data && result.data.id) {
                 // Fallback: если API вернул объект с ID, считаем что заявка создана успешно
                 console.log('✅ WorkshopRequestModal.handleSubmit: Fallback - заявка создана (есть ID):', result);
                 toast({
@@ -140,6 +144,9 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange }: WorkshopR
 
                 // Закрываем модальное окно
                 onOpenChange(false);
+
+                // Вызываем callback для обновления списка заявок
+                onRequestCreated?.();
             } else {
                 console.warn('⚠️ WorkshopRequestModal.handleSubmit: Неожиданный формат ответа:', result);
                 toast({

@@ -1,0 +1,8 @@
+{
+  "filename": "test.mp4",
+  "original_name": "test.mp4",
+  "type": "video",
+  "title": "Test Video",
+  "description": "Test Description",
+  "file_path": "/test/path.mp4"
+}

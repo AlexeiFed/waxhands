@@ -82,3 +82,16 @@ if (wsState.isConnecting) {
 - `src/types/index.ts`
 - `src/pages/parent/Dashboard.tsx`
 - `src/components/admin/WorkshopRequestsTab.tsx`
+
+### 1. Исправлен WebSocket URL
+- **Локальный .env**: `VITE_WS_URL=wss://waxhands.ru/ws` → `VITE_WS_URL=wss://waxhands.ru:3002/ws`
+- **Серверный .env**: уже содержал правильный URL
+- **Nginx конфигурация**: правильно проксирует `/ws` на порт 3002
+- **Хук use-websocket.ts**: исправлен хардкод `waxhands.ru` → `waxhands.ru:3002`
+
+### 2. Исправлен WebSocket сервер
+- **websocket-server-simple.js**: полностью переписан для правильной обработки подключений
+- **Управление клиентами**: добавлено сохранение клиентов в Map с уникальными ID
+- **Обработка сообщений**: исправлена логика subscribe/unsubscribe/ping
+- **Keep-alive**: добавлен ping/pong механизм для стабильности соединений
+- **Обработка ошибок**: улучшена обработка ошибок и закрытия соединений

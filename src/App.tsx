@@ -18,11 +18,13 @@ import ParentProfile from "./pages/parent/Profile";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminServicePage from "./pages/admin/ServicePage.tsx";
 import About from "./pages/AboutNew"; // Страница "О нас" с загрузкой из БД
+import PaymentSuccess from "./pages/PaymentSuccess"; // Страница успешной оплаты
 import NotFound from "./pages/NotFound";
 import { AboutContentProvider } from "./contexts/AboutContentContext";
 
 // Components
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,10 +114,19 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/payment-success"
+                  element={
+                    <ProtectedRoute allowedRoles={["parent"]}>
+                      <PaymentSuccess />
+                    </ProtectedRoute>
+                  }
+                />
 
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
+            <PWAInstallPrompt />
             <Toaster />
           </AboutContentProvider>
         </TooltipProvider>

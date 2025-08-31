@@ -11,7 +11,11 @@ import invoicesRoutes from './invoices.js';
 import chatRoutes from './chat.js';
 import workshopRequestsRoutes from './workshopRequests.js';
 import aboutRoutes from './about.js';
-import paymentWebhookRoutes from './payment-webhook';
+import paymentWebhookRoutes from './payment-webhook.js';
+import paymentWebhookDiagnosticRoutes from './payment-webhook-diagnostic.js';
+import paymentsRoutes from './payments.js';
+import paymentCheckRoutes from './payment-check.js';
+import paymentPollerRoutes from './payment-poller.js';
 
 const router = Router();
 
@@ -29,6 +33,10 @@ router.use('/chat', chatRoutes);
 router.use('/workshop-requests', workshopRequestsRoutes);
 router.use('/about', aboutRoutes);
 router.use('/payment-webhook', paymentWebhookRoutes);
+router.use('/payment-webhook-diagnostic', paymentWebhookDiagnosticRoutes);
+router.use('/payments', paymentsRoutes);
+router.use('/payment-check', paymentCheckRoutes);
+router.use('/payment-poller', paymentPollerRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
@@ -54,7 +62,10 @@ router.get('/', (req, res) => {
             orders: '/orders',
             invoices: '/invoices',
             chat: '/chat',
-            'workshop-requests': '/workshop-requests'
+            'workshop-requests': '/workshop-requests',
+            payments: '/payments',
+            'payment-check': '/payment-check',
+            'payment-poller': '/payment-poller'
         }
     });
 });

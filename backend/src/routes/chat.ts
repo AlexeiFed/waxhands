@@ -6,9 +6,9 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { ChatController } from '../controllers/chat';
-import { authenticateToken } from '../middleware/auth';
-import { UserRole } from '../types';
+import { ChatController } from '../controllers/chat.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { UserRole } from '../types/index.js';
 
 // Расширенный интерфейс для Request с пользователем
 interface AuthenticatedRequest extends Request {

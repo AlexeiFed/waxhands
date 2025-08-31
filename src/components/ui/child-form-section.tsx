@@ -55,9 +55,9 @@ export const ChildFormSection: React.FC<ChildFormSectionProps> = ({
 
     const handleSchoolChange = (schoolId: string) => {
         onSchoolChange(schoolId);
-        // Обновляем школу для всех детей
-        const newChildren = children.map(child => ({ ...child, schoolId, class: "" }));
-        onChildrenChange(newChildren);
+        // НЕ обновляем школу для всех детей - каждый ребенок может быть в своей школе
+        // const newChildren = children.map(child => ({ ...child, schoolId, class: "" }));
+        // onChildrenChange(newChildren);
     };
 
     return (

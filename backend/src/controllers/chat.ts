@@ -6,7 +6,7 @@
  */
 
 import { Request, Response } from 'express';
-import { db } from '../database/connection';
+import { db } from '../database/connection.js';
 import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../websocket-server.js';
 
@@ -29,8 +29,8 @@ import {
     MarkAsReadRequest,
     ChatListResponse,
     ChatMessagesResponse
-} from '../types/chat';
-import { UserRole } from '../types';
+} from '../types/chat.js';
+import { UserRole } from '../types/index.js';
 
 export class ChatController {
     // Создать новый чат
@@ -211,8 +211,18 @@ export class ChatController {
                 LEFT JOIN chat_notifications cn ON c.id = cn.chat_id
                 LEFT JOIN chat_messages cm ON c.id = cm.chat_id AND cm.created_at = c.last_message_at
                 ${whereClause}
-                ORDER BY c.last_message_at DESC
+                ORDER BY c.last_message_at DESC NULLS LAST
             `, params);
+
+            // Если чатов нет, возвращаем пустой список
+            if (chats.length === 0) {
+                const response: ChatListResponse = {
+                    chats: [],
+                    total: 0,
+                    unreadTotal: 0
+                };
+                return res.json(response);
+            }
 
             // Преобразуем данные в правильный формат для frontend
             const formattedChats = chats.map((chat: Record<string, unknown>) => ({
@@ -313,7 +323,7 @@ export class ChatController {
             const hasMore = total > 0; // Always true if total > 0
 
             const response: ChatMessagesResponse = {
-                messages: formattedMessages.reverse(), // Возвращаем в хронологическом порядке
+                messages: formattedMessages, // Возвращаем в хронологическом порядке (старые сверху, новые снизу)
                 total,
                 hasMore
             };
@@ -540,9 +550,9 @@ export class ChatController {
             // Обновляем статус прочтения сообщения
             await db.query(`
                 UPDATE chat_messages 
-                SET is_read = true, read_at = CURRENT_TIMESTAMP, read_by = array_append(COALESCE(read_by, ARRAY[]::text[]), $1)
-                WHERE id = $2 AND chat_id = $3
-            `, [readerId, messageId, chatId]);
+                SET is_read = true
+                WHERE id = $1 AND chat_id = $2
+            `, [messageId, chatId]);
 
             // Отправляем WebSocket уведомление о прочтении сообщения
             if (wsManager) {

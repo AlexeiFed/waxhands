@@ -19,6 +19,7 @@ import { useServices } from '@/hooks/use-services';
 import { useToast } from '@/hooks/use-toast';
 import { useIsSmallScreen } from '@/hooks/use-mobile';
 import { api } from '@/lib/api';
+import { getFileUrl } from '@/lib/config';
 import { Service, ServiceStyle, ServiceOption } from '@/types/services';
 import { WorkshopRegistration, Invoice } from '@/types';
 import YandexPaymentButton from '@/components/ui/yandex-payment-button';
@@ -274,13 +275,8 @@ export default function MultiChildWorkshopModal({
         if (!url || typeof url !== 'string') return false;
 
         try {
-            // Если URL относительный (начинается с /), преобразуем в абсолютный URL бэкенда
-            let absoluteUrl = url;
-            if (url.startsWith('/')) {
-                // Используем URL бэкенда для относительных URL
-                absoluteUrl = `http://localhost:3001${url}`;
-                console.log(`Преобразуем относительный URL ${url} в абсолютный: ${absoluteUrl}`);
-            }
+            // Используем getFileUrl для правильного формирования URL
+            let absoluteUrl = getFileUrl(url);
 
             // Проверяем что URL валидный
             const urlObj = new URL(absoluteUrl);
@@ -316,7 +312,7 @@ export default function MultiChildWorkshopModal({
             console.log(`Файл ${url} существует: ${exists}`);
             if (exists) {
                 // Возвращаем абсолютный URL для существующих файлов
-                const absoluteUrl = url.startsWith('/') ? `http://localhost:3001${url}` : url;
+                const absoluteUrl = getFileUrl(url);
                 existingFiles.push(absoluteUrl);
             }
         }
@@ -609,12 +605,12 @@ export default function MultiChildWorkshopModal({
             }
 
             // Проверяем совместимость стилей и опций
-            const selectedStyleNames = reg.selectedStyles.map(id => {
+            const selectedStyleNames = (reg.selectedStyles || []).map(id => {
                 const style = currentService.styles.find(s => s.id === id);
                 return style?.name;
             }).filter(Boolean);
 
-            const selectedOptionNames = reg.selectedOptions.map(id => {
+            const selectedOptionNames = (reg.selectedOptions || []).map(id => {
                 const option = currentService.options.find(o => o.id === id);
                 return option?.name;
             }).filter(Boolean);
@@ -643,12 +639,12 @@ export default function MultiChildWorkshopModal({
             }
 
             // Проверяем соответствие стоимости
-            const calculatedStylesCost = reg.selectedStyles.reduce((sum, id) => {
+            const calculatedStylesCost = (reg.selectedStyles || []).reduce((sum, id) => {
                 const style = currentService.styles.find(s => s.id === id);
                 return sum + (style?.price || 0);
             }, 0);
 
-            const calculatedOptionsCost = reg.selectedOptions.reduce((sum, id) => {
+            const calculatedOptionsCost = (reg.selectedOptions || []).reduce((sum, id) => {
                 const option = currentService.options.find(o => o.id === id);
                 return sum + (option?.price || 0);
             }, 0);
@@ -1086,15 +1082,15 @@ export default function MultiChildWorkshopModal({
                                         }
 
                                         // Преобразуем ID в названия стилей и опций
-                                        const selectedStyles = selectedStyleIds.map(styleId => {
-                                            const style = currentService?.styles.find(s => s.id === styleId);
+                                        const selectedStyles = (selectedStyleIds || []).map(styleId => {
+                                            const style = currentService?.styles?.find(s => s.id === styleId);
                                             return style?.name || styleId; // Возвращаем название или ID если не найдено
-                                        });
+                                        }).filter(Boolean);
 
-                                        const selectedOptions = selectedOptionIds.map(optionId => {
-                                            const option = currentService?.options.find(o => o.id === optionId);
+                                        const selectedOptions = (selectedOptionIds || []).map(optionId => {
+                                            const option = currentService?.options?.find(o => o.id === optionId);
                                             return option?.name || optionId; // Возвращаем название или ID если не найдено
-                                        });
+                                        }).filter(Boolean);
 
                                         // Если данные не найдены в API, пробуем получить из workshop.childrenWithStatus
                                         if (selectedStyleIds.length === 0 && selectedOptionIds.length === 0 && totalAmount === 0) {
@@ -1136,11 +1132,11 @@ export default function MultiChildWorkshopModal({
                                                 </div>
 
                                                 {/* Выбранные стили */}
-                                                {selectedStyles.length > 0 && (
+                                                {(selectedStyles || []).length > 0 && (
                                                     <div className="mb-3">
                                                         <div className="text-sm font-medium text-gray-700 mb-2">Выбранные стили:</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {selectedStyles.map((style, styleIndex) => (
+                                                            {(selectedStyles || []).map((style, styleIndex) => (
                                                                 <Badge key={styleIndex} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
                                                                     🎨 {style}
                                                                 </Badge>
@@ -1150,11 +1146,11 @@ export default function MultiChildWorkshopModal({
                                                 )}
 
                                                 {/* Выбранные опции */}
-                                                {selectedOptions.length > 0 && (
+                                                {(selectedOptions || []).length > 0 && (
                                                     <div className="mb-3">
                                                         <div className="text-sm font-medium text-gray-700 mb-2">Дополнительные опции:</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {selectedOptions.map((option, optionIndex) => (
+                                                            {(selectedOptions || []).map((option, optionIndex) => (
                                                                 <Badge key={optionIndex} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                                                                     🎁 {option}
                                                                 </Badge>
@@ -1263,7 +1259,7 @@ export default function MultiChildWorkshopModal({
                                             const isAgeRestricted = !isStyleAgeRestricted(style.name, getCurrentChild()?.childAge || 0);
 
                                             // Отладочная информация для аватаров
-                                            const avatarUrl = style.avatar?.startsWith('/') ? `http://localhost:3001${style.avatar}` : style.avatar;
+                                            const avatarUrl = getFileUrl(style.avatar || '');
                                             console.log(`Стиль "${style.name}":`, {
                                                 id: style.id,
                                                 avatar: style.avatar,
@@ -1300,7 +1296,7 @@ export default function MultiChildWorkshopModal({
                                                                 <div className={`flex-shrink-0 ${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} rounded-xl overflow-hidden shadow-md`}>
                                                                     {style.avatar ? (
                                                                         <img
-                                                                            src={style.avatar.startsWith('/') ? `http://localhost:3001${style.avatar}` : style.avatar}
+                                                                            src={getFileUrl(style.avatar || '')}
                                                                             alt={style.name}
                                                                             className="w-full h-full object-cover"
                                                                             onError={(e) => {
@@ -1362,9 +1358,7 @@ export default function MultiChildWorkshopModal({
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         // Преобразуем относительные URL в абсолютные для видео
-                                                                        const videoUrls = style.videos?.map(url =>
-                                                                            url.startsWith('/') ? `http://localhost:3001${url}` : url
-                                                                        ) || [];
+                                                                        const videoUrls = style.videos?.map(url => getFileUrl(url)) || [];
                                                                         setCurrentMedia({ type: 'video', urls: videoUrls, currentIndex: 0, title: style.name });
                                                                         setIsVideoPlayerOpen(true);
                                                                     }}
@@ -1410,7 +1404,7 @@ export default function MultiChildWorkshopModal({
                                             const isExclusive = EXCLUSIVE_OPTION_GROUPS.some(group => group.includes(option.name));
 
                                             // Отладочная информация для аватаров
-                                            const avatarUrl = option.avatar?.startsWith('/') ? `http://localhost:3001${option.avatar}` : option.avatar;
+                                            const avatarUrl = getFileUrl(option.avatar || '');
                                             console.log(`Опция "${option.name}":`, {
                                                 id: option.id,
                                                 avatar: option.avatar,
@@ -1437,7 +1431,7 @@ export default function MultiChildWorkshopModal({
                                                                 <div className={`flex-shrink-0 ${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} rounded-xl overflow-hidden shadow-md`}>
                                                                     {option.avatar ? (
                                                                         <img
-                                                                            src={option.avatar.startsWith('/') ? `http://localhost:3001${option.avatar}` : option.avatar}
+                                                                            src={getFileUrl(option.avatar || '')}
                                                                             alt={option.name}
                                                                             className="w-full h-full object-cover"
                                                                             onError={(e) => {
@@ -1498,9 +1492,7 @@ export default function MultiChildWorkshopModal({
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         // Преобразуем относительные URL в абсолютные для видео
-                                                                        const videoUrls = option.videos?.map(url =>
-                                                                            url.startsWith('/') ? `http://localhost:3001${url}` : url
-                                                                        ) || [];
+                                                                        const videoUrls = option.videos?.map(url => getFileUrl(url)) || [];
                                                                         setCurrentMedia({ type: 'video', urls: videoUrls, currentIndex: 0, title: option.name });
                                                                         setIsVideoPlayerOpen(true);
                                                                     }}
@@ -1554,13 +1546,13 @@ export default function MultiChildWorkshopModal({
                                             </div>
                                             <div className={`space-y-1 ${isSmallScreen ? 'text-xs' : 'text-sm'} text-gray-600`}>
                                                 <div>
-                                                    <span className="font-medium">Стили:</span> {reg.selectedStyles.length > 0 ? reg.selectedStyles.map(styleId => {
+                                                    <span className="font-medium">Стили:</span> {(reg.selectedStyles || []).length > 0 ? (reg.selectedStyles || []).map(styleId => {
                                                         const style = currentService?.styles.find(s => s.id === styleId);
                                                         return style?.name;
                                                     }).join(', ') : 'Не выбрано'}
                                                 </div>
                                                 <div>
-                                                    <span className="font-medium">Опции:</span> {reg.selectedOptions.length > 0 ? reg.selectedOptions.map(optionId => {
+                                                    <span className="font-medium">Опции:</span> {(reg.selectedOptions || []).length > 0 ? (reg.selectedOptions || []).map(optionId => {
                                                         const option = currentService?.options.find(o => o.id === optionId);
                                                         return option?.name;
                                                     }).join(', ') : 'Не выбрано'}
@@ -1605,7 +1597,7 @@ export default function MultiChildWorkshopModal({
                                 {currentStep < children.length && (
                                     <Button
                                         onClick={handleNextStep}
-                                        disabled={!getCurrentChild()?.selectedStyles.length}
+                                        disabled={!getCurrentChild()?.selectedStyles?.length}
                                         className={`${isSmallScreen ? 'flex-1 text-sm h-10' : 'flex-1 sm:flex-none'} bg-orange-600 hover:bg-orange-700`}
                                     >
                                         {currentStep === children.length - 1 ? (isSmallScreen ? 'Завершить' : 'Завершить запись') : (isSmallScreen ? 'Далее' : 'Следующий ребенок')}

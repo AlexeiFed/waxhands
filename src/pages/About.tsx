@@ -5,10 +5,11 @@
  * @created: 2024-12-19
  */
 
-import { Sparkles, Star, Palette, Gift, Users, Clock, MapPin, Heart, Award, Shield, MessageCircle, Play } from "lucide-react";
+import { Sparkles, Star, Palette, Gift, Users, Clock, MapPin, Hand, Award, Shield, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ParentHeader } from "@/components/ui/parent-header";
+import { ExpandableText } from "@/components/ui/expandable-text";
 import { useNavigate } from "react-router-dom";
 import { useAboutContentContext } from "@/contexts/AboutContentContext";
 
@@ -16,8 +17,19 @@ const About = () => {
     const navigate = useNavigate();
     const { content, isLoading } = useAboutContentContext();
 
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-orange-500 mx-auto mb-4"></div>
+                    <p className="text-xl text-gray-700">Загружаем информацию о студии...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen bg-gradient-hero">
+        <div className="min-h-screen bg-gradient-wax-hands">
             {/* Animated Background Stars */}
             <div className="absolute inset-0 pointer-events-none">
                 {[...Array(20)].map((_, i) => (
@@ -74,21 +86,37 @@ const About = () => {
 
                         <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold leading-tight">
                             <span className="bg-gradient-to-r from-orange-600 via-purple-600 to-blue-600 bg-clip-text text-transparent animate-pulse">
-                                Восковые
-                            </span>
-                            <br />
-                            <span className="text-gray-800">Ручки</span>
-                            <br />
-                            <span className="text-3xl md:text-4xl text-gray-600 font-normal">
-                                ✨ Магия творчества ✨
+                                {content?.title || 'Восковые Ручки'}
                             </span>
                         </h1>
 
-                        <p className="text-xl md:text-2xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-                            Создай свою уникальную 3D копию руки в восковом исполнении!
-                            Приезжаем в школы и детские сады. Незабываемые впечатления и
-                            уникальные сувениры за 5 минут! 🎉
+                        <p className="text-xl md:text-2xl text-gray-700 max-w-4xl mx-auto leading-relaxed">
+                            {content?.subtitle || '✨ Магия творчества ✨'}
                         </p>
+
+                        <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+                            {content?.description || 'Создай свою уникальную 3D копию руки в восковом исполнении! Приезжаем в школы и детские сады. Незабываемые впечатления и уникальные сувениры за 5 минут! 🎉'}
+                        </p>
+
+                        <div className="flex flex-wrap justify-center gap-4">
+                            <Button
+                                size="lg"
+                                className="bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                onClick={() => navigate('/services')}
+                            >
+                                <Gift className="w-5 h-5 mr-2" />
+                                Наши услуги
+                            </Button>
+                            <Button
+                                size="lg"
+                                variant="outline"
+                                className="border-2 border-purple-500 text-purple-600 hover:bg-purple-500 hover:text-white shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                onClick={() => navigate('/contact')}
+                            >
+                                <MessageCircle className="w-5 h-5 mr-2" />
+                                Связаться с нами
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
@@ -98,26 +126,35 @@ const About = () => {
                     <div className="space-y-8">
                         <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-orange-200">
                             <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center">
-                                <Heart className="w-8 h-8 text-red-500 mr-3" />
-                                {content.aboutTitle}
+                                <Hand className="w-8 h-8 text-red-500 mr-3" />
+                                {content?.title || 'О нашей студии'}
                             </h2>
-                            <div className="space-y-4 text-gray-700 text-lg leading-relaxed">
-                                <p>{content.aboutDescription}</p>
-                            </div>
+                            <ExpandableText
+                                text={content?.description || 'Студия «МК Восковые ручки» — это место, где рождается магия творчества! Мы специализируемся на создании уникальных 3D-копий рук детей в восковом исполнении.'}
+                                className="space-y-4 text-gray-700 text-lg leading-relaxed"
+                            />
                         </div>
 
                         <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-purple-200">
                             <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
                                 <Award className="w-7 h-7 text-purple-500 mr-3" />
-                                Наши преимущества
+                                {content?.advantages_title || 'Наши преимущества'}
                             </h3>
                             <div className="space-y-4">
-                                {content.advantages.map((advantage, index) => (
+                                {(content?.advantages_list || []).map((advantage, index) => (
                                     <div key={index} className="flex items-start space-x-3">
                                         <div className="w-2 h-2 bg-purple-500 rounded-full mt-3 flex-shrink-0"></div>
-                                        <p className="text-gray-700">{advantage}</p>
+                                        <ExpandableText
+                                            text={advantage}
+                                            className="text-gray-700"
+                                        />
                                     </div>
                                 ))}
+                                {(!content?.advantages_list || content.advantages_list.length === 0) && (
+                                    <div className="text-gray-500 italic">
+                                        Преимущества не настроены
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -127,134 +164,73 @@ const About = () => {
                         <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-blue-200">
                             <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
                                 <Clock className="w-7 h-7 text-blue-500 mr-3" />
-                                Как проходит мастер-класс
+                                {content?.process_title || 'Как проходит мастер-класс'}
                             </h3>
                             <div className="space-y-6">
-                                {content.processSteps.map((step, index) => (
+                                {(content?.process_steps || []).map((step, index) => (
                                     <div key={index} className="flex items-start space-x-4">
                                         <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
                                             {index + 1}
                                         </div>
                                         <div>
                                             <h4 className="font-semibold text-gray-800 mb-2">{step.title}</h4>
-                                            <p className="text-gray-600">{step.description}</p>
+                                            <ExpandableText
+                                                text={step.description}
+                                                className="text-gray-600"
+                                            />
                                         </div>
                                     </div>
                                 ))}
+                                {(!content?.process_steps || content.process_steps.length === 0) && (
+                                    <div className="text-gray-500 italic">
+                                        Шаги процесса не настроены
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-green-200">
                             <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
                                 <Shield className="w-7 h-7 text-green-500 mr-3" />
-                                {content.safetyTitle}
+                                {content?.safety_title || 'Безопасность и качество'}
                             </h3>
-                            <div className="space-y-4 text-gray-700">
-                                <p>{content.safetyDescription}</p>
-                            </div>
+                            <ExpandableText
+                                text={content?.safety_description || 'Мы используем только высококачественные, безопасные для детей материалы.'}
+                                className="space-y-4 text-gray-700"
+                            />
                         </div>
                     </div>
                 </div>
 
-                {/* Медиа-контент */}
-                {content.media.length > 0 && (
-                    <div className="mt-16">
-                        <div className="text-center mb-12">
-                            <h2 className="text-4xl font-bold text-gray-800 mb-4">
-                                Наши работы и мастер-классы
-                            </h2>
-                            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-                                Посмотрите, как проходят наши мастер-классы и какие уникальные работы создают дети
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                            {content.media.map((item, index) => (
-                                <div
-                                    key={item.id}
-                                    className="group relative bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden shadow-card border border-orange-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2"
-                                >
-                                    {item.type === 'image' ? (
-                                        <div className="aspect-square overflow-hidden">
-                                            <img
-                                                src={item.url}
-                                                alt={item.title}
-                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                                onError={(e) => {
-                                                    const target = e.target as HTMLImageElement;
-                                                    target.src = '/placeholder.svg';
-                                                    target.alt = 'Изображение недоступно';
-                                                }}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="aspect-square overflow-hidden relative">
-                                            <video
-                                                src={item.url}
-                                                className="w-full h-full object-cover"
-                                                muted
-                                                loop
-                                                onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
-                                                onMouseLeave={(e) => (e.target as HTMLVideoElement).pause()}
-                                                onError={(e) => {
-                                                    const target = e.target as HTMLVideoElement;
-                                                    target.style.display = 'none';
-                                                    const placeholder = document.createElement('img');
-                                                    placeholder.src = '/placeholder.svg';
-                                                    placeholder.alt = 'Видео недоступно';
-                                                    placeholder.className = 'w-full h-full object-cover';
-                                                    target.parentNode?.appendChild(placeholder);
-                                                }}
-                                            />
-                                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                                <div className="bg-white/90 rounded-full p-4 shadow-lg">
-                                                    <Play className="w-8 h-8 text-orange-600 ml-1" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="p-6">
-                                        <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                                            {item.title}
-                                        </h3>
-                                        {item.description && (
-                                            <p className="text-gray-600 leading-relaxed">
-                                                {item.description}
-                                            </p>
-                                        )}
-                                        <div className="mt-4 flex items-center justify-between">
-                                            <Badge variant="secondary" className="capitalize">
-                                                {item.type === 'image' ? 'Фото' : 'Видео'}
-                                            </Badge>
-                                            <span className="text-sm text-gray-500">
-                                                #{index + 1}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {/* Контактная информация */}
-                <div className="mt-16 text-center">
-                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-orange-200 max-w-2xl mx-auto">
-                        <h3 className="text-2xl font-bold text-gray-800 mb-4">Свяжитесь с нами</h3>
-                        <p className="text-gray-600 mb-6">
-                            Готовы организовать незабываемый мастер-класс для ваших детей?
-                            Напишите нам, и мы обсудим все детали!
+                <div className="mt-16">
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-orange-200 text-center">
+                        <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center justify-center">
+                            <MessageCircle className="w-8 h-8 text-orange-500 mr-3" />
+                            Свяжитесь с нами
+                        </h2>
+                        <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
+                            {content?.contact_info || 'Готовы организовать незабываемый мастер-класс для ваших детей? Напишите нам, и мы обсудим все детали!'}
                         </p>
-                        <Button
-                            variant="hero"
-                            size="lg"
-                            className="bg-gradient-to-r from-orange-500 to-purple-500 hover:from-orange-600 hover:to-purple-600 text-white shadow-glow transform hover:scale-105 transition-all duration-300"
-                            onClick={() => navigate('/parent')}
-                        >
-                            <MessageCircle className="w-5 h-5 mr-2" />
-                            Написать в поддержку
-                        </Button>
+                        <div className="flex flex-wrap justify-center gap-4">
+                            <Button
+                                size="lg"
+                                className="bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                onClick={() => navigate('/contact')}
+                            >
+                                <MessageCircle className="w-5 h-5 mr-2" />
+                                Написать нам
+                            </Button>
+                            <Button
+                                size="lg"
+                                variant="outline"
+                                className="border-2 border-purple-500 text-purple-600 hover:bg-purple-500 hover:text-white shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                onClick={() => navigate('/services')}
+                            >
+                                <Gift className="w-5 h-5 mr-2" />
+                                Посмотреть услуги
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </div>

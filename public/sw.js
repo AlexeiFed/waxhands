@@ -1,147 +1,90 @@
-// Service Worker для Wax Hands PWA
-const CACHE_NAME = 'wax-hands-v1.5.0';
+// Service Worker для PWA
+const CACHE_NAME = 'vostokovye-ruchki-v2'; // Обновляю версию
 const urlsToCache = [
-    '/',
-    '/manifest.json',
-    '/icon-192x192.png',
-    '/icon-512x512.png'
-    // Убираем bundle.js и main.css - они не существуют в dev режиме Vite
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icon-192x192.png',
+  '/icon-512x512.png',
+  '/assets/index-CnvXarV7.js', // Указываю новый JS файл
+  '/assets/index-CSh-3z-b.css'
 ];
 
-// Установка Service Worker
+// Установка service worker
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => {
-                console.log('Opened cache');
-                // Кэшируем файлы по одному с обработкой ошибок
-                return Promise.allSettled(
-                    urlsToCache.map(url =>
-                        cache.add(url).catch(err => {
-                            console.warn('Failed to cache:', url, err);
-                            return null;
-                        })
-                    )
-                );
-            })
-            .catch(err => {
-                console.error('Failed to open cache:', err);
-            })
-    );
-});
-
-// Активация Service Worker
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => {
+        console.log('Opened cache');
+        return cache.addAll(urlsToCache);
+      })
+  );
 });
 
 // Перехват запросов
 self.addEventListener('fetch', (event) => {
-    // Пропускаем API запросы, Chrome extension, dev server
-    if (event.request.url.includes('/api/') ||
-        event.request.url.includes('chrome-extension://') ||
-        event.request.url.includes('localhost:') ||
-        event.request.url.includes('127.0.0.1:')) {
-        return; // Не перехватываем эти запросы
-    }
-
-    event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                // Возвращаем кэшированный ответ, если он есть
-                if (response) {
-                    return response;
-                }
-
-                // Иначе делаем запрос к сети
-                return fetch(event.request).then(
-                    (response) => {
-                        // Проверяем, что ответ валидный
-                        if (!response || response.status !== 200 || response.type !== 'basic') {
-                            return response;
-                        }
-
-                        // Клонируем ответ только для кэшируемых ресурсов
-                        const responseToCache = response.clone();
-
-                        caches.open(CACHE_NAME)
-                            .then((cache) => {
-                                cache.put(event.request, responseToCache);
-                            })
-                            .catch(err => {
-                                console.warn('Failed to cache response:', err);
-                            });
-
-                        return response;
-                    }
-                ).catch((error) => {
-                    console.warn('Fetch failed for:', event.request.url, error);
-                    // Возвращаем базовую страницу для навигационных запросов
-                    if (event.request.mode === 'navigate') {
-                        return caches.match('/');
-                    }
-                    throw error;
-                });
-            })
-            .catch((error) => {
-                console.warn('Cache match failed:', error);
-                // Fallback на сетевой запрос
-                return fetch(event.request).catch(err => {
-                    console.error('Both cache and network failed:', err);
-                    throw err;
-                });
-            })
-    );
+  event.respondWith(
+    caches.match(event.request)
+      .then((response) => {
+        // Возвращаем кэшированный ответ или делаем сетевой запрос
+        return response || fetch(event.request);
+      })
+  );
 });
 
-// Обработка push-уведомлений
-self.addEventListener('push', (event) => {
-    const options = {
-        body: event.data ? event.data.text() : 'Новое уведомление от Wax Hands',
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        vibrate: [100, 50, 100],
-        data: {
-            dateOfArrival: Date.now(),
-            primaryKey: 1
-        },
-        actions: [
-            {
-                action: 'explore',
-                title: 'Открыть приложение',
-                icon: '/icon-192x192.png'
-            },
-            {
-                action: 'close',
-                title: 'Закрыть',
-                icon: '/icon-192x192.png'
-            }
-        ]
-    };
+// Обновление кэша
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+});
 
-    event.waitUntil(
-        self.registration.showNotification('Wax Hands PWA', options)
-    );
+// Push уведомления
+self.addEventListener('push', (event) => {
+  const options = {
+    body: event.data ? event.data.text() : 'Новое уведомление',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-72x72.png',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: 1
+    },
+    actions: [
+      {
+        action: 'explore',
+        title: 'Открыть',
+        icon: '/icons/icon-192x192.png'
+      },
+      {
+        action: 'close',
+        title: 'Закрыть',
+        icon: '/icons/icon-192x192.png'
+      }
+    ]
+  };
+
+  event.waitUntil(
+    self.registration.showNotification('Студия МК "Восковые ручки"', options)
+  );
 });
 
 // Обработка кликов по уведомлениям
 self.addEventListener('notificationclick', (event) => {
-    event.notification.close();
+  event.notification.close();
 
-    if (event.action === 'explore') {
-        event.waitUntil(
-            clients.openWindow('/')
-        );
-    }
+  if (event.action === 'explore') {
+    event.waitUntil(
+      clients.openWindow('/')
+    );
+  }
 }); 

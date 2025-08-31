@@ -5,13 +5,13 @@
  * @created: 2024-12-19
  */
 
-import ws from 'ws';
+import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ClientConnection {
     id: string;
-    ws: ws.WebSocket;
+    ws: WebSocket;
     userId?: string;
     userRole?: 'admin' | 'user';
     subscriptions: Set<string>;
@@ -20,7 +20,7 @@ interface ClientConnection {
 }
 
 interface SystemEvent {
-    type: 'chat_message' | 'chat_status_change' | 'chat_list_update' | 'new_chat' | 'unread_count_update' | 'invoice_update' | 'master_class_update' | 'user_registration' | 'system_notification' | 'workshop_request_update' | 'workshop_request_created' | 'workshop_request_deleted' | 'workshop_request_status_change' | 'about_content_update' | 'about_media_update' | 'about_media_added' | 'about_media_deleted';
+    type: 'chat_message' | 'chat_status_change' | 'chat_list_update' | 'new_chat' | 'unread_count_update' | 'invoice_update' | 'master_class_update' | 'user_registration' | 'system_notification' | 'workshop_request_update' | 'workshop_request_created' | 'workshop_request_deleted' | 'workshop_request_status_change' | 'about_content_update' | 'about_media_update' | 'about_media_added' | 'about_media_deleted' | 'notification';
     data: Record<string, unknown>;
     timestamp: number;
     targetUsers?: string[];
@@ -28,20 +28,20 @@ interface SystemEvent {
 }
 
 export class WebSocketManager {
-    private wss: ws.WebSocketServer;
+    private wss: WebSocketServer;
     private clients: Map<string, ClientConnection> = new Map();
     private eventQueue: SystemEvent[] = [];
     private isProcessingEvents = false;
 
     constructor(server: Server) {
-        this.wss = new ws.WebSocketServer({ server, path: '/api/chat/ws' });
+        this.wss = new WebSocketServer({ server, path: '/ws' });
         this.setupWebSocketServer();
         this.startHeartbeat();
         this.startEventProcessor();
     }
 
     private setupWebSocketServer() {
-        this.wss.on('connection', (ws: ws.WebSocket, request: { url?: string; headers: { host?: string } }) => {
+        this.wss.on('connection', (ws: WebSocket, request: { url?: string; headers: { host?: string } }) => {
             const clientId = uuidv4();
             const url = new URL(request.url || '', `http://${request.headers.host}`);
             const userId = url.searchParams.get('userId');
@@ -85,7 +85,7 @@ export class WebSocketManager {
             }
 
             // Обработка сообщений от клиента
-            ws.on('message', (data: ws.RawData) => {
+            ws.on('message', (data: RawData) => {
                 try {
                     const message = JSON.parse(data.toString());
                     this.handleClientMessage(clientId, message);
@@ -111,6 +111,20 @@ export class WebSocketManager {
                 data: { clientId, userId, userRole: client.userRole },
                 timestamp: Date.now()
             }));
+
+            // Настраиваем автоматический ping каждые 45 секунд
+            const pingInterval = setInterval(() => {
+                if (ws.readyState === 1) { // WebSocket.OPEN
+                    ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+                } else {
+                    clearInterval(pingInterval);
+                }
+            }, 45000);
+
+            // Очищаем интервал при закрытии соединения
+            ws.on('close', () => {
+                clearInterval(pingInterval);
+            });
         });
     }
 
@@ -253,12 +267,12 @@ export class WebSocketManager {
         setInterval(() => {
             const now = Date.now();
             this.clients.forEach((client) => {
-                if (now - client.lastPing > 60000) { // 60 секунд без ping
+                if (now - client.lastPing > 300000) { // 5 минут без ping (увеличиваем с 60 сек)
                     client.isAlive = false;
                     this.removeClient(client.id);
                 }
             });
-        }, 30000); // Проверяем каждые 30 секунд
+        }, 60000); // Проверяем каждые 60 секунд (увеличиваем с 30 сек)
     }
 
     // Обработчик событий системы
@@ -437,7 +451,7 @@ export class WebSocketManager {
     }
 
     // Уведомления об изменениях в about
-    public notifyAboutContentUpdate(contentId: number, action: string) {
+    public notifyAboutContentUpdate(contentId: string, action: string) {
         this.broadcastEvent({
             type: 'about_content_update',
             data: { contentId, action },
@@ -446,7 +460,7 @@ export class WebSocketManager {
         });
     }
 
-    public notifyAboutMediaUpdate(mediaId: number, action: string, mediaData?: Record<string, unknown>) {
+    public notifyAboutMediaUpdate(mediaId: string, action: string, mediaData?: Record<string, unknown>) {
         this.broadcastEvent({
             type: 'about_media_update',
             data: { mediaId, action, mediaData },
@@ -464,7 +478,7 @@ export class WebSocketManager {
         });
     }
 
-    public notifyAboutMediaDeleted(mediaId: number) {
+    public notifyAboutMediaDeleted(mediaId: string) {
         this.broadcastEvent({
             type: 'about_media_deleted',
             data: { mediaId },
@@ -503,8 +517,18 @@ export class WebSocketManager {
 // Экспортируем экземпляр для использования в других модулях
 export let wsManager: WebSocketManager;
 
-export const initializeWebSocketManager = (server: Server) => {
+export const initializeWebSocketManager = async (server: Server) => {
     wsManager = new WebSocketManager(server);
     console.log('🚀 WebSocket сервер инициализирован');
+
+    // Передаем экземпляр в notificationService
+    try {
+        const { setWebSocketManager } = await import('./services/notificationService.js');
+        setWebSocketManager(wsManager);
+        console.log('✅ WebSocket менеджер передан в notificationService');
+    } catch (error) {
+        console.warn('⚠️ Не удалось передать WebSocket менеджер в notificationService:', error);
+    }
+
     return wsManager;
 };

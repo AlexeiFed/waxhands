@@ -24,7 +24,7 @@ const Login = () => {
     // Показываем индикатор загрузки пока проверяется аутентификация
     if (authLoading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center">
+            <div className="min-h-screen bg-gradient-wax-hands flex items-center justify-center">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
                     <p className="text-orange-600 text-lg">Загрузка приложения...</p>
@@ -36,7 +36,7 @@ const Login = () => {
     // Если пользователь уже авторизован, показываем индикатор перенаправления
     if (isAuthenticated && user) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center">
+            <div className="min-h-screen bg-gradient-wax-hands flex items-center justify-center">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
                     <p className="text-orange-600 text-lg">Перенаправление...</p>
@@ -111,7 +111,7 @@ const Login = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-gradient-wax-hands flex items-center justify-center p-4">
             <Card className="w-full max-w-md">
                 <CardHeader className="text-center">
                     <CardTitle className="text-2xl font-bold text-gray-900">

@@ -11,9 +11,21 @@ import { Button } from './button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { Badge } from './badge';
 import { Separator } from './separator';
-import { useWorkshopRegistrations, CreateRegistrationData } from '../../hooks/use-workshop-registrations';
+import { useWorkshopRegistrations } from '../../hooks/use-workshop-registrations';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from './use-toast';
+
+interface CreateRegistrationData {
+    workshopId: string;
+    userId: string;
+    style: string;
+    options: string[];
+    totalPrice: number;
+    userName: string;
+    userClass: string;
+    schoolName: string;
+    status: 'pending' | 'confirmed' | 'cancelled';
+}
 
 interface WorkshopRegistrationModalProps {
     isOpen: boolean;
@@ -42,12 +54,12 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
     workshop,
 }) => {
     const { user } = useAuth();
-    const { createRegistration, loading } = useWorkshopRegistrations();
+    const { createRegistration } = useWorkshopRegistrations();
 
     const [selectedStyle, setSelectedStyle] = useState<string>('');
     const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
     const [step, setStep] = useState<'registration' | 'success'>('registration');
-    const [registrationData, setRegistrationData] = useState<any>(null);
+    const [registrationData, setRegistrationData] = useState<CreateRegistrationData | null>(null);
 
     // Доступные стили (если не указаны в мастер-классе, используем стандартные)
     const availableStyles = workshop.styles || ['Классический', 'Современный', 'Авангардный', 'Минималистичный'];
@@ -110,16 +122,23 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
             style: selectedStyle,
             options: selectedOptions,
             totalPrice: calculateTotalPrice(),
+            userName: user.name || 'Неизвестный пользователь',
+            userClass: 'Не указано',
+            schoolName: 'Не указано',
+            status: 'pending' as const,
         };
 
         try {
-            const result = await createRegistration(registrationData);
-            if (result) {
-                setRegistrationData(result);
-                setStep('success');
-            }
+            await createRegistration(registrationData);
+            setRegistrationData(registrationData);
+            setStep('success');
         } catch (error) {
             console.error('Registration error:', error);
+            toast({
+                title: "Ошибка",
+                description: "Не удалось записаться на мастер-класс",
+                variant: "destructive",
+            });
         }
     };
 
@@ -168,11 +187,11 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
                             <Badge variant="secondary">{selectedStyle}</Badge>
                         </div>
 
-                        {selectedOptions.length > 0 && (
+                        {(selectedOptions || []).length > 0 && (
                             <div className="space-y-2">
                                 <div className="font-semibold">Дополнительные опции:</div>
                                 <div className="flex flex-wrap gap-2 justify-center">
-                                    {selectedOptions.map(option => (
+                                    {(selectedOptions || []).map(option => (
                                         <Badge key={option} variant="outline">
                                             {option}
                                         </Badge>
@@ -328,10 +347,10 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
                                     <span>Базовая цена:</span>
                                     <span>{workshop.price} ₽</span>
                                 </div>
-                                {selectedOptions.length > 0 && (
+                                {(selectedOptions || []).length > 0 && (
                                     <>
                                         <Separator />
-                                        {selectedOptions.map(option => {
+                                        {(selectedOptions || []).map(option => {
                                             const optionPrices: { [key: string]: number } = {
                                                 'Материалы включены': 500,
                                                 'Сертификат': 300,
@@ -363,10 +382,10 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
                         </Button>
                         <Button
                             onClick={handleSubmit}
-                            disabled={!selectedStyle || loading}
+                            disabled={!selectedStyle}
                             className="min-w-[150px]"
                         >
-                            {loading ? 'Записываемся...' : 'Записаться на мастер-класс'}
+                            Записаться на мастер-класс
                         </Button>
                     </div>
                 </div>

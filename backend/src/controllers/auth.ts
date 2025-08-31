@@ -9,38 +9,47 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const credentials: LoginCredentials = req.body;
 
         if (credentials.role === 'admin') {
-            // Логика для администратора
-            if (credentials.name === 'admin' && credentials.password === 'admin123') {
-                const adminUser: User = {
-                    id: '00000000-0000-0000-0000-000000000001', // Используем UUID формат
-                    name: 'Администратор',
-                    role: 'admin',
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                };
+            // Логика для администратора - проверяем в базе данных
+            const adminQuery = 'SELECT * FROM users WHERE role = \'admin\' AND name = $1';
+            const adminResult = await pool.query(adminQuery, [credentials.name]);
+            const adminUser = adminResult.rows[0];
 
-                const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
-                const jwtOptions: SignOptions = { expiresIn: '7d' };
-
-                const token = jwt.sign(
-                    { userId: adminUser.id, role: adminUser.role },
-                    jwtSecret,
-                    jwtOptions
-                );
-
-                res.json({
-                    success: true,
-                    data: {
-                        user: adminUser,
-                        token
-                    }
+            if (!adminUser) {
+                res.status(401).json({
+                    success: false,
+                    error: 'Admin user not found'
                 });
                 return;
             }
 
-            res.status(401).json({
-                success: false,
-                error: 'Invalid admin credentials'
+            // Проверяем пароль
+            if (adminUser.password_hash && credentials.password) {
+                const isValidPassword = await bcrypt.compare(credentials.password, adminUser.password_hash);
+                if (!isValidPassword) {
+                    res.status(401).json({
+                        success: false,
+                        error: 'Invalid admin password'
+                    });
+                    return;
+                }
+            }
+
+            // Создаем JWT токен для администратора
+            const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
+            const jwtOptions: SignOptions = { expiresIn: '7d' };
+
+            const token = jwt.sign(
+                { userId: adminUser.id, role: adminUser.role },
+                jwtSecret,
+                jwtOptions
+            );
+
+            res.json({
+                success: true,
+                data: {
+                    user: adminUser,
+                    token
+                }
             });
             return;
         }
@@ -50,20 +59,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         let params: (string | number)[] = [];
 
         if (credentials.role === 'child') {
-            // Для детей ищем по имени, фамилии, школе и классу
+            // Для детей ищем только по имени и фамилии
+            // Убираем проверку по школе и классу - дети могут быть в разных школах
             query = `
         SELECT * FROM users 
         WHERE role = 'child' 
         AND name = $1 
-        AND surname = $2 
-        AND school_id = (SELECT id FROM schools WHERE id = $3)
-        AND class = $4
+        AND surname = $2
       `;
             params = [
                 credentials.name || '',
-                credentials.surname || '',
-                credentials.schoolId || '',
-                credentials.class || ''
+                credentials.surname || ''
             ];
         } else {
             // Для родителей и исполнителей ищем по фамилии и телефону
@@ -166,15 +172,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 // 2. Создаем детей
                 const childrenUsers = [];
                 for (const childData of userData.children) {
-                    // Проверяем уникальность для каждого ребенка
+                    // Проверяем уникальность для каждого ребенка только по имени и фамилии
+                    // Убираем проверку по школе и классу - дети могут быть в разных школах
                     const existingChild = await client.query(`
                         SELECT id FROM users 
                         WHERE role = 'child' 
                         AND name = $1 
-                        AND surname = $2 
-                        AND school_id = $3
-                        AND class = $4
-                    `, [childData.name, childData.surname, childData.schoolId, childData.class]);
+                        AND surname = $2
+                    `, [childData.name, childData.surname]);
 
                     if (existingChild.rows.length > 0) {
                         await client.query('ROLLBACK');
@@ -243,15 +248,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             } else if (userData.role === 'child') {
                 // Регистрация одного ребенка
 
-                // Проверяем уникальность для ребенка
+                // Проверяем уникальность для ребенка только по имени и фамилии
+                // Убираем проверку по школе и классу - ребенок может быть в любой школе
                 const existingChild = await client.query(`
                     SELECT id FROM users 
                     WHERE role = 'child' 
                     AND name = $1 
-                    AND surname = $2 
-                    AND school_id = $3
-                    AND class = $4
-                `, [userData.name, userData.surname, userData.schoolId, userData.class]);
+                    AND surname = $2
+                `, [userData.name, userData.surname]);
 
                 if (existingChild.rows.length > 0) {
                     await client.query('ROLLBACK');

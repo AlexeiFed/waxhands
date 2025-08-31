@@ -26,6 +26,7 @@ import { MasterClassParticipant, MasterClassStatistics, Service } from '@/types/
 import { UserCheck, UserX, MessageCircle, Users, DollarSign, Calendar, Clock, MapPin, Building, Filter, RefreshCw, FileText, Phone, User, CheckCircle, AlertCircle, CreditCard, TrendingUp, Download, FileSpreadsheet, FileText as FileTextIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-utils';
+import { MasterClassEvent } from '@/types/services';
 
 interface MasterClassDetailsProps {
     masterClass: {
@@ -51,6 +52,9 @@ interface MasterClassDetailsProps {
         };
         createdAt: string;
         updatedAt: string;
+        school_data?: { teacher?: string; teacherPhone?: string };
+        executors_full?: { id: string; fullName: string }[];
+        executor_names?: string[];
     };
     service: Service;
 }
@@ -60,7 +64,7 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
     const [loading, setLoading] = useState(false);
     const [schoolData, setSchoolData] = useState<{ teacher?: string; teacherPhone?: string } | null>(null);
     const [participants, setParticipants] = useState<MasterClassParticipant[]>(
-        masterClass.participants.map(p => ({
+        (masterClass.participants || []).map(p => ({
             ...p,
             hasReceived: p.hasReceived || false
         }))
@@ -77,7 +81,12 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
         executors: masterClass.executors, // executors уже string[]
         notes: masterClass.notes || ''
     });
-    const [availableExecutors, setAvailableExecutors] = useState<Array<{ id: string; name: string }>>([]);
+    const [availableExecutors, setAvailableExecutors] = useState<Array<{
+        id: string;
+        name: string;
+        surname: string;
+        fullName: string;
+    }>>([]);
     const [loadingExecutors, setLoadingExecutors] = useState(false);
 
     // Состояние для модального окна предварительного просмотра сообщения
@@ -92,7 +101,7 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
     useEffect(() => {
         if (masterClass.participants && masterClass.participants.length > 0) {
             console.log('🔍 MasterClassDetails: Загружаем участников:', masterClass.participants);
-            setParticipants(masterClass.participants.map(p => ({
+            setParticipants((masterClass.participants || []).map(p => ({
                 ...p,
                 hasReceived: p.hasReceived || false
             })));
@@ -229,6 +238,10 @@ ${unpaidNames}
         loadSchoolData();
         loadExecutors(); // Загрузка исполнителей при монтировании
         console.log('MasterClass data:', masterClass);
+        console.log('executor_names:', masterClass.executor_names);
+        console.log('executors_full:', masterClass.executors_full);
+        console.log('executors (IDs):', masterClass.executors);
+        console.log('school_data:', masterClass.school_data);
         console.log('Participants:', participants);
     }, [masterClass.id]);
 
@@ -251,11 +264,16 @@ ${unpaidNames}
 
     const loadSchoolData = async () => {
         try {
-            // Упрощаем загрузку данных школы
-            setSchoolData({
-                teacher: 'Учитель не указан',
-                teacherPhone: 'Телефон не указан'
-            });
+            // Используем данные школы из masterClass, если они есть
+            if (masterClass.school_data) {
+                setSchoolData(masterClass.school_data);
+            } else {
+                // Fallback на мок-данные только если нет данных из БД
+                setSchoolData({
+                    teacher: 'Учитель не указан',
+                    teacherPhone: 'Телефон не указан'
+                });
+            }
         } catch (error) {
             console.error('Error loading school data:', error);
         }
@@ -265,11 +283,32 @@ ${unpaidNames}
     const loadExecutors = async () => {
         setLoadingExecutors(true);
         try {
-            // Упрощаем загрузку исполнителей
-            setAvailableExecutors([
-                { id: '1', name: 'Исполнитель 1' },
-                { id: '2', name: 'Исполнитель 2' }
-            ]);
+            // Используем реальных исполнителей из БД, если они есть и имеют правильную структуру
+            if (masterClass.executors_full &&
+                masterClass.executors_full.length > 0 &&
+                masterClass.executors_full.every(executor =>
+                    executor &&
+                    typeof executor === 'object' &&
+                    'id' in executor &&
+                    'name' in executor &&
+                    'surname' in executor &&
+                    'fullName' in executor
+                )) {
+                // Создаем новый массив с правильной структурой
+                const validExecutors = (masterClass.executors_full || []).map(executor => ({
+                    id: executor.id,
+                    name: (executor as { name?: string }).name || 'Исполнитель',
+                    surname: (executor as { surname?: string }).surname || '',
+                    fullName: executor.fullName
+                }));
+                setAvailableExecutors(validExecutors);
+            } else {
+                // Fallback на мок-данные только если нет данных из БД
+                setAvailableExecutors([
+                    { id: '1', name: 'Исполнитель', surname: '1', fullName: 'Исполнитель 1' },
+                    { id: '2', name: 'Исполнитель', surname: '2', fullName: 'Исполнитель 2' }
+                ]);
+            }
         } catch (error) {
             console.error('Error loading executors:', error);
         } finally {
@@ -287,7 +326,7 @@ ${unpaidNames}
             Object.assign(masterClass, {
                 date: editData.date,
                 time: editData.time,
-                executors: editData.executors.map(id => ({ id, name: availableExecutors.find(e => e.id === id)?.name || id })),
+                executors: editData.executors,
                 notes: editData.notes
             });
 
@@ -548,12 +587,33 @@ ${unpaidNames}
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    {masterClass.executors.map((executor) => (
-                                        <div key={executor} className="flex items-center space-x-2">
-                                            <User className="w-4 h-4 text-muted-foreground" />
-                                            <span className="text-sm">{executor}</span>
-                                        </div>
-                                    ))}
+                                    {(() => {
+                                        // Сначала пытаемся использовать executor_names
+                                        if (masterClass.executor_names && masterClass.executor_names.length > 0) {
+                                            return masterClass.executor_names.map((executor, index) => (
+                                                <div key={index} className="flex items-center space-x-2">
+                                                    <User className="w-4 h-4 text-muted-foreground" />
+                                                    <span className="text-sm">{executor}</span>
+                                                </div>
+                                            ));
+                                        }
+                                        // Затем пытаемся использовать executors_full
+                                        if (masterClass.executors_full && masterClass.executors_full.length > 0) {
+                                            return masterClass.executors_full.map((executor, index) => (
+                                                <div key={index} className="flex items-center space-x-2">
+                                                    <User className="w-4 h-4 text-muted-foreground" />
+                                                    <span className="text-sm">{executor.fullName}</span>
+                                                </div>
+                                            ));
+                                        }
+                                        // Fallback на ID, если нет других данных
+                                        return masterClass.executors.map((executor, index) => (
+                                            <div key={index} className="flex items-center space-x-2">
+                                                <User className="w-4 h-4 text-muted-foreground" />
+                                                <span className="text-sm">{executor}</span>
+                                            </div>
+                                        ));
+                                    })()}
                                 </div>
                             )}
                         </div>
@@ -561,19 +621,21 @@ ${unpaidNames}
                         <div className="space-y-3">
                             <Label className="text-lg font-semibold">Контактное лицо:</Label>
                             <div className="space-y-2">
-                                {schoolData?.teacher ? (
+                                {schoolData?.teacher && schoolData.teacher !== 'Учитель не указан' ? (
                                     <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
                                         <User className="w-4 h-4 text-blue-600" />
                                         <span className="text-sm">{schoolData.teacher}</span>
                                     </div>
                                 ) : (
-                                    <p className="text-muted-foreground text-sm">Не указано</p>
+                                    <p className="text-muted-foreground text-sm">Учитель не указан</p>
                                 )}
-                                {schoolData?.teacherPhone && (
+                                {schoolData?.teacherPhone && schoolData.teacherPhone !== 'Телефон не указан' ? (
                                     <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
                                         <Phone className="w-4 h-4 text-green-600" />
                                         <span className="text-sm">{schoolData.teacherPhone}</span>
                                     </div>
+                                ) : (
+                                    <p className="text-muted-foreground text-sm">Телефон не указан</p>
                                 )}
                             </div>
                         </div>
@@ -1067,7 +1129,25 @@ ${unpaidNames}
                             className="w-full"
                             onClick={() => {
                                 try {
-                                    exportToExcel(masterClass, service, participants);
+                                    // Создаем правильный объект MasterClassEvent для экспорта
+                                    const exportData: MasterClassEvent = {
+                                        id: masterClass.id,
+                                        date: masterClass.date,
+                                        time: masterClass.time,
+                                        schoolId: masterClass.schoolId,
+                                        schoolName: masterClass.schoolName,
+                                        city: masterClass.city,
+                                        classGroup: masterClass.classGroup,
+                                        serviceId: masterClass.serviceId,
+                                        serviceName: masterClass.serviceName,
+                                        executors: masterClass.executors,
+                                        notes: masterClass.notes,
+                                        participants: masterClass.participants,
+                                        statistics: masterClass.statistics,
+                                        createdAt: masterClass.createdAt,
+                                        updatedAt: masterClass.updatedAt
+                                    };
+                                    exportToExcel(exportData, service, participants);
                                     toast({
                                         title: "Успешно!",
                                         description: "Данные экспортированы в Excel файл",
@@ -1096,7 +1176,25 @@ ${unpaidNames}
                                 onClick={() => {
                                     try {
                                         const filteredParticipants = getFilteredParticipants();
-                                        exportToExcel(masterClass, service, filteredParticipants);
+                                        // Создаем правильный объект MasterClassEvent для экспорта
+                                        const exportData: MasterClassEvent = {
+                                            id: masterClass.id,
+                                            date: masterClass.date,
+                                            time: masterClass.time,
+                                            schoolId: masterClass.schoolId,
+                                            schoolName: masterClass.schoolName,
+                                            city: masterClass.city,
+                                            classGroup: masterClass.classGroup,
+                                            serviceId: masterClass.serviceId,
+                                            serviceName: masterClass.serviceName,
+                                            executors: masterClass.executors,
+                                            notes: masterClass.notes,
+                                            participants: masterClass.participants,
+                                            statistics: masterClass.statistics,
+                                            createdAt: masterClass.createdAt,
+                                            updatedAt: masterClass.updatedAt
+                                        };
+                                        exportToExcel(exportData, service, filteredParticipants);
                                         toast({
                                             title: "Успешно!",
                                             description: `Экспорт ${paymentStatusFilter === 'paid' ? 'оплаченных' : 'ожидающих оплаты'} участников в Excel`,

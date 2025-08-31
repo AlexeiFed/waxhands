@@ -225,6 +225,8 @@ export interface Invoice {
     payment_id?: string;
     payment_method?: string;
     payment_date?: string;
+    payment_label?: string;
+    sender_phone?: string;
 }
 
 export interface CreateInvoiceRequest {

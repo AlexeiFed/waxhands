@@ -1,5 +1,5 @@
 import { Pool, PoolConfig } from 'pg';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -37,6 +37,17 @@ export const testConnection = async (): Promise<boolean> => {
     } catch (error) {
         console.error('❌ Database connection failed:', error);
         return false;
+    }
+};
+
+// Функция для выполнения запросов
+export const query = async (text: string, params?: unknown[]) => {
+    const client = await pool.connect();
+    try {
+        const result = await client.query(text, params);
+        return result;
+    } finally {
+        client.release();
     }
 };
 

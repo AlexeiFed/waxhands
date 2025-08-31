@@ -51,6 +51,6 @@ export interface CreateAboutMediaRequest {
     file_path: string;
 }
 
-export interface UpdateAboutContentRequest extends Partial<CreateAboutContentRequest> { }
+export type UpdateAboutContentRequest = Partial<CreateAboutContentRequest>;
 
-export interface UpdateAboutMediaRequest extends Partial<CreateAboutMediaRequest> { }
+export type UpdateAboutMediaRequest = Partial<CreateAboutMediaRequest>;

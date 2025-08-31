@@ -538,10 +538,9 @@ export const getInvoices = async (req: Request, res: Response): Promise<void> =>
         const invoicesQuery = `
             SELECT 
                 i.*,
-                mc.name as master_class_name,
-                mc.description as master_class_description
+                '' as master_class_name,
+                '' as master_class_description
             FROM invoices i
-            LEFT JOIN master_classes mc ON i.master_class_id = mc.id
             ${whereClause}
             ORDER BY i.created_at DESC
         `;
@@ -604,10 +603,9 @@ export const getInvoiceById = async (req: Request, res: Response): Promise<void>
         const query = `
             SELECT 
                 i.*,
-                mc.name as master_class_name,
-                mc.description as master_class_description
+                '' as master_class_name,
+                '' as master_class_description
             FROM invoices i
-            LEFT JOIN master_classes mc ON i.master_class_id = mc.id
             WHERE i.id = $1
         `;
 
@@ -641,7 +639,12 @@ export const getInvoiceById = async (req: Request, res: Response): Promise<void>
                 created_at: invoice.created_at,
                 updated_at: invoice.updated_at,
                 master_class_name: invoice.master_class_name,
-                master_class_description: invoice.master_class_description
+                master_class_description: invoice.master_class_description,
+                payment_label: invoice.payment_label,
+                payment_method: invoice.payment_method,
+                payment_id: invoice.payment_id,
+                payment_date: invoice.payment_date,
+                sender_phone: invoice.sender_phone
             }
         } as ApiResponse);
 

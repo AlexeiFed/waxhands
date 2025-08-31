@@ -120,7 +120,7 @@ const Register = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-gradient-wax-hands flex items-center justify-center p-4">
             <Card className="w-full max-w-2xl">
                 <CardHeader className="text-center">
                     <CardTitle className="text-2xl font-bold text-gray-900">

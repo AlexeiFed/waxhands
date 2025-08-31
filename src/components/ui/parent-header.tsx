@@ -36,7 +36,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
     ];
 
     const handleShare = () => {
-        const url = 'https://waxhands.ru';
+        const url = window.location.origin;
         const text = 'Отличные творческие мастер-классы для детей! 🎨✨';
         const shareText = `${text}\n\n${url}`;
 
@@ -103,7 +103,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-br from-yellow-100 via-pink-100 to-blue-100 shadow-lg border-b border-orange-200">
+            <header className="fixed top-0 left-0 right-0 z-50 bg-gradient-wax-hands shadow-lg border-b border-orange-200">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
                     <div className="flex items-center justify-between">
                         {/* Логотип и название */}
@@ -129,15 +129,15 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                 />
                             </div>
                             <div className="hidden sm:block">
-                                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-orange-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                                <h1 className="text-xl sm:text-2xl font-bold text-white">
                                     Студия «МК Восковые ручки»
                                 </h1>
-                                <p className="text-sm sm:text-base text-gray-600">
+                                <p className="text-sm sm:text-base text-white/90">
                                     Творческие мастер-классы
                                 </p>
                             </div>
                             <div className="sm:hidden">
-                                <h1 className="text-lg font-bold bg-gradient-to-r from-orange-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                                <h1 className="text-lg font-bold text-white">
                                     МК Восковые ручки
                                 </h1>
                             </div>
@@ -150,7 +150,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                 variant="ghost"
                                 size="icon"
                                 onClick={handleShare}
-                                className="text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                                className="text-white hover:bg-white/20 hover:text-white"
                                 title="Поделиться"
                             >
                                 <Share2 className="w-5 h-5" />
@@ -162,7 +162,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                                        className="text-white hover:bg-white/20 hover:text-white"
                                     >
                                         <div className="flex flex-col space-y-1">
                                             <div className="w-6 h-0.5 bg-current rounded-full"></div>
@@ -170,7 +170,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                         </div>
                                     </Button>
                                 </SheetTrigger>
-                                <SheetContent side="right" className="w-80 bg-gradient-to-b from-orange-50 to-purple-50">
+                                <SheetContent side="right" className="w-80 bg-gradient-wax-hands">
                                     <SheetHeader className="border-b border-orange-200 pb-4">
                                         {/* Заголовок студии с логотипом */}
                                         <div className="flex items-center space-x-3">
@@ -182,10 +182,10 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                                 />
                                             </div>
                                             <div>
-                                                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-orange-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                                                <h1 className="text-xl sm:text-2xl font-bold text-white">
                                                     Студия «МК Восковые ручки»
                                                 </h1>
-                                                <p className="text-sm sm:text-base text-gray-600">
+                                                <p className="text-sm sm:text-base text-white/90">
                                                     Творческие мастер-классы
                                                 </p>
                                             </div>
@@ -196,7 +196,7 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                             <button
                                                 key={item.href}
                                                 onClick={() => handleMenuClick(item.href)}
-                                                className="w-full text-left px-4 py-3 rounded-lg hover:bg-orange-100 hover:text-orange-700 transition-colors duration-200 text-gray-700 font-medium"
+                                                className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/20 hover:text-white transition-colors duration-200 text-white font-medium"
                                             >
                                                 <span className="mr-3">{item.icon}</span>
                                                 {item.label}

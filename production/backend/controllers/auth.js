@@ -36,20 +36,17 @@ export const login = async (req, res) => {
         let query = '';
         let params = [];
         if (credentials.role === 'child') {
-            // Для детей ищем по имени, фамилии, школе и классу
+            // Для детей ищем только по имени и фамилии
+            // Убираем проверку по школе и классу - дети могут быть в разных школах
             query = `
         SELECT * FROM users 
         WHERE role = 'child' 
         AND name = $1 
-        AND surname = $2 
-        AND school_id = (SELECT id FROM schools WHERE id = $3)
-        AND class = $4
+        AND surname = $2
       `;
             params = [
                 credentials.name || '',
-                credentials.surname || '',
-                credentials.schoolId || '',
-                credentials.class || ''
+                credentials.surname || ''
             ];
         }
         else {
@@ -130,15 +127,14 @@ export const register = async (req, res) => {
                 // 2. Создаем детей
                 const childrenUsers = [];
                 for (const childData of userData.children) {
-                    // Проверяем уникальность для каждого ребенка
+                    // Проверяем уникальность для каждого ребенка только по имени и фамилии
+                    // Убираем проверку по школе и классу - дети могут быть в разных школах
                     const existingChild = await client.query(`
                         SELECT id FROM users 
                         WHERE role = 'child' 
                         AND name = $1 
-                        AND surname = $2 
-                        AND school_id = $3
-                        AND class = $4
-                    `, [childData.name, childData.surname, childData.schoolId, childData.class]);
+                        AND surname = $2
+                    `, [childData.name, childData.surname]);
                     if (existingChild.rows.length > 0) {
                         await client.query('ROLLBACK');
                         res.status(400).json({
@@ -195,15 +191,14 @@ export const register = async (req, res) => {
             }
             else if (userData.role === 'child') {
                 // Регистрация одного ребенка
-                // Проверяем уникальность для ребенка
+                // Проверяем уникальность для ребенка только по имени и фамилии
+                // Убираем проверку по школе и классу - ребенок может быть в любой школе
                 const existingChild = await client.query(`
                     SELECT id FROM users 
                     WHERE role = 'child' 
                     AND name = $1 
-                    AND surname = $2 
-                    AND school_id = $3
-                    AND class = $4
-                `, [userData.name, userData.surname, userData.schoolId, userData.class]);
+                    AND surname = $2
+                `, [userData.name, userData.surname]);
                 if (existingChild.rows.length > 0) {
                     await client.query('ROLLBACK');
                     res.status(400).json({

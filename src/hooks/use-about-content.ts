@@ -209,10 +209,10 @@ export const useAboutContent = () => {
 
             // Если есть файл, сохраняем его и получаем URL
             if (mediaItem.file) {
-                // Проверяем размер файла перед загрузкой
-                const maxSize = 5 * 1024 * 1024; // 5MB
+                // Проверяем размер файла в зависимости от типа
+                const maxSize = mediaItem.type === 'video' ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB для видео, 10MB для изображений
                 if (mediaItem.file.size > maxSize) {
-                    throw new Error(`Файл слишком большой. Максимальный размер: ${maxSize / 1024 / 1024}MB`);
+                    throw new Error(`Файл слишком большой. Максимальный размер для ${mediaItem.type === 'video' ? 'видео' : 'изображений'}: ${maxSize / 1024 / 1024}MB`);
                 }
 
                 finalUrl = await saveMediaFile(mediaItem.file, mediaItem.type);

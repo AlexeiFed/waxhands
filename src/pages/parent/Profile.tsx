@@ -82,20 +82,20 @@ const ParentProfile = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-pink-100 to-blue-100">
+        <div className="min-h-screen bg-gradient-wax-hands">
             <ParentHeader showBackButton={true} />
 
             <div className="max-w-4xl mx-auto px-4 pt-28 pb-6 space-y-6">
                 {/* Профиль родителя */}
-                <Card className="bg-white/90 border-orange-200">
+                <Card className="bg-white/95 backdrop-blur-sm border-2 border-orange-300 shadow-lg">
                     <CardHeader className="flex flex-row items-center justify-between">
                         <div className="flex items-center gap-4">
                             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-purple-500 flex items-center justify-center text-white text-2xl font-bold">
                                 {initials}
                             </div>
                             <div>
-                                <CardTitle className="text-3xl">{user?.name} {user?.surname}</CardTitle>
-                                <CardDescription>Профиль родителя</CardDescription>
+                                <CardTitle className="text-3xl text-gray-800">{user?.name} {user?.surname}</CardTitle>
+                                <CardDescription className="text-gray-600">Профиль родителя</CardDescription>
                             </div>
                         </div>
                         <Button
@@ -138,13 +138,13 @@ const ParentProfile = () => {
                 </Card>
 
                 {/* Список детей */}
-                <Card className="bg-white/90 border-purple-200">
+                <Card className="bg-white/95 backdrop-blur-sm border-2 border-purple-300 shadow-lg">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex items-center gap-2 text-gray-800">
                             <Baby className="w-5 h-5 text-pink-600" />
                             Мои дети
                         </CardTitle>
-                        <CardDescription>
+                        <CardDescription className="text-gray-600">
                             Управление профилями детей
                         </CardDescription>
                     </CardHeader>

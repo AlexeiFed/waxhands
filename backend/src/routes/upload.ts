@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadServiceFiles } from '../middleware/upload.js';
 import { uploadFiles } from '../controllers/upload.js';
@@ -14,7 +14,7 @@ import multer from 'multer';
 const router = Router();
 
 // Обработка ошибок multer
-const handleMulterError = (err: any, req: any, res: any, next: any) => {
+const handleMulterError = (err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error('Multer error:', err);
 
     if (err instanceof multer.MulterError) {
@@ -44,13 +44,23 @@ const handleMulterError = (err: any, req: any, res: any, next: any) => {
     });
 };
 
+// Основной маршрут для загрузки файлов (требует аутентификации)
+router.post('/', authenticateToken, (req, res, next) => {
+    uploadServiceFiles(req, res, (err) => {
+        if (err) {
+            return handleMulterError(err, req, res, next);
+        }
+        return uploadFiles(req, res);
+    });
+});
+
 // Загрузка файлов для стилей/опций (требует аутентификации)
 router.post('/service-files', authenticateToken, (req, res, next) => {
     uploadServiceFiles(req, res, (err) => {
         if (err) {
             return handleMulterError(err, req, res, next);
         }
-        uploadFiles(req, res);
+        return uploadFiles(req, res);
     });
 });
 

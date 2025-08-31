@@ -73,7 +73,27 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
 
         try {
             // Формируем детализированные данные для Яндекс.Формы
-            const formData = {
+            const formData: {
+                invoice_id: string;
+                amount: number;
+                description: string;
+                master_class_name: string;
+                event_date: string;
+                event_time: string;
+                customer_name: string;
+                customer_phone: string;
+                children_count: number;
+                children_names: string;
+                children_details: Array<{
+                    name: string;
+                    age: string;
+                    services: string;
+                    amount: number;
+                }>;
+                services_summary: string;
+                timestamp: number;
+                payment_label?: string;
+            } = {
                 // Основная информация о счете
                 invoice_id: invoiceId,
                 amount: amount,
@@ -91,7 +111,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 children_names: children.map(child => child.name).join(', '),
                 children_details: children.map(child => ({
                     name: child.name,
-                    age: child.age || 'Не указан',
+                    age: String(child.age || 'Не указан'),
                     services: child.selectedServices.join(', '),
                     amount: child.totalAmount
                 })),
@@ -105,18 +125,77 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 timestamp: Date.now()
             };
 
+            // Получаем payment_label для счета
+            let paymentLabel = '';
+            try {
+                console.log('🔍 Запрашиваем данные счета:', invoiceId);
+                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/invoices/${invoiceId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                    }
+                });
+
+                console.log('📡 Ответ API:', response.status, response.ok);
+
+                if (response.ok) {
+                    const invoiceData = await response.json();
+                    console.log('📋 Данные счета:', invoiceData);
+
+                    if (invoiceData.success && invoiceData.data && invoiceData.data.payment_label) {
+                        paymentLabel = invoiceData.data.payment_label;
+                        console.log('🏷️ Получена метка платежа:', paymentLabel);
+                    } else {
+                        console.warn('⚠️ payment_label не найден в ответе:', {
+                            success: invoiceData.success,
+                            hasData: !!invoiceData.data,
+                            payment_label: invoiceData.data?.payment_label
+                        });
+                    }
+                } else {
+                    console.error('❌ Ошибка API:', response.status, response.statusText);
+                }
+            } catch (error) {
+                console.error('❌ Ошибка получения метки платежа:', error);
+            }
+
+            // Добавляем payment_label в formData
+            if (paymentLabel) {
+                formData.payment_label = paymentLabel;
+                console.log('✅ payment_label добавлен в formData:', paymentLabel);
+            } else {
+                console.warn('⚠️ payment_label не добавлен - пустой');
+            }
+
             // Создаем URL для Яндекс.Формы с параметрами
             const yandexFormUrl = new URL(import.meta.env.VITE_YANDEX_FORM_URL || 'https://forms.yandex.ru/your-form-id');
+
+            console.log('🔗 Базовый URL формы:', yandexFormUrl.toString());
+            console.log('📋 formData для передачи:', formData);
 
             // Добавляем параметры в URL
             Object.entries(formData).forEach(([key, value]) => {
                 if (typeof value === 'object') {
                     // Для объектов (например, children_details) передаем как JSON строку
                     yandexFormUrl.searchParams.append(key, JSON.stringify(value));
+                    console.log(`📤 Добавлен параметр ${key}:`, JSON.stringify(value));
                 } else {
                     yandexFormUrl.searchParams.append(key, value.toString());
+                    console.log(`📤 Добавлен параметр ${key}:`, value.toString());
                 }
             });
+
+            console.log('🔗 Финальный URL с параметрами:', yandexFormUrl.toString());
+
+            // Добавляем параметры для ЮMoney (важно для webhook'ов)
+            yandexFormUrl.searchParams.append('yumoney_metadata', JSON.stringify({
+                invoice_id: invoiceId,
+                participant_name: children.map(child => child.name).join(', '),
+                master_class_name: masterClassName,
+                amount: amount,
+                description: description
+            }));
+
+            console.log('🔗 Открываем Яндекс.Форму с параметрами:', yandexFormUrl.toString());
 
             // Открываем Яндекс.Форму в новом окне
             const paymentWindow = window.open(
@@ -151,7 +230,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
             attempts++;
 
             try {
-                const response = await fetch(`/api/invoices/${invoiceId}/status`, {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/invoices/${invoiceId}`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('authToken')}`

@@ -11,14 +11,14 @@ const PricingSection = () => {
       popular: false,
     },
     {
-      title: "Световая рука", 
+      title: "Световая рука",
       price: "550 руб.",
       description: "Светодиод, который мигает различными цветами",
       popular: true,
     },
     {
       title: "Двойные руки",
-      price: "800 руб.", 
+      price: "800 руб.",
       description: "Две руки в одном изделии",
       popular: false,
     },
@@ -41,7 +41,7 @@ const PricingSection = () => {
   ];
 
   return (
-    <section className="py-20 bg-background">
+    <section className="py-20 bg-gradient-wax-hands">
       <div className="container mx-auto px-4">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -49,14 +49,14 @@ const PricingSection = () => {
             <Star className="w-5 h-5 text-primary animate-spin-slow" fill="currentColor" />
             <span className="text-sm font-medium">Наши цены</span>
           </div>
-          
+
           <h2 className="text-3xl md:text-5xl font-bold mb-6">
             <span className="bg-gradient-primary bg-clip-text text-transparent">
               Выберите
             </span>{" "}
             <span className="text-foreground">свой стиль</span>
           </h2>
-          
+
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Создайте уникальный сувенир с различными эффектами и дополнениями
           </p>
@@ -65,13 +65,12 @@ const PricingSection = () => {
         {/* Main Services */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
           {services.map((service, index) => (
-            <Card 
+            <Card
               key={index}
-              className={`relative transform transition-all duration-300 hover:scale-105 ${
-                service.popular 
-                  ? 'shadow-glow ring-2 ring-primary/50' 
+              className={`relative transform transition-all duration-300 hover:scale-105 ${service.popular
+                  ? 'shadow-glow ring-2 ring-primary/50'
                   : 'shadow-card hover:shadow-playful'
-              }`}
+                }`}
             >
               {service.popular && (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
@@ -81,15 +80,15 @@ const PricingSection = () => {
                   </div>
                 </div>
               )}
-              
+
               <CardContent className="p-6 text-center">
                 <h3 className="text-xl font-bold mb-2">{service.title}</h3>
                 <div className="text-3xl font-bold text-primary mb-3">{service.price}</div>
                 <p className="text-muted-foreground text-sm mb-6">{service.description}</p>
-                
-                <Button 
-                  variant={service.popular ? "hero" : "workshop"} 
-                  size="lg" 
+
+                <Button
+                  variant={service.popular ? "hero" : "workshop"}
+                  size="lg"
                   className="w-full"
                 >
                   Выбрать
@@ -133,8 +132,8 @@ const PricingSection = () => {
           <div className="bg-card rounded-2xl p-6 shadow-card max-w-4xl mx-auto">
             <h4 className="font-bold text-primary mb-3">Внимание!</h4>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Будьте аккуратны с сувениром, на морозе сувенир становится более хрупким. 
-              Избегайте попадания прямых солнечных лучей. Не ставьте возле нагревательных 
+              Будьте аккуратны с сувениром, на морозе сувенир становится более хрупким.
+              Избегайте попадания прямых солнечных лучей. Не ставьте возле нагревательных
               приборов или ламп накаливания.
             </p>
             <p className="text-sm text-accent font-medium mt-3">

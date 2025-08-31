@@ -124,17 +124,32 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         // Убираем поля, которые нельзя обновлять
         const { id: userId, role, created_at, updated_at, ...allowedUpdates } = updateData;
 
-        // Если обновляется school_id, получаем название школы
-        if (allowedUpdates.school_id) {
-            const schoolResult = await pool.query('SELECT name FROM schools WHERE id = $1', [allowedUpdates.school_id]);
+        // Преобразуем camelCase поля в snake_case для базы данных
+        const transformedUpdates: Record<string, unknown> = {};
+
+        if (allowedUpdates.schoolId !== undefined) {
+            transformedUpdates.school_id = allowedUpdates.schoolId;
+            // Получаем название школы
+            const schoolResult = await pool.query('SELECT name FROM schools WHERE id = $1', [allowedUpdates.schoolId]);
             if (schoolResult.rows.length > 0) {
-                allowedUpdates.school_name = schoolResult.rows[0].name;
+                transformedUpdates.school_name = schoolResult.rows[0].name;
             }
         }
 
+        if (allowedUpdates.class !== undefined) {
+            transformedUpdates.class_group = allowedUpdates.class;
+        }
+
+        // Добавляем остальные поля
+        if (allowedUpdates.name !== undefined) transformedUpdates.name = allowedUpdates.name;
+        if (allowedUpdates.surname !== undefined) transformedUpdates.surname = allowedUpdates.surname;
+        if (allowedUpdates.age !== undefined) transformedUpdates.age = allowedUpdates.age;
+        if (allowedUpdates.email !== undefined) transformedUpdates.email = allowedUpdates.email;
+        if (allowedUpdates.phone !== undefined) transformedUpdates.phone = allowedUpdates.phone;
+
         // Строим динамический запрос
-        const fields = Object.keys(allowedUpdates);
-        const values = Object.values(allowedUpdates);
+        const fields = Object.keys(transformedUpdates);
+        const values = Object.values(transformedUpdates);
         const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
 
         const result = await pool.query(`

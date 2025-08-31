@@ -25,13 +25,13 @@ const cleanBlobUrls = async () => {
             // Очищаем стили
             let styles = service.styles || [];
             if (Array.isArray(styles)) {
-                styles = styles.map((style: any) => {
+                styles = styles.map((style: { name: string; avatar: string | null; images?: string[]; videos?: string[] }) => {
                     let styleUpdated = false;
 
                     // Очищаем blob URLs в аватаре
                     if (style.avatar && style.avatar.startsWith('blob:')) {
                         console.log(`🧹 Cleaning blob avatar in style ${style.name}`);
-                        style.avatar = undefined;
+                        style.avatar = null;
                         styleUpdated = true;
                     }
 
@@ -63,13 +63,13 @@ const cleanBlobUrls = async () => {
             // Очищаем опции
             let options = service.options || [];
             if (Array.isArray(options)) {
-                options = options.map((option: any) => {
+                options = options.map((option: { name: string; avatar: string | null; images?: string[]; videos?: string[] }) => {
                     let optionUpdated = false;
 
                     // Очищаем blob URLs в аватаре
                     if (option.avatar && option.avatar.startsWith('blob:')) {
                         console.log(`🧹 Cleaning blob avatar in option ${option.name}`);
-                        option.avatar = undefined;
+                        option.avatar = null;
                         optionUpdated = true;
                     }
 

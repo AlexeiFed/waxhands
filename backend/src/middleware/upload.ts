@@ -47,7 +47,7 @@ const storage = multer.diskStorage({
 });
 
 // Фильтр файлов
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     console.log('=== FILE FILTER DEBUG ===');
     console.log('Field name:', file.fieldname);
     console.log('MIME type:', file.mimetype);
@@ -90,7 +90,7 @@ export const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB максимум
+        fileSize: parseInt(process.env.MAX_FILE_SIZE || '104857600'), // 100MB по умолчанию
         files: 20 // максимум 20 файлов за раз (1 аватар + 10 изображений + 5 видео + запас)
     }
 });

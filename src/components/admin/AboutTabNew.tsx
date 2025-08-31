@@ -43,6 +43,10 @@ const AboutTabNew: React.FC = () => {
         type: 'image' as 'image' | 'video'
     });
 
+    // Состояние для управления шагами процесса
+    const [isEditingProcessSteps, setIsEditingProcessSteps] = useState(false);
+    const [processSteps, setProcessSteps] = useState<Array<{ title: string, description: string }>>([]);
+
     // Drag & Drop состояние
     const [draggedItem, setDraggedItem] = useState<AboutMedia | null>(null);
 
@@ -57,6 +61,13 @@ const AboutTabNew: React.FC = () => {
             // Данные автоматически обновятся через хуки
         }
     }, [lastUpdate]);
+
+    // Инициализация шагов процесса из контента
+    React.useEffect(() => {
+        if (content?.process_steps) {
+            setProcessSteps([...content.process_steps]);
+        }
+    }, [content?.process_steps]);
 
     const handleEdit = (field: string, value: string) => {
         setEditingField(field);
@@ -78,21 +89,84 @@ const AboutTabNew: React.FC = () => {
         setEditValue('');
     };
 
+    // Функции для управления шагами процесса
+    const handleAddProcessStep = () => {
+        setProcessSteps([...processSteps, { title: '', description: '' }]);
+    };
+
+    const handleUpdateProcessStep = (index: number, field: 'title' | 'description', value: string) => {
+        const newSteps = [...processSteps];
+        newSteps[index] = { ...newSteps[index], [field]: value };
+        setProcessSteps(newSteps);
+    };
+
+    const handleRemoveProcessStep = (index: number) => {
+        setProcessSteps(processSteps.filter((_, i) => i !== index));
+    };
+
+    const handleSaveProcessSteps = async () => {
+        if (!content) return;
+
+        try {
+            const success = await updateContent(content.id, { process_steps: processSteps });
+            if (success) {
+                setIsEditingProcessSteps(false);
+                toast({
+                    title: "Успешно",
+                    description: "Шаги процесса обновлены",
+                });
+            }
+        } catch (error) {
+            toast({
+                title: "Ошибка",
+                description: "Не удалось сохранить шаги процесса",
+                variant: "destructive",
+            });
+        }
+    };
+
     // Функция для просмотра медиа
     const handleViewMedia = (media: AboutMedia) => {
+        console.log('🔍 Просмотр медиа:', {
+            id: media.id,
+            title: media.title,
+            type: media.type,
+            filename: media.filename,
+            file_path: media.file_path
+        });
         setViewingMedia(media);
         setIsViewModalOpen(true);
+    };
+
+    // Функция для формирования правильного URL медиа файла
+    const getMediaUrl = (filePath: string) => {
+        // Если это относительный путь uploads, используем основной домен
+        if (filePath.startsWith('/uploads/')) {
+            return `https://waxhands.ru${filePath}`;
+        }
+        // Если это уже полный URL, возвращаем как есть
+        if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+            return filePath;
+        }
+        // Если это путь без /uploads/, добавляем его
+        if (!filePath.startsWith('/uploads/')) {
+            return `https://waxhands.ru/uploads/${filePath}`;
+        }
+        // Fallback - добавляем базовый URL
+        return `https://waxhands.ru${filePath}`;
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            // Проверяем размер файла (5MB)
-            const maxSize = 5 * 1024 * 1024;
+            // Проверяем размер файла в зависимости от типа
+            const isVideo = file.type.startsWith('video/');
+            const maxSize = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB для видео, 10MB для изображений
+
             if (file.size > maxSize) {
                 toast({
                     title: "Ошибка",
-                    description: `Файл слишком большой. Максимальный размер: ${maxSize / 1024 / 1024}MB`,
+                    description: `Файл слишком большой. Максимальный размер для ${isVideo ? 'видео' : 'изображений'}: ${maxSize / 1024 / 1024}MB`,
                     variant: "destructive",
                 });
                 return;
@@ -111,12 +185,46 @@ const AboutTabNew: React.FC = () => {
         if (!newMediaFile) return;
 
         try {
-            // Генерируем уникальное имя файла
-            const filename = `${newMediaData.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${newMediaFile.name.split('.').pop()}`;
-            const filePath = `/src/assets/about/${filename}`;
+            // Сначала загружаем файл через upload API
+            const formData = new FormData();
+            const fieldName = newMediaData.type === 'image' ? 'images' : 'videos';
+            formData.append(fieldName, newMediaFile);
 
-            // TODO: Здесь нужно реализовать копирование файла в папку assets/about
-            // Пока используем существующие файлы для демонстрации
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                throw new Error('Токен авторизации не найден');
+            }
+
+            // Загружаем файл через service-files endpoint (как в услугах)
+            const uploadResponse = await fetch(`${process.env.VITE_API_URL || 'https://waxhands.ru/api'}/upload/service-files`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error(`Ошибка загрузки файла: ${uploadResponse.status}`);
+            }
+
+            const uploadResult = await uploadResponse.json();
+            console.log('Upload result:', uploadResult);
+
+            // Получаем file_path из результата загрузки
+            let filePath = '';
+            if (newMediaData.type === 'image' && uploadResult.data.images && uploadResult.data.images.length > 0) {
+                filePath = uploadResult.data.images[0];
+            } else if (newMediaData.type === 'video' && uploadResult.data.videos && uploadResult.data.videos.length > 0) {
+                filePath = uploadResult.data.videos[0];
+            } else {
+                throw new Error('Файл не был загружен');
+            }
+
+            // Генерируем filename из file_path
+            const filename = filePath.split('/').pop() || newMediaFile.name;
+
+            // Сохраняем метаданные в базу данных
             const success = await addMedia({
                 filename,
                 original_name: newMediaFile.name,
@@ -130,9 +238,18 @@ const AboutTabNew: React.FC = () => {
                 setNewMediaFile(null);
                 setNewMediaData({ title: '', description: '', type: 'image' });
                 setIsAddingMedia(false);
+                toast({
+                    title: "Успешно",
+                    description: "Медиа добавлено",
+                });
             }
         } catch (error) {
             console.error('Error adding media:', error);
+            toast({
+                title: "Ошибка",
+                description: error instanceof Error ? error.message : 'Ошибка добавления медиа',
+                variant: "destructive",
+            });
         }
     };
 
@@ -352,6 +469,115 @@ const AboutTabNew: React.FC = () => {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Управление шагами процесса */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <span className="text-2xl">⏰</span>
+                                Как проходит мастер-класс
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                                Управляйте шагами процесса мастер-класса
+                            </p>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {isEditingProcessSteps ? (
+                                <div className="space-y-4">
+                                    {processSteps.map((step, index) => (
+                                        <div key={index} className="p-4 border rounded-lg space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm font-medium text-gray-600">Шаг {index + 1}</span>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => handleRemoveProcessStep(index)}
+                                                    className="text-red-500 hover:text-red-700"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                            <div>
+                                                <Label>Название шага</Label>
+                                                <Input
+                                                    value={step.title}
+                                                    onChange={(e) => handleUpdateProcessStep(index, 'title', e.target.value)}
+                                                    placeholder="Введите название шага"
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label>Описание шага</Label>
+                                                <Textarea
+                                                    value={step.description}
+                                                    onChange={(e) => handleUpdateProcessStep(index, 'description', e.target.value)}
+                                                    placeholder="Введите описание шага"
+                                                    rows={2}
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <Button
+                                        onClick={handleAddProcessStep}
+                                        variant="outline"
+                                        className="w-full"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Добавить шаг
+                                    </Button>
+
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={handleSaveProcessSteps}
+                                            className="flex-1 bg-green-600 hover:bg-green-700"
+                                        >
+                                            <Save className="w-4 h-4 mr-2" />
+                                            Сохранить
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                setIsEditingProcessSteps(false);
+                                                if (content?.process_steps) {
+                                                    setProcessSteps([...content.process_steps]);
+                                                }
+                                            }}
+                                            variant="outline"
+                                            className="flex-1"
+                                        >
+                                            Отмена
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="space-y-3">
+                                        {(content.process_steps || []).map((step, index) => (
+                                            <div key={index} className="p-3 border rounded-lg">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                                                        {index + 1}
+                                                    </div>
+                                                    <h4 className="font-medium">{step.title}</h4>
+                                                </div>
+                                                <p className="text-gray-600 text-sm ml-8">{step.description}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <Button
+                                        onClick={() => setIsEditingProcessSteps(true)}
+                                        variant="outline"
+                                        className="w-full"
+                                    >
+                                        <Edit className="w-4 h-4 mr-2" />
+                                        Редактировать шаги
+                                    </Button>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
 
                 {/* Правая колонка - Медиа управление */}
@@ -378,7 +604,7 @@ const AboutTabNew: React.FC = () => {
 
                             {/* Список медиа */}
                             <div className="space-y-3">
-                                {media.map((item) => (
+                                {(media || []).map((item) => (
                                     <div
                                         key={item.id}
                                         className={`flex items-center gap-3 p-3 border rounded-lg ${draggedItem?.id === item.id ? 'opacity-50' : ''
@@ -488,7 +714,7 @@ const AboutTabNew: React.FC = () => {
                             <div className="flex justify-center">
                                 {viewingMedia.type === 'image' ? (
                                     <img
-                                        src={`/uploads/images/${viewingMedia.filename}`}
+                                        src={getMediaUrl(viewingMedia.file_path)}
                                         alt={viewingMedia.title}
                                         className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg"
                                         onError={(e) => {
@@ -499,7 +725,7 @@ const AboutTabNew: React.FC = () => {
                                     />
                                 ) : (
                                     <video
-                                        src={`/uploads/videos/${viewingMedia.filename}`}
+                                        src={getMediaUrl(viewingMedia.file_path)}
                                         controls
                                         className="max-w-full max-h-[60vh] rounded-lg shadow-lg"
                                         onError={(e) => {

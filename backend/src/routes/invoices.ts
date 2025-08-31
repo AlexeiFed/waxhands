@@ -25,6 +25,9 @@ router.get('/', authenticateToken, getInvoices);
 // Получение счета по ID (требует аутентификации)
 router.get('/:id', authenticateToken, getInvoiceById);
 
+// Получение статуса счета по ID (требует аутентификации)
+router.get('/:id/status', authenticateToken, getInvoiceById);
+
 // Обновление статуса счета (требует аутентификации)
 router.patch('/:id/status', authenticateToken, updateInvoiceStatus);
 

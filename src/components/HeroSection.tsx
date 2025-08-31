@@ -4,7 +4,7 @@ import heroImage from "@/assets/hero-image.jpg";
 
 const HeroSection = () => {
   return (
-    <section className="relative min-h-screen bg-gradient-hero flex items-center justify-center overflow-hidden">
+    <section className="relative min-h-screen bg-gradient-wax-hands flex items-center justify-center overflow-hidden">
       {/* Animated Background Stars */}
       <div className="absolute inset-0 pointer-events-none">
         {[...Array(20)].map((_, i) => (

@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useInvoices, useUpdateInvoiceStatus } from '@/hooks/use-invoices';
 import { Invoice, InvoiceFilters } from '@/types';
 import { Search, Filter, Eye, CheckCircle, XCircle, Clock, DollarSign, Calendar as CalendarIcon, MapPin, Users, Plus, Trash2, RefreshCw } from 'lucide-react';
+import PaymentStatus from '@/components/ui/payment-status';
 import { ru } from 'date-fns/locale';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -601,6 +602,8 @@ const InvoicesTab: React.FC = () => {
                                         <TableHead>Дата</TableHead>
                                         <TableHead>Сумма</TableHead>
                                         <TableHead>Статус</TableHead>
+                                        <TableHead>Метка платежа</TableHead>
+                                        <TableHead>Детали оплаты</TableHead>
                                         <TableHead>Действия</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -636,7 +639,58 @@ const InvoicesTab: React.FC = () => {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="font-mono font-medium">{invoice.amount} ₽</TableCell>
-                                            <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                                            <TableCell>
+                                                <PaymentStatus
+                                                    invoiceId={invoice.id}
+                                                    status={invoice.status}
+                                                    paymentMethod={invoice.payment_method}
+                                                    paymentDate={invoice.payment_date}
+                                                    paymentId={invoice.payment_id}
+                                                    paymentLabel={invoice.payment_label}
+                                                    onStatusUpdate={(newStatus) => {
+                                                        // Обновляем локальное состояние
+                                                        const updatedInvoices = invoices.map(inv =>
+                                                            inv.id === invoice.id ? { ...inv, status: newStatus as 'pending' | 'paid' | 'cancelled' } : inv
+                                                        );
+                                                        // Здесь можно добавить обновление через React Query
+                                                    }}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                {invoice.payment_label ? (
+                                                    <div className="text-xs font-mono bg-gray-100 p-1 rounded">
+                                                        {invoice.payment_label.slice(0, 20)}...
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400 text-xs">Не задана</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                {invoice.status === 'paid' ? (
+                                                    <div className="text-xs space-y-1">
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-green-600">✓ Оплачено</span>
+                                                        </div>
+                                                        {invoice.payment_method && (
+                                                            <div className="text-gray-600">
+                                                                {invoice.payment_method}
+                                                            </div>
+                                                        )}
+                                                        {invoice.payment_date && (
+                                                            <div className="text-gray-600">
+                                                                {new Date(invoice.payment_date).toLocaleDateString('ru-RU')}
+                                                            </div>
+                                                        )}
+                                                        {invoice.payment_id && (
+                                                            <div className="text-gray-500 font-mono">
+                                                                ID: {invoice.payment_id.slice(0, 8)}...
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400 text-xs">-</span>
+                                                )}
+                                            </TableCell>
                                             <TableCell>{getStatusActions(invoice)}</TableCell>
                                         </TableRow>
                                     ))}

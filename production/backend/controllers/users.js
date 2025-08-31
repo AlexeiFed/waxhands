@@ -103,25 +103,45 @@ export const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
         const updateData = req.body;
+
         // Убираем поля, которые нельзя обновлять
         const { id: userId, role, created_at, updated_at, ...allowedUpdates } = updateData;
-        // Если обновляется school_id, получаем название школы
-        if (allowedUpdates.school_id) {
-            const schoolResult = await pool.query('SELECT name FROM schools WHERE id = $1', [allowedUpdates.school_id]);
+
+        // Преобразуем camelCase поля в snake_case для базы данных
+        const transformedUpdates = {};
+
+        if (allowedUpdates.schoolId !== undefined) {
+            transformedUpdates.school_id = allowedUpdates.schoolId;
+            // Получаем название школы
+            const schoolResult = await pool.query('SELECT name FROM schools WHERE id = $1', [allowedUpdates.schoolId]);
             if (schoolResult.rows.length > 0) {
-                allowedUpdates.school_name = schoolResult.rows[0].name;
+                transformedUpdates.school_name = schoolResult.rows[0].name;
             }
         }
+
+        if (allowedUpdates.class !== undefined) {
+            transformedUpdates.class_group = allowedUpdates.class;
+        }
+
+        // Добавляем остальные поля
+        if (allowedUpdates.name !== undefined) transformedUpdates.name = allowedUpdates.name;
+        if (allowedUpdates.surname !== undefined) transformedUpdates.surname = allowedUpdates.surname;
+        if (allowedUpdates.age !== undefined) transformedUpdates.age = allowedUpdates.age;
+        if (allowedUpdates.email !== undefined) transformedUpdates.email = allowedUpdates.email;
+        if (allowedUpdates.phone !== undefined) transformedUpdates.phone = allowedUpdates.phone;
+
         // Строим динамический запрос
-        const fields = Object.keys(allowedUpdates);
-        const values = Object.values(allowedUpdates);
+        const fields = Object.keys(transformedUpdates);
+        const values = Object.values(transformedUpdates);
         const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+
         const result = await pool.query(`
             UPDATE users 
             SET ${setClause}, updated_at = CURRENT_TIMESTAMP
             WHERE id = $1
             RETURNING *
         `, [id, ...values]);
+
         if (result.rows.length === 0) {
             res.status(404).json({
                 success: false,
@@ -129,8 +149,10 @@ export const updateUser = async (req, res) => {
             });
             return;
         }
+
         const updatedUser = result.rows[0];
         const { password_hash, ...userWithoutPassword } = updatedUser;
+
         // Преобразуем snake_case в camelCase для фронтенда
         const formattedUser = {
             ...userWithoutPassword,
@@ -141,12 +163,12 @@ export const updateUser = async (req, res) => {
             createdAt: updatedUser.created_at,
             updatedAt: updatedUser.updated_at
         };
+
         res.json({
             success: true,
             data: formattedUser
         });
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Update user error:', error);
         res.status(500).json({
             success: false,

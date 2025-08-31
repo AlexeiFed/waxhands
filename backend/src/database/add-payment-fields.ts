@@ -23,7 +23,7 @@ const addPaymentFields = async (): Promise<void> => {
             AND column_name IN ('payment_id', 'payment_method', 'payment_date')
         `);
 
-        const existingFields = checkFields.rows.map((row: any) => row.column_name);
+        const existingFields = checkFields.rows.map((row: { column_name: string }) => row.column_name);
         console.log('🔍 Существующие поля платежа:', existingFields);
 
         // Добавляем поле payment_id если его нет

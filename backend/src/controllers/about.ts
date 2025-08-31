@@ -6,9 +6,9 @@
  */
 
 import { Request, Response } from 'express';
-import pool from '../database/connection';
-import { AboutContent, AboutMedia, CreateAboutContentRequest, CreateAboutMediaRequest, UpdateAboutContentRequest, UpdateAboutMediaRequest } from '../types/about';
-import { wsManager } from '../websocket-server';
+import pool from '../database/connection.js';
+import { AboutContent, AboutMedia, CreateAboutContentRequest, CreateAboutMediaRequest, UpdateAboutContentRequest, UpdateAboutMediaRequest } from '../types/about.js';
+import { wsManager } from '../websocket-server.js';
 
 export class AboutController {
     // Получить весь контент about
@@ -38,27 +38,40 @@ export class AboutController {
                 return res.status(400).json({ error: 'ID не указан' });
             }
 
-            const updateFields = Object.keys(updates)
-                .filter(key => updates[key as keyof UpdateAboutContentRequest] !== undefined)
-                .map((key, index) => `${key} = $${index + 1}`)
-                .join(', ');
+            // Проверяем, что есть поля для обновления
+            const validUpdates = Object.keys(updates)
+                .filter(key => updates[key as keyof UpdateAboutContentRequest] !== undefined);
 
-            if (!updateFields) {
+            if (validUpdates.length === 0) {
                 return res.status(400).json({ error: 'Нет полей для обновления' });
             }
 
-            const values = Object.keys(updates)
-                .filter(key => updates[key as keyof UpdateAboutContentRequest] !== undefined)
-                .map(key => updates[key as keyof UpdateAboutContentRequest]);
+            // Строим SQL запрос безопасно
+            const setClauses = validUpdates.map((key, index) => `${key} = $${index + 1}`);
+            const sql = `UPDATE about SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${validUpdates.length + 1}`;
 
-            await pool.query(
-                `UPDATE about SET ${updateFields}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length + 1}`,
-                [...values, id]
-            );
+            // Подготавливаем значения
+            const values = validUpdates.map(key => {
+                const value = updates[key as keyof UpdateAboutContentRequest];
+                // Для JSON полей убеждаемся, что они корректно сериализованы
+                if (key === 'process_steps') {
+                    return JSON.stringify(value);
+                }
+                // Для массива строк advantages_list оставляем как есть
+                if (key === 'advantages_list') {
+                    return value;
+                }
+                return value;
+            });
+
+            console.log('🔍 About update SQL:', sql);
+            console.log('🔍 About update values:', values);
+
+            await pool.query(sql, [...values, id]);
 
             // Отправляем WebSocket уведомление
             if (wsManager) {
-                wsManager.notifyAboutContentUpdate(parseInt(id), 'updated');
+                wsManager.notifyAboutContentUpdate(id, 'content_updated');
             }
 
             return res.json({ message: 'Контент успешно обновлен' });
@@ -95,9 +108,17 @@ export class AboutController {
             const { rows: orderRows } = await pool.query('SELECT MAX(order_index) as max_order FROM about_media');
             const nextOrder = (orderRows[0]?.max_order || 0) + 1;
 
+            // Получаем ID основной записи about (берем первую запись)
+            const { rows: aboutRows } = await pool.query('SELECT id FROM about LIMIT 1');
+            if (aboutRows.length === 0) {
+                return res.status(500).json({ error: 'Базовая запись about не найдена' });
+            }
+            const aboutId = aboutRows[0].id;
+
             const { rows: result } = await pool.query(
-                'INSERT INTO about_media (filename, original_name, type, description, order_index, file_path) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                'INSERT INTO about_media (about_id, filename, original_name, type, title, description, order_index, file_path) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
                 [
+                    aboutId,
                     mediaData.filename,
                     mediaData.original_name,
                     mediaData.type,
@@ -112,8 +133,7 @@ export class AboutController {
                 id: result[0].id,
                 ...mediaData,
                 order_index: nextOrder,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                created_at: new Date().toISOString()
             };
 
             // Отправляем WebSocket уведомление
@@ -152,13 +172,13 @@ export class AboutController {
                 .map(key => updates[key as keyof UpdateAboutMediaRequest]);
 
             await pool.query(
-                `UPDATE about_media SET ${updateFields}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length + 1}`,
+                `UPDATE about_media SET ${updateFields} WHERE id = $${values.length + 1}`,
                 [...values, id]
             );
 
             // Отправляем WebSocket уведомление
             if (wsManager) {
-                wsManager.notifyAboutMediaUpdate(parseInt(id), 'updated');
+                wsManager.notifyAboutMediaUpdate(id, 'updated');
             }
 
             return res.json({ message: 'Медиа-файл успешно обновлен' });
@@ -181,7 +201,7 @@ export class AboutController {
 
             // Отправляем WebSocket уведомление
             if (wsManager) {
-                wsManager.notifyAboutMediaDeleted(parseInt(id));
+                wsManager.notifyAboutMediaDeleted(id);
             }
 
             return res.json({ message: 'Медиа-файл успешно удален' });
@@ -200,12 +220,27 @@ export class AboutController {
                 return res.status(400).json({ error: 'mediaIds должен быть массивом' });
             }
 
+            // Проверяем, что все ID существуют
+            const existingMedia = await pool.query(
+                'SELECT id FROM about_media WHERE id = ANY($1)',
+                [mediaIds]
+            );
+
+            if (existingMedia.rows.length !== mediaIds.length) {
+                return res.status(400).json({ error: 'Некоторые ID медиа не найдены' });
+            }
+
             // Обновляем порядок для каждого медиа-файла
             for (let i = 0; i < mediaIds.length; i++) {
                 await pool.query(
-                    'UPDATE about_media SET order_index = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                    'UPDATE about_media SET order_index = $1 WHERE id = $2',
                     [i + 1, mediaIds[i]]
                 );
+            }
+
+            // Отправляем WebSocket уведомление
+            if (wsManager) {
+                wsManager.notifyAboutContentUpdate('reorder', 'media_reordered');
             }
 
             return res.json({ message: 'Порядок медиа-файлов успешно обновлен' });

@@ -13,7 +13,7 @@ const ContactSection = () => {
     },
     {
       icon: Instagram,
-      title: "Instagram", 
+      title: "Instagram",
       details: ["@voskovye.ruchki", "@paveltyrin9522"],
       action: "Подписаться",
       variant: "playful" as const
@@ -30,7 +30,7 @@ const ContactSection = () => {
   const qrCodeUrl = "/lovable-uploads/47900363-9fb3-4fa4-9590-1c6dae708e32.png";
 
   return (
-    <section className="py-20 bg-gradient-hero">
+    <section className="py-20 bg-gradient-wax-hands">
       <div className="container mx-auto px-4">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -49,7 +49,7 @@ const ContactSection = () => {
           {/* Contact Methods */}
           <div className="space-y-6">
             {contactMethods.map((method, index) => (
-              <Card 
+              <Card
                 key={index}
                 className="shadow-card hover:shadow-playful transition-all duration-300 transform hover:scale-105"
               >
@@ -58,7 +58,7 @@ const ContactSection = () => {
                     <div className="bg-gradient-primary rounded-full p-3 shadow-playful">
                       <method.icon className="w-6 h-6 text-primary-foreground" />
                     </div>
-                    
+
                     <div className="flex-1">
                       <h3 className="font-bold text-lg mb-1">{method.title}</h3>
                       <div className="space-y-1">
@@ -67,7 +67,7 @@ const ContactSection = () => {
                         ))}
                       </div>
                     </div>
-                    
+
                     <Button variant={method.variant} size="lg">
                       {method.action}
                     </Button>
@@ -87,7 +87,7 @@ const ContactSection = () => {
                       <p className="text-sm text-muted-foreground">По всему городу</p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-3">
                     <Clock className="w-5 h-5 text-primary" />
                     <div>
@@ -110,15 +110,15 @@ const ContactSection = () => {
                     Отсканируйте код и узнайте всю информацию
                   </p>
                 </div>
-                
+
                 <div className="bg-background rounded-2xl p-4 mb-6">
-                  <img 
+                  <img
                     src={qrCodeUrl}
                     alt="QR код для связи"
                     className="w-full max-w-48 mx-auto rounded-lg"
                   />
                 </div>
-                
+
                 <Button variant="rainbow" size="xl" className="w-full">
                   <Mail className="w-5 h-5" />
                   Связаться сейчас

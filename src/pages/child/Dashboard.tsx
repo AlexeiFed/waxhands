@@ -267,7 +267,7 @@ const ChildDashboard = () => {
 
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-pink-100 to-blue-100 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
             {/* Анимированные звездочки */}
             <AnimatedStars count={20} className="opacity-60" />
 

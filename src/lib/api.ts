@@ -19,6 +19,7 @@ import {
     InvoiceFilters,
     CreateInvoiceRequest
 } from '../types';
+import { MasterClassEvent } from '../types/services';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -146,6 +147,10 @@ export const authAPI = {
 
         if (response.success && response.data) {
             setAuthToken(response.data.token);
+            
+            // Логируем успешную регистрацию
+            console.log('✅ Registration successful, token saved');
+            
             return response.data;
         }
 
@@ -665,6 +670,24 @@ export const masterClassesAPI = {
         throw new Error(response.error || 'Failed to create master class');
     },
 
+    // Массовое создание мастер-классов
+    createMultiple: async (data: {
+        date: string;
+        time: string;
+        schoolId: string;
+        classGroups: string[];
+        serviceId: string;
+        executors: string[];
+        notes?: string;
+    }): Promise<ApiResponse<MasterClassEvent[]>> => {
+        const response = await apiRequest<MasterClassEvent[]>('/master-classes/multiple', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+
+        return response;
+    },
+
     // Обновление мастер-класса
     updateMasterClass: async (id: string, masterClassData: Partial<MasterClass>): Promise<MasterClass> => {
         const response = await apiRequest<MasterClass>(`/master-classes/${id}`, {
@@ -689,6 +712,16 @@ export const masterClassesAPI = {
             throw new Error(response.error || 'Failed to delete master class');
         }
     },
+};
+
+// Тип для статистики мастер-класса
+type MasterClassStatisticsDTO = {
+    totalParticipants?: number;
+    totalAmount?: number;
+    paidAmount?: number;
+    unpaidAmount?: number;
+    stylesStats?: Record<string, number>;
+    optionsStats?: Record<string, number>;
 };
 
 // API для событий мастер-классов
@@ -716,16 +749,30 @@ type MasterClassEventDTO = {
         paymentDate?: string;
         notes?: string;
     }>;
-    statistics: Record<string, unknown>;
+    statistics: MasterClassStatisticsDTO;
     school_address?: string;
     school_name?: string; // Добавляем название школы
     service_name?: string; // Добавляем название услуги
+    // Новые поля для отображения имен исполнителей и данных школы
+    executor_names?: string[];
+    executors_full?: Array<{
+        id: string;
+        name: string;
+        surname: string;
+        fullName: string;
+    }>;
+    school_data?: {
+        teacher?: string;
+        teacherPhone?: string;
+    };
     created_at: string;
     updated_at: string;
 };
 
+
+
 export const masterClassEventsAPI = {
-    getEvents: async (params?: { schoolId?: string; classGroup?: string; date?: string; userId?: string }): Promise<{ masterClasses: Record<string, unknown>[]; total: number }> => {
+    getEvents: async (params?: { schoolId?: string; classGroup?: string; date?: string; userId?: string }): Promise<{ masterClasses: MasterClassEvent[]; total: number }> => {
         try {
             const searchParams = new URLSearchParams();
             if (params?.schoolId) searchParams.append('schoolId', params.schoolId);
@@ -766,17 +813,27 @@ export const masterClassEventsAPI = {
                         date: ev.date,
                         time: ev.time,
                         schoolId: ev.school_id,
+                        schoolName: ev.school_name || school?.name || `Школа ${ev.school_id}`,
+                        city: city,
                         classGroup: ev.class_group,
                         serviceId: ev.service_id,
+                        serviceName: ev.service_name || service?.name || `Услуга ${ev.service_id}`,
                         executors: ev.executors,
+                        executor_names: ev.executor_names,
+                        executors_full: ev.executors_full,
                         notes: ev.notes,
                         participants: ev.participants,
-                        statistics: ev.statistics,
+                        statistics: {
+                            totalParticipants: ev.statistics?.totalParticipants || 0,
+                            totalAmount: ev.statistics?.totalAmount || 0,
+                            paidAmount: ev.statistics?.paidAmount || 0,
+                            unpaidAmount: ev.statistics?.unpaidAmount || 0,
+                            stylesStats: ev.statistics?.stylesStats || {},
+                            optionsStats: ev.statistics?.optionsStats || {},
+                        },
+                        school_data: ev.school_data,
                         createdAt: ev.created_at,
                         updatedAt: ev.updated_at,
-                        schoolName: ev.school_name || school?.name || `Школа ${ev.school_id}`,
-                        serviceName: ev.service_name || service?.name || `Услуга ${ev.service_id}`,
-                        city: city,
                     };
                 });
 
@@ -788,7 +845,7 @@ export const masterClassEventsAPI = {
             throw error;
         }
     },
-    getEventById: async (id: string): Promise<MasterClassEventDTO> => {
+    getEventById: async (id: string): Promise<MasterClassEvent> => {
         const response = await apiRequest<MasterClassEventDTO>(`/master-classes/${id}`);
         if (response.success && response.data) {
             const ev = response.data;
@@ -796,21 +853,33 @@ export const masterClassEventsAPI = {
                 id: ev.id,
                 date: ev.date,
                 time: ev.time,
-                school_id: ev.school_id,
-                class_group: ev.class_group,
-                service_id: ev.service_id,
+                schoolId: ev.school_id,
+                schoolName: ev.school_name || 'Школа не указана',
+                city: ev.school_address ? ev.school_address.split(',')[0].trim() : 'Не указан',
+                classGroup: ev.class_group,
+                serviceId: ev.service_id,
+                serviceName: ev.service_name || 'Услуга не указана',
                 executors: ev.executors,
+                executor_names: ev.executor_names,
+                executors_full: ev.executors_full,
                 notes: ev.notes,
                 participants: ev.participants,
-                statistics: ev.statistics,
-                school_address: ev.school_address,
-                created_at: ev.created_at,
-                updated_at: ev.updated_at,
+                statistics: {
+                    totalParticipants: ev.statistics?.totalParticipants || 0,
+                    totalAmount: ev.statistics?.totalAmount || 0,
+                    paidAmount: ev.statistics?.paidAmount || 0,
+                    unpaidAmount: ev.statistics?.unpaidAmount || 0,
+                    stylesStats: ev.statistics?.stylesStats || {},
+                    optionsStats: ev.statistics?.optionsStats || {},
+                },
+                school_data: ev.school_data,
+                createdAt: ev.created_at,
+                updatedAt: ev.updated_at,
             };
         }
         throw new Error(response.error || 'Failed to get master class event');
     },
-    createEvent: async (data: Record<string, unknown>): Promise<MasterClassEventDTO> => {
+    createEvent: async (data: Record<string, unknown>): Promise<MasterClassEvent> => {
         // Отладочная информация для понимания проблемы с датами
         console.log('API createEvent: отправляем данные:', {
             originalData: data,
@@ -820,12 +889,70 @@ export const masterClassEventsAPI = {
         });
 
         const response = await apiRequest<MasterClassEventDTO>(`/master-classes`, { method: 'POST', body: JSON.stringify(data) });
-        if (response.success && response.data) return response.data;
+        if (response.success && response.data) {
+            const ev = response.data;
+            return {
+                id: ev.id,
+                date: ev.date,
+                time: ev.time,
+                schoolId: ev.school_id,
+                schoolName: ev.school_name || 'Школа не указана',
+                city: ev.school_address ? ev.school_address.split(',')[0].trim() : 'Не указан',
+                classGroup: ev.class_group,
+                serviceId: ev.service_id,
+                serviceName: ev.service_name || 'Услуга не указана',
+                executors: ev.executors,
+                executor_names: ev.executor_names,
+                executors_full: ev.executors_full,
+                notes: ev.notes,
+                participants: ev.participants,
+                statistics: {
+                    totalParticipants: ev.statistics?.totalParticipants || 0,
+                    totalAmount: ev.statistics?.totalAmount || 0,
+                    paidAmount: ev.statistics?.paidAmount || 0,
+                    unpaidAmount: ev.statistics?.unpaidAmount || 0,
+                    stylesStats: ev.statistics?.stylesStats || {},
+                    optionsStats: ev.statistics?.optionsStats || {},
+                },
+                school_data: ev.school_data,
+                createdAt: ev.created_at,
+                updatedAt: ev.updated_at,
+            };
+        }
         throw new Error(response.error || 'Failed to create master class event');
     },
-    updateEvent: async (id: string, data: Record<string, unknown>): Promise<MasterClassEventDTO> => {
+    updateEvent: async (id: string, data: Record<string, unknown>): Promise<MasterClassEvent> => {
         const response = await apiRequest<MasterClassEventDTO>(`/master-classes/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-        if (response.success && response.data) return response.data;
+        if (response.success && response.data) {
+            const ev = response.data;
+            return {
+                id: ev.id,
+                date: ev.date,
+                time: ev.time,
+                schoolId: ev.school_id,
+                schoolName: ev.school_name || 'Школа не указана',
+                city: ev.school_address ? ev.school_address.split(',')[0].trim() : 'Не указан',
+                classGroup: ev.class_group,
+                serviceId: ev.service_id,
+                serviceName: ev.service_name || 'Услуга не указана',
+                executors: ev.executors,
+                executor_names: ev.executor_names,
+                executors_full: ev.executors_full,
+                notes: ev.notes,
+                participants: ev.participants,
+                statistics: {
+                    totalParticipants: ev.statistics?.totalParticipants || 0,
+                    totalAmount: ev.statistics?.totalAmount || 0,
+                    paidAmount: ev.statistics?.paidAmount || 0,
+                    unpaidAmount: ev.statistics?.unpaidAmount || 0,
+                    stylesStats: ev.statistics?.stylesStats || {},
+                    optionsStats: ev.statistics?.optionsStats || {},
+                },
+                school_data: ev.school_data,
+                createdAt: ev.created_at,
+                updatedAt: ev.updated_at,
+            };
+        }
         throw new Error(response.error || 'Failed to update master class event');
     },
     deleteEvent: async (id: string): Promise<void> => {

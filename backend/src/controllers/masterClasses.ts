@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import pool from '../database/connection.js';
 import { wsManager } from '../websocket-server.js';
 
+// Тестовая функция для проверки компиляции
+export const testFunction = async (req: Request, res: Response): Promise<void> => {
+    res.json({ success: true, message: 'Test function works' });
+};
+
 // Удалено - таблица master_classes больше не используется
 
 // Удалено - таблица master_classes больше не используется
@@ -229,15 +234,139 @@ export const getMasterClassEvents = async (req: Request, res: Response): Promise
     }
 };
 
-export const getMasterClassEventById = async (req: Request, res: Response): Promise<void> => {
+export const getMasterClassEventByIdNew = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
-        const result = await pool.query('SELECT * FROM master_class_events WHERE id = $1', [id]);
+        const id = req.params.id as string;
+
+        // Получаем мастер-класс с JOIN'ами для получения имен и данных школы
+        const result = await pool.query(`
+            SELECT 
+                mce.*,
+                s.name as school_name,
+                s.address as school_address,
+                s.teacher as school_teacher,
+                s.teacher_phone as school_teacher_phone,
+                srv.name as service_name
+            FROM master_class_events mce
+            LEFT JOIN schools s ON mce.school_id = s.id
+            LEFT JOIN services srv ON mce.service_id = srv.id
+            WHERE mce.id = $1
+        `, [id]);
+
         if (result.rows.length === 0) {
             res.status(404).json({ success: false, error: 'Master class event not found' });
             return;
         }
-        res.json({ success: true, data: result.rows[0] });
+
+        const masterClass = result.rows[0];
+
+        // Преобразуем ID исполнителей в имена
+        if (masterClass.executors && Array.isArray(masterClass.executors)) {
+            try {
+                const executorIds = masterClass.executors;
+                if (executorIds.length > 0) {
+                    const executorQuery = `
+                        SELECT id, name, surname 
+                        FROM users 
+                        WHERE id = ANY($1) AND role = 'executor'
+                    `;
+                    const executorResult = await pool.query(executorQuery, [executorIds]);
+
+                    // Создаем маппинг ID -> имя
+                    const executorMap = new Map();
+                    executorResult.rows.forEach(executor => {
+                        executorMap.set(executor.id, `${executor.name} ${executor.surname}`);
+                    });
+
+                    // Заменяем ID на имена
+                    masterClass.executor_names = executorIds.map((executorId: string) => executorMap.get(executorId) || executorId);
+                    masterClass.executors_original = executorIds; // Сохраняем оригинальные ID
+                }
+            } catch (executorError) {
+                console.error('Error fetching executor names:', executorError);
+                // В случае ошибки оставляем оригинальные ID
+                masterClass.executor_names = masterClass.executors;
+            }
+        }
+
+        res.json({ success: true, data: masterClass });
+    } catch (error) {
+        console.error('Get master class event error:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+export const getMasterClassEventById = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const id = req.params.id as string;
+
+        // Получаем мастер-класс с JOIN'ами для получения имен и данных школы
+        const result = await pool.query(`
+            SELECT 
+                mce.*,
+                s.name as school_name,
+                s.address as school_address,
+                s.teacher as school_teacher,
+                s.teacher_phone as school_teacher_phone,
+                srv.name as service_name
+            FROM master_class_events mce
+            LEFT JOIN schools s ON mce.school_id = s.id
+            LEFT JOIN services srv ON mce.service_id = srv.id
+            WHERE mce.id = $1
+        `, [id]);
+
+        if (result.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Master class event not found' });
+            return;
+        }
+
+        const masterClass = result.rows[0];
+
+        // Преобразуем ID исполнителей в имена
+        if (masterClass.executors && Array.isArray(masterClass.executors)) {
+            try {
+                const executorIds = masterClass.executors;
+                if (executorIds.length > 0) {
+                    const executorQuery = `
+                        SELECT id, name, surname 
+                        FROM users 
+                        WHERE id = ANY($1) AND role = 'executor'
+                    `;
+                    const executorResult = await pool.query(executorQuery, [executorIds]);
+
+                    // Создаем маппинг ID -> имя
+                    const executorMap = new Map();
+                    executorResult.rows.forEach(executor => {
+                        executorMap.set(executor.id, `${executor.name} ${executor.surname}`.trim());
+                    });
+
+                    // Заменяем ID на имена
+                    masterClass.executor_names = executorIds.map((executorId: string) => executorMap.get(executorId) || executorId);
+                    masterClass.executors_original = executorIds; // Сохраняем оригинальные ID
+
+                    // Добавляем полные данные исполнителей для фронтенда
+                    masterClass.executors_full = executorResult.rows.map(executor => ({
+                        id: executor.id,
+                        name: executor.name,
+                        surname: executor.surname,
+                        fullName: `${executor.name} ${executor.surname}`.trim()
+                    }));
+                }
+            } catch (executorError) {
+                console.error('Error fetching executor names:', executorError);
+                // В случае ошибки оставляем оригинальные ID
+                masterClass.executor_names = masterClass.executors;
+                masterClass.executors_full = [];
+            }
+        }
+
+        // Добавляем данные школы для фронтенда
+        masterClass.school_data = {
+            teacher: masterClass.school_teacher || 'Учитель не указан',
+            teacherPhone: masterClass.school_teacher_phone || 'Телефон не указан'
+        };
+
+        res.json({ success: true, data: masterClass });
     } catch (error) {
         console.error('Get master class event error:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
@@ -257,6 +386,38 @@ export const createMasterClassEvent = async (req: Request, res: Response): Promi
             parsedDateLocal: date ? new Date(date).toLocaleDateString() : null
         });
 
+        // Проверка обязательных полей
+        if (!date || !time || !schoolId || !classGroup || !serviceId) {
+            console.error('createMasterClassEvent: отсутствуют обязательные поля:', { date, time, schoolId, classGroup, serviceId });
+            res.status(400).json({ 
+                success: false, 
+                error: 'Missing required fields',
+                details: { date: !!date, time: !!time, schoolId: !!schoolId, classGroup: !!classGroup, serviceId: !!serviceId }
+            });
+            return;
+        }
+
+        // Проверка существования школы и услуги
+        try {
+            const schoolCheck = await pool.query('SELECT id FROM schools WHERE id = $1', [schoolId]);
+            if (schoolCheck.rows.length === 0) {
+                console.error('createMasterClassEvent: школа не найдена:', schoolId);
+                res.status(400).json({ success: false, error: 'School not found' });
+                return;
+            }
+
+            const serviceCheck = await pool.query('SELECT id FROM services WHERE id = $1', [serviceId]);
+            if (serviceCheck.rows.length === 0) {
+                console.error('createMasterClassEvent: услуга не найдена:', serviceId);
+                res.status(400).json({ success: false, error: 'Service not found' });
+                return;
+            }
+        } catch (checkError) {
+            console.error('createMasterClassEvent: ошибка проверки школы/услуги:', checkError);
+            res.status(500).json({ success: false, error: 'Database check error' });
+            return;
+        }
+
         const defaultStats = {
             totalParticipants: 0,
             totalAmount: 0,
@@ -266,15 +427,156 @@ export const createMasterClassEvent = async (req: Request, res: Response): Promi
             optionsStats: {}
         };
 
+        console.log('createMasterClassEvent: выполняем INSERT с параметрами:', {
+            date, time, schoolId, classGroup, serviceId,
+            executors: JSON.stringify(executors),
+            participants: JSON.stringify(participants),
+            statistics: JSON.stringify(statistics ?? defaultStats)
+        });
+
         const result = await pool.query(`
             INSERT INTO master_class_events (date, time, school_id, class_group, service_id, executors, notes, participants, statistics)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         `, [date, time, schoolId, classGroup, serviceId, JSON.stringify(executors), notes, JSON.stringify(participants), JSON.stringify(statistics ?? defaultStats)]);
 
+        console.log('createMasterClassEvent: успешно создан мастер-класс:', result.rows[0]);
+        
+        // Отправляем WebSocket уведомление о создании мастер-класса
+        wsManager.notifyMasterClassUpdate(result.rows[0].id, 'created');
+        console.log('📡 WebSocket уведомление отправлено для:', result.rows[0].id);
+        
         res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
         console.error('Create master class event error:', error);
+        console.error('Error details:', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : 'No stack trace',
+            name: error instanceof Error ? error.name : 'Unknown error type'
+        });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+// Новая функция для массового создания мастер-классов
+export const createMultipleMasterClassEvents = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { date, time, schoolId, classGroups, serviceId, executors = [], notes = '', participants = [], statistics = undefined } = req.body;
+
+        // Валидация входных данных
+        if (!Array.isArray(classGroups) || classGroups.length === 0) {
+            res.status(400).json({
+                success: false,
+                error: 'classGroups должен быть массивом с хотя бы одним элементом'
+            });
+            return;
+        }
+
+        // Проверка обязательных полей
+        if (!date || !time || !schoolId || !serviceId) {
+            res.status(400).json({
+                success: false,
+                error: 'Missing required fields',
+                details: { date: !!date, time: !!time, schoolId: !!schoolId, serviceId: !!serviceId }
+            });
+            return;
+        }
+
+        // Проверка существования школы и услуги
+        try {
+            const schoolCheck = await pool.query('SELECT id FROM schools WHERE id = $1', [schoolId]);
+            if (schoolCheck.rows.length === 0) {
+                res.status(400).json({ success: false, error: 'School not found' });
+                return;
+            }
+
+            const serviceCheck = await pool.query('SELECT id FROM services WHERE id = $1', [serviceId]);
+            if (serviceCheck.rows.length === 0) {
+                res.status(400).json({ success: false, error: 'Service not found' });
+                return;
+            }
+        } catch (checkError) {
+            console.error('createMultipleMasterClassEvents: ошибка проверки школы/услуги:', checkError);
+            res.status(500).json({ success: false, error: 'Database check error' });
+            return;
+        }
+
+        console.log('createMultipleMasterClassEvents: получены данные:', {
+            date,
+            dateType: typeof date,
+            parsedDate: date ? new Date(date) : null,
+            time,
+            schoolId,
+            classGroups,
+            serviceId,
+            executors,
+            notes
+        });
+
+        const defaultStats = {
+            totalParticipants: 0,
+            totalAmount: 0,
+            paidAmount: 0,
+            unpaidAmount: 0,
+            stylesStats: {},
+            optionsStats: {}
+        };
+
+        const results = [];
+        const errors = [];
+
+        // Создаем мастер-класс для каждого класса
+        for (const classGroup of classGroups) {
+            try {
+                const result = await pool.query(`
+                    INSERT INTO master_class_events (date, time, school_id, class_group, service_id, executors, notes, participants, statistics)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING *
+                `, [
+                    date,
+                    time,
+                    schoolId,
+                    classGroup,
+                    serviceId,
+                    JSON.stringify(executors),
+                    notes,
+                    JSON.stringify(participants),
+                    JSON.stringify(statistics ?? defaultStats)
+                ]);
+
+                results.push(result.rows[0]);
+                console.log(`Создан мастер-класс для класса ${classGroup}`);
+            } catch (error) {
+                console.error(`Ошибка создания мастер-класса для класса ${classGroup}:`, error);
+                errors.push({
+                    classGroup,
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
+            }
+        }
+
+        if (errors.length > 0) {
+            res.status(207).json({
+                success: true,
+                data: results,
+                warnings: {
+                    message: `Создано ${results.length} из ${classGroups.length} мастер-классов`,
+                    errors
+                }
+            });
+        } else {
+            res.status(201).json({
+                success: true,
+                data: results,
+                message: `Успешно создано ${results.length} мастер-классов`
+            });
+        }
+    } catch (error) {
+        console.error('Create multiple master class events error:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };

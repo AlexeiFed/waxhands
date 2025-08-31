@@ -138,6 +138,12 @@ export const chatApi = {
             console.error('❌ chat-api: getUnreadCount ошибка:', error);
             throw error;
         }
+    },
+
+    // Удалить чат
+    deleteChat: async (chatId: string): Promise<{ success: boolean; message: string }> => {
+        const response = await api.delete<{ success: boolean; message: string }>(`/chat/${chatId}`);
+        return response.data!;
     }
 };
 

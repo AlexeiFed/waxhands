@@ -88,17 +88,27 @@ export function useAboutContent() {
             // Обрабатываем специальные поля
             let processedUpdates = { ...updates };
 
-            if ('advantages_list' in updates && typeof updates.advantages_list === 'string') {
-                // Разбиваем строку на массив по переносам строк
-                processedUpdates.advantages_list = updates.advantages_list.split('\n').filter(item => item.trim());
+            if ('advantages_list' in updates) {
+                if (typeof updates.advantages_list === 'string') {
+                    // Разбиваем строку на массив по переносам строк
+                    processedUpdates.advantages_list = updates.advantages_list.split('\n').filter(item => item.trim());
+                } else if (Array.isArray(updates.advantages_list)) {
+                    // Если уже массив, оставляем как есть
+                    processedUpdates.advantages_list = updates.advantages_list;
+                }
             }
 
-            if ('process_steps' in updates && typeof updates.process_steps === 'string') {
-                try {
-                    // Парсим JSON строку
-                    processedUpdates.process_steps = JSON.parse(updates.process_steps);
-                } catch (e) {
-                    throw new Error('Неверный формат JSON для шагов процесса');
+            if ('process_steps' in updates) {
+                if (typeof updates.process_steps === 'string') {
+                    try {
+                        // Парсим JSON строку
+                        processedUpdates.process_steps = JSON.parse(updates.process_steps);
+                    } catch (e) {
+                        throw new Error('Неверный формат JSON для шагов процесса');
+                    }
+                } else if (Array.isArray(updates.process_steps)) {
+                    // Если уже массив, оставляем как есть
+                    processedUpdates.process_steps = updates.process_steps;
                 }
             }
 

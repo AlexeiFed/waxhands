@@ -67,9 +67,20 @@ export interface MasterClassEvent {
     serviceId: string;
     serviceName: string;
     executors: string[];
+    executor_names?: string[]; // Имена исполнителей вместо ID
+    executors_full?: Array<{ // Полные данные исполнителей
+        id: string;
+        name: string;
+        surname: string;
+        fullName: string;
+    }>;
     notes?: string;
     participants: MasterClassParticipant[];
     statistics: MasterClassStatistics;
+    school_data?: { // Данные школы для контактного лица
+        teacher?: string;
+        teacherPhone?: string;
+    };
     createdAt: string;
     updatedAt: string;
 } 

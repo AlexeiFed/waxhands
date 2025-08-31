@@ -16,8 +16,9 @@ export interface MediaFile {
     url: string; // путь к файлу в assets
 }
 
-// Максимальный размер файла (5MB)
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+// Максимальный размер файла (50MB для видео, 10MB для изображений)
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
 // Генерация уникального имени файла
 export const generateMediaFilename = (originalName: string, type: 'image' | 'video'): string => {
@@ -50,9 +51,10 @@ const compressImage = (file: File, maxWidth: number = 800): Promise<Blob> => {
 // Сохранение файла в assets/about (реальное сохранение)
 export const saveMediaFile = async (file: File, type: 'image' | 'video'): Promise<string> => {
     try {
-        // Проверяем размер файла
-        if (file.size > MAX_FILE_SIZE) {
-            throw new Error(`Файл слишком большой. Максимальный размер: ${MAX_FILE_SIZE / 1024 / 1024}MB`);
+        // Проверяем размер файла в зависимости от типа
+        const maxSize = type === 'video' ? MAX_FILE_SIZE : MAX_IMAGE_SIZE;
+        if (file.size > maxSize) {
+            throw new Error(`Файл слишком большой. Максимальный размер для ${type === 'video' ? 'видео' : 'изображений'}: ${maxSize / 1024 / 1024}MB`);
         }
 
         const filename = generateMediaFilename(file.name, type);

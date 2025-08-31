@@ -5,15 +5,15 @@
  * @created: 2024-12-19
  */
 
-import { db } from '../database/connection';
+import { db } from '../database/connection.js';
 import {
     WorkshopRequest,
     CreateWorkshopRequestData,
     UpdateWorkshopRequestData,
     WorkshopRequestWithParent,
     ApiResponse
-} from '../types';
-import { wsManager } from '../websocket-server';
+} from '../types/index.js';
+import { wsManager } from '../websocket-server.js';
 
 export class WorkshopRequestsController {
 

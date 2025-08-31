@@ -33,6 +33,7 @@ interface MasterClassesTabProps {
     onEditMasterClass: (id: string, masterClass: Partial<MasterClassEvent>) => void;
     onViewMasterClass: (masterClass: MasterClassEvent) => void;
     onDeleteMasterClass: (id: string) => void;
+    onRefreshMasterClasses: () => void;
 }
 
 export default function MasterClassesTab({
@@ -42,7 +43,8 @@ export default function MasterClassesTab({
     onAddMasterClass,
     onEditMasterClass,
     onViewMasterClass,
-    onDeleteMasterClass
+    onDeleteMasterClass,
+    onRefreshMasterClasses
 }: MasterClassesTabProps) {
     const { toast } = useToast();
 
@@ -59,7 +61,7 @@ export default function MasterClassesTab({
         date: '',
         time: '',
         schoolId: '',
-        classGroup: '',
+        classGroups: [] as string[], // Изменено с classGroup на classGroups массив
         serviceId: '',
         executors: [] as string[],
         notes: ''
@@ -83,7 +85,7 @@ export default function MasterClassesTab({
 
     // Получение уникальных городов
     const getUniqueCities = (): string[] => {
-        const cities = schools.map(school => {
+        const cities = (schools || []).map(school => {
             // Извлекаем город из адреса школы
             return school.address ? school.address.split(',')[0].trim() : '';
         }).filter(Boolean);
@@ -92,8 +94,8 @@ export default function MasterClassesTab({
 
     // Получение отфильтрованных школ
     const getFilteredSchools = (): School[] => {
-        if (filterCity === 'all') return schools;
-        return schools.filter(school => {
+        if (filterCity === 'all') return schools || [];
+        return (schools || []).filter(school => {
             const schoolCity = school.address ? school.address.split(',')[0].trim() : '';
             return schoolCity === filterCity;
         });
@@ -102,18 +104,18 @@ export default function MasterClassesTab({
     // Получение отфильтрованных классов
     const getFilteredClasses = (): string[] => {
         if (!formData.schoolId) return [];
-        const school = schools.find(s => s.id === formData.schoolId);
+        const school = (schools || []).find(s => s.id === formData.schoolId);
         return school ? school.classes : [];
     };
 
     // Получение отфильтрованных мастер-классов
     const getFilteredMasterClasses = (): MasterClassEvent[] => {
-        let filtered = masterClasses;
+        let filtered = masterClasses || [];
 
         // Фильтр по городу
         if (filterCity !== 'all') {
             filtered = filtered.filter(mc => {
-                const school = schools.find(s => s.id === mc.schoolId);
+                const school = (schools || []).find(s => s.id === mc.schoolId);
                 if (school && school.address) {
                     const schoolCity = school.address.split(',')[0].trim();
                     return schoolCity === filterCity;
@@ -169,7 +171,7 @@ export default function MasterClassesTab({
         setLoadingExecutors(true);
         try {
             const response = await api.users.getUsers({ role: 'executor' });
-            setAvailableExecutors(response.users.map(user => ({
+            setAvailableExecutors((response.users || []).map(user => ({
                 id: user.id,
                 name: `${user.name}${user.surname ? ` ${user.surname}` : ''}`
             })));
@@ -379,7 +381,7 @@ export default function MasterClassesTab({
 
         // Отладочная информация для понимания проблемы
         console.log(`getMasterClassesForDate: ищем для даты ${dateStr}`);
-        console.log(`getMasterClassesForDate: доступные даты в данных:`, masterClasses.map(mc => mc.date));
+        console.log(`getMasterClassesForDate: доступные даты в данных:`, (masterClasses || []).map(mc => mc.date));
 
         const filtered = masterClasses.filter(mc => {
             // Обрабатываем разные форматы дат
@@ -448,12 +450,21 @@ export default function MasterClassesTab({
 
     // Обработка изменения школы
     const handleSchoolChange = (schoolId: string) => {
-        setFormData(prev => ({ ...prev, schoolId, classGroup: '' }));
+        setFormData(prev => ({ ...prev, schoolId, classGroups: [] }));
     };
 
     // Обработка отправки формы
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (formData.classGroups.length === 0) {
+            toast({
+                title: "Ошибка",
+                description: "Выберите хотя бы один класс/группу",
+                variant: "destructive",
+            });
+            return;
+        }
 
         if (formData.executors.length === 0) {
             toast({
@@ -463,17 +474,6 @@ export default function MasterClassesTab({
             });
             return;
         }
-
-        // Отладочная информация для проверки даты
-        console.log(`handleSubmit: отправляем мастер-класс с датой:`, {
-            formDataDate: formData.date,
-            formDataType: typeof formData.date,
-            currentFormData: formData,
-            // Дополнительная отладка для понимания проблемы с датами
-            parsedDate: new Date(formData.date),
-            parsedDateISO: new Date(formData.date).toISOString(),
-            parsedDateLocal: new Date(formData.date).toLocaleDateString()
-        });
 
         // Дополнительная валидация даты
         if (!formData.date) {
@@ -499,35 +499,64 @@ export default function MasterClassesTab({
             return;
         }
 
-        onAddMasterClass({
-            date: formData.date,
-            time: formData.time,
-            schoolId: formData.schoolId,
-            classGroup: formData.classGroup,
-            serviceId: formData.serviceId,
-            executors: formData.executors,
-            notes: formData.notes,
-            city: schools.find(s => s.id === formData.schoolId)?.address?.split(',')[0]?.trim() || '',
-            schoolName: schools.find(s => s.id === formData.schoolId)?.name || '',
-            serviceName: services.find(s => s.id === formData.serviceId)?.name || ''
-        });
+        // Создаем мастер-классы для всех выбранных классов через новый API
+        try {
+            console.log('🎯 Создание мастер-классов для:', {
+                date: formData.date,
+                schoolId: formData.schoolId,
+                classGroups: formData.classGroups.length,
+                serviceId: formData.serviceId,
+                executors: formData.executors.length
+            });
 
-        // Сброс формы
-        setFormData({
-            date: '',
-            time: '',
-            schoolId: '',
-            classGroup: '',
-            serviceId: '',
-            executors: [],
-            notes: ''
-        });
-        setIsAddDialogOpen(false);
+            const response = await api.masterClasses.createMultiple({
+                date: formData.date,
+                time: formData.time,
+                schoolId: formData.schoolId,
+                classGroups: formData.classGroups,
+                serviceId: formData.serviceId,
+                executors: formData.executors,
+                notes: formData.notes
+            });
 
-        toast({
-            title: "Успешно",
-            description: "Мастер-класс создан",
-        });
+            console.log('✅ Мастер-классы созданы:', response);
+
+            // Проверяем структуру ответа и обновляем список мастер-классов
+            if (response.success && response.data && Array.isArray(response.data)) {
+                console.log(`Успешно создано ${response.data.length} мастер-классов`);
+
+                // Обновляем список мастер-классов через callback
+                onRefreshMasterClasses();
+
+                // Сброс формы
+                setFormData({
+                    date: '',
+                    time: '',
+                    schoolId: '',
+                    classGroups: [],
+                    serviceId: '',
+                    executors: [],
+                    notes: ''
+                });
+                setIsAddDialogOpen(false);
+
+                toast({
+                    title: "Успешно",
+                    description: `Создано ${response.data.length} мастер-класс${response.data.length === 1 ? '' : 'ов'}. Список обновится автоматически.`,
+                });
+            } else {
+                console.error('Неожиданная структура ответа API:', response);
+                throw new Error('Неожиданная структура ответа от сервера');
+            }
+        } catch (error) {
+            console.error('❌ Ошибка создания мастер-классов:', error);
+            toast({
+                title: "Ошибка",
+                description: error instanceof Error ? error.message : "Не удалось создать мастер-классы",
+                variant: "destructive",
+            });
+            return;
+        }
     };
 
     // Обработка изменения исполнителей
@@ -567,7 +596,7 @@ export default function MasterClassesTab({
         // Дополнительная отладка для понимания структуры данных
         if (masterClasses.length > 0) {
             console.log('MasterClassesTab: Пример мастер-класса:', masterClasses[0]);
-            console.log('MasterClassesTab: Все даты мастер-классов:', masterClasses.map(mc => mc.date));
+            console.log('MasterClassesTab: Все даты мастер-классов:', (masterClasses || []).map(mc => mc.date));
 
             // Проверяем, какие даты будут найдены для текущего месяца
             const currentDate = new Date();
@@ -628,7 +657,7 @@ export default function MasterClassesTab({
 
         // Данные по школам (уникальные)
         const uniqueSchools = Array.from(new Set(filteredClasses.map(mc => mc.schoolId)))
-            .map(schoolId => schools.find(s => s.id === schoolId))
+            .map(schoolId => (schools || []).find(s => s.id === schoolId))
             .filter(Boolean);
 
         const schoolsData = uniqueSchools.map(school => [
@@ -809,7 +838,7 @@ export default function MasterClassesTab({
                                             <SelectValue placeholder="Выберите школу/садик" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {schools.map(school => (
+                                            {(schools || []).map(school => (
                                                 <SelectItem key={school.id} value={school.id}>
                                                     {school.name}
                                                 </SelectItem>
@@ -819,23 +848,66 @@ export default function MasterClassesTab({
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="class">Класс/Группа</Label>
-                                    <Select
-                                        value={formData.classGroup}
-                                        onValueChange={(value) => setFormData(prev => ({ ...prev, classGroup: value }))}
-                                        disabled={!formData.schoolId}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Выберите класс/группу" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {getFilteredClasses().map(className => (
-                                                <SelectItem key={className} value={className}>
-                                                    {className}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                    <Label>Классы/Группы</Label>
+                                    {!formData.schoolId ? (
+                                        <div className="text-sm text-muted-foreground">
+                                            Сначала выберите школу
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        const allClasses = getFilteredClasses();
+                                                        setFormData(prev => ({ ...prev, classGroups: allClasses }));
+                                                    }}
+                                                >
+                                                    Выбрать все классы
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setFormData(prev => ({ ...prev, classGroups: [] }))}
+                                                >
+                                                    Снять выбор
+                                                </Button>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                                                {getFilteredClasses().map(className => (
+                                                    <label key={className} className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 p-2 rounded">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.classGroups.includes(className)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        classGroups: [...prev.classGroups, className]
+                                                                    }));
+                                                                } else {
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        classGroups: prev.classGroups.filter(c => c !== className)
+                                                                    }));
+                                                                }
+                                                            }}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm">{className}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            {formData.classGroups.length > 0 && (
+                                                <div className="text-sm text-muted-foreground">
+                                                    Выбрано классов: {formData.classGroups.length}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="space-y-2">
@@ -845,7 +917,7 @@ export default function MasterClassesTab({
                                             <SelectValue placeholder="Выберите услугу" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {services.map(service => (
+                                            {(services || []).map(service => (
                                                 <SelectItem key={service.id} value={service.id}>
                                                     {service.name}
                                                 </SelectItem>
@@ -860,7 +932,7 @@ export default function MasterClassesTab({
                                         <div className="text-sm text-muted-foreground">Загрузка исполнителей...</div>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-2">
-                                            {availableExecutors.map((executor) => (
+                                            {(availableExecutors || []).map((executor) => (
                                                 <div key={executor.id} className="flex items-center space-x-2">
                                                     <input
                                                         type="checkbox"
@@ -905,7 +977,7 @@ export default function MasterClassesTab({
                         variant="outline"
                         onClick={() => {
                             console.log('Текущие мастер-классы:', masterClasses);
-                            console.log('Даты мастер-классов:', masterClasses.map(mc => mc.date));
+                            console.log('Даты мастер-классов:', (masterClasses || []).map(mc => mc.date));
                         }}
                     >
                         Отладка данных
@@ -1247,8 +1319,8 @@ export default function MasterClassesTab({
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-muted-foreground">Исполнители:</span>
                                                 <div className="flex gap-1">
-                                                    {masterClass.executors.map((executorId, index) => {
-                                                        const executorName = availableExecutors.find(e => e.id === executorId)?.name || executorId;
+                                                    {(masterClass.executors || []).map((executorId, index) => {
+                                                        const executorName = (availableExecutors || []).find(e => e.id === executorId)?.name || executorId;
                                                         return (
                                                             <Badge key={index} variant="secondary" className="text-xs">
                                                                 {executorName}
@@ -1344,7 +1416,7 @@ export default function MasterClassesTab({
                                     <p>Мастер-класс: <strong>{selectedMasterClass.serviceName}</strong></p>
                                     <p>Дата: <strong>{new Date(selectedMasterClass.date).toLocaleDateString('ru-RU')}</strong></p>
                                     <p>Время: <strong>{selectedMasterClass.time}</strong></p>
-                                    <p>Место: <strong>{schools.find(s => s.id === selectedMasterClass.schoolId)?.name}</strong></p>
+                                    <p>Место: <strong>{(schools || []).find(s => s.id === selectedMasterClass.schoolId)?.name}</strong></p>
                                     <p>Класс: <strong>{selectedMasterClass.classGroup}</strong></p>
                                 </div>
                             )}
@@ -1358,7 +1430,7 @@ export default function MasterClassesTab({
                                 <div className="text-sm text-muted-foreground py-4">Загрузка исполнителей...</div>
                             ) : (
                                 <div className="space-y-2 max-h-60 overflow-y-auto border rounded-md p-3">
-                                    {availableExecutors.map((executor) => (
+                                    {(availableExecutors || []).map((executor) => (
                                         <label key={executor.id} className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 p-2 rounded">
                                             <input
                                                 type="checkbox"
@@ -1388,7 +1460,7 @@ export default function MasterClassesTab({
                             <div className="bg-muted/30 p-3 rounded-md">
                                 <Label className="text-sm font-medium">Выбрано исполнителей: {editingExecutors.length}</Label>
                                 <div className="flex flex-wrap gap-1 mt-2">
-                                    {editingExecutors.map((executorId) => {
+                                    {(editingExecutors || []).map((executorId) => {
                                         const executorName = availableExecutors.find(e => e.id === executorId)?.name || executorId;
                                         return (
                                             <Badge key={executorId} variant="secondary" className="text-xs">

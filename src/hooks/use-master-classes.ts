@@ -15,6 +15,15 @@ interface UseMasterClassesReturn {
         userId?: string;
     }) => Promise<void>;
     createMasterClass: (masterClassData: Omit<MasterClassEvent, 'id' | 'createdAt' | 'updatedAt' | 'participants' | 'statistics'>) => Promise<void>;
+    createMultipleMasterClasses: (data: {
+        date: string;
+        time: string;
+        schoolId: string;
+        classGroups: string[];
+        serviceId: string;
+        executors: string[];
+        notes?: string;
+    }) => Promise<void>;
     updateMasterClass: (id: string, masterClassData: Partial<MasterClassEvent>) => Promise<void>;
     deleteMasterClass: (id: string) => Promise<void>;
     getMasterClassById: (id: string) => Promise<MasterClassEvent>;
@@ -35,18 +44,19 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
         schoolId?: string;
         classGroup?: string;
         userId?: string;
+        forceRefresh?: boolean; // Добавляем флаг принудительного обновления
     }) => {
         // Создаем уникальный ключ для запроса
         const requestKey = JSON.stringify(params || {});
 
         // Проверяем, не выполняется ли уже такой же запрос
-        if (isFetchingRef.current && lastRequestRef.current === requestKey) {
+        if (isFetchingRef.current && !params?.forceRefresh) {
             console.log('fetchMasterClasses: Запрос уже выполняется, пропускаем');
             return;
         }
 
-        // Проверяем, не повторяем ли мы последний запрос
-        if (lastRequestRef.current === requestKey) {
+        // Проверяем, не повторяем ли мы последний запрос (только если не принудительное обновление)
+        if (lastRequestRef.current === requestKey && !params?.forceRefresh) {
             console.log('fetchMasterClasses: Запрос идентичен последнему, пропускаем');
             return;
         }
@@ -67,7 +77,7 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             });
             console.log('Получены мастер-классы:', response);
 
-            setMasterClasses(response.masterClasses as unknown as MasterClassEvent[]);
+            setMasterClasses(response.masterClasses as MasterClassEvent[]);
             setTotal(response.total);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch master classes');
@@ -83,10 +93,42 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             setLoading(true);
             setError(null);
             await api.masterClassEvents.createEvent(masterClassData as Record<string, unknown>);
-            await fetchMasterClasses();
+            await fetchMasterClasses({ forceRefresh: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to create master class');
             console.error('Error creating master class:', err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const createMultipleMasterClasses = async (data: {
+        date: string;
+        time: string;
+        schoolId: string;
+        classGroups: string[];
+        serviceId: string;
+        executors: string[];
+        notes?: string;
+    }) => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            // Используем правильный API для массового создания
+            const response = await api.masterClasses.createMultiple(data);
+
+            if (response.success && response.data) {
+                console.log(`Успешно создано ${response.data.length} мастер-классов`);
+                // Обновляем список мастер-классов
+                await fetchMasterClasses({ forceRefresh: true });
+            } else {
+                throw new Error(response.error || 'Failed to create multiple master classes');
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create multiple master classes');
+            console.error('Error creating multiple master classes:', err);
             throw err;
         } finally {
             setLoading(false);
@@ -98,7 +140,7 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             setLoading(true);
             setError(null);
             await api.masterClassEvents.updateEvent(id, masterClassData as Record<string, unknown>);
-            await fetchMasterClasses();
+            await fetchMasterClasses({ forceRefresh: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to update master class');
             console.error('Error updating master class:', err);
@@ -113,7 +155,7 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             setLoading(true);
             setError(null);
             await api.masterClassEvents.deleteEvent(id);
-            await fetchMasterClasses();
+            await fetchMasterClasses({ forceRefresh: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to delete master class');
             console.error('Error deleting master class:', err);
@@ -147,6 +189,7 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
         total,
         fetchMasterClasses,
         createMasterClass,
+        createMultipleMasterClasses,
         updateMasterClass,
         deleteMasterClass,
         getMasterClassById,

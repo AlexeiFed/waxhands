@@ -6,8 +6,8 @@
  */
 
 import { Router } from 'express';
-import { AboutController } from '../controllers/about';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import { AboutController } from '../controllers/about.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 

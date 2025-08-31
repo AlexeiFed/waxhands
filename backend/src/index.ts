@@ -16,7 +16,10 @@ dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.production' 
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || 'localhost';
+const HOST = process.env.HOST || '0.0.0.0';
+
+// Настройка trust proxy для работы за Nginx
+app.set('trust proxy', '127.0.0.1');
 
 // Middleware безопасности
 app.use(helmet({
@@ -52,16 +55,58 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Rate limiting
+console.log('🔧 CORS настройки:', {
+    NODE_ENV: process.env.NODE_ENV,
+    CORS_ORIGIN: process.env.CORS_ORIGIN,
+    corsOptions
+});
+
+// Rate limiting для обычных запросов (исключаем админские эндпоинты)
 const limiter = rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 минут
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // максимум 100 запросов
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '5000'), // временно увеличиваем для тестирования
     message: {
         success: false,
         error: 'Too many requests from this IP, please try again later.'
+    },
+    skip: (req) => {
+        // Исключаем админские эндпоинты и критические аутентификационные эндпоинты из rate limiting
+        return req.path.startsWith('/api/chat/admin') ||
+            req.path.startsWith('/api/workshop-requests/stats') ||
+            req.path.startsWith('/api/health') ||
+            req.path.startsWith('/api/users') ||
+            req.path.startsWith('/api/schools') ||
+            req.path.startsWith('/api/services') ||
+            req.path.startsWith('/api/master-classes') ||
+            req.path.startsWith('/api/invoices') ||
+            req.path.startsWith('/api/auth/login') ||
+            req.path.startsWith('/api/auth/register') ||
+            req.path.startsWith('/api/auth/profile') || // Добавляем profile эндпоинт
+            req.path.startsWith('/api/auth/admin') ||
+            req.path.startsWith('/api/admin') ||
+            req.path.startsWith('/api/payment-webhook') || // Исключаем webhook'и от ЮMoney
+            req.path.includes('admin');
     }
 });
-app.use(limiter);
+
+// Rate limiting для загрузки файлов (более высокий лимит)
+const uploadLimiter = rateLimit({
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 минут
+    max: parseInt(process.env.RATE_LIMIT_MAX_UPLOADS || '2000'), // максимум 2000 запросов для загрузки
+    message: {
+        success: false,
+        error: 'Too many upload requests from this IP, please try again later.'
+    }
+});
+
+// Применяем rate limiting только к определенным маршрутам (исключаем upload)
+app.use('/api', (req, res, next) => {
+    // Исключаем upload маршруты из rate limiting
+    if (req.path.startsWith('/api/upload')) {
+        return next();
+    }
+    return limiter(req, res, next);
+});
 
 // Логирование
 if (process.env.NODE_ENV === 'production') {
@@ -72,8 +117,8 @@ if (process.env.NODE_ENV === 'production') {
 app.use(logRequest);
 
 // Парсинг JSON
-app.use(express.json({ limit: process.env.MAX_FILE_SIZE || '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: process.env.MAX_FILE_SIZE || '10mb' }));
+app.use(express.json({ limit: process.env.MAX_FILE_SIZE || '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.MAX_FILE_SIZE || '50mb' }));
 
 // Статические файлы с CORS заголовками
 app.use('/uploads', (req, res, next) => {
@@ -115,13 +160,13 @@ const startServer = async () => {
         }
 
         // Инициализируем WebSocket сервер
-        initializeWebSocketManager(server);
+        await initializeWebSocketManager(server);
 
         server.listen(parseInt(PORT.toString()), HOST, () => {
             console.log(`🚀 Server running on ${HOST}:${PORT}`);
             console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`🌐 CORS Origin: ${corsOptions.origin}`);
-            console.log(`🔌 WebSocket Path: ${process.env.WS_PATH || '/api/chat/ws'}`);
+            console.log(`🔌 WebSocket Path: ${process.env.WS_PATH || '/ws'}`);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

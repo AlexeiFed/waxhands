@@ -84,8 +84,8 @@ export default function WorkshopRequestsTab() {
     });
 
     // Получаем уникальные значения для фильтров
-    const uniqueSchools = [...new Set(requests.map(req => req.school_name))].sort();
-    const uniqueClassGroups = [...new Set(requests.map(req => req.class_group))].sort();
+    const uniqueSchools = [...new Set((requests || []).map(req => req.school_name))].sort();
+    const uniqueClassGroups = [...new Set((requests || []).map(req => req.class_group))].sort();
 
     // Получаем города из адресов школ (до запятой)
     const getCityFromAddress = (schoolName: string) => {
@@ -128,7 +128,7 @@ export default function WorkshopRequestsTab() {
         }
 
         // Fallback - получаем классы из заявок
-        return requests
+        return (requests || [])
             .filter(req => req.school_name === schoolName)
             .map(req => req.class_group)
             .filter((value, index, self) => self.indexOf(value) === index)
@@ -147,7 +147,7 @@ export default function WorkshopRequestsTab() {
     };
 
     // Фильтруем заявки
-    const filteredRequests = requests.filter(request => {
+    const filteredRequests = (requests || []).filter(request => {
         if (filters.city && getCityFromAddress(request.school_name) !== filters.city) return false;
         if (filters.school && request.school_name !== filters.school) return false;
         if (filters.classGroup && request.class_group !== filters.classGroup) return false;
@@ -169,7 +169,7 @@ export default function WorkshopRequestsTab() {
                 setFilters(prev => ({ ...prev, classGroup: '' }));
             }
         }
-    }, [requests, filters.city, filters.school, filters.classGroup, uniqueCities, uniqueSchools]);
+    }, [(requests || []).length, filters.city, filters.school, filters.classGroup, uniqueCities, uniqueSchools]);
 
     // Загружаем данные при монтировании компонента
     useEffect(() => {
@@ -322,7 +322,7 @@ export default function WorkshopRequestsTab() {
                 });
 
                 // Оптимистично обновляем локальные данные
-                setRequests(prev => prev.map(req =>
+                setRequests(prev => (prev || []).map(req =>
                     req.id === selectedRequest.id
                         ? { ...req, ...statusData, updated_at: new Date().toISOString() }
                         : req
@@ -401,7 +401,7 @@ export default function WorkshopRequestsTab() {
                 });
 
                 // Удаляем из локальных данных
-                setRequests(prev => prev.filter(req => req.id !== requestId));
+                setRequests(prev => (prev || []).filter(req => req.id !== requestId));
 
                 // Перезагружаем статистику
                 const statsResult = await getRequestsStats();

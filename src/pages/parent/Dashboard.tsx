@@ -1346,7 +1346,7 @@ const ParentDashboard = () => {
     }, [masterClasses.length, schools.length, services.length, children.length, masterClasses, children, refreshTrigger]);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-pink-100 to-blue-100 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
             {/* Анимированные звездочки */}
             <AnimatedStars count={15} className="opacity-40" />
 
@@ -1358,72 +1358,72 @@ const ParentDashboard = () => {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 mt-20">
                 {/* Заголовок */}
                 <div className="text-center mb-6 sm:mb-8">
-                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-3 sm:mb-4">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 sm:mb-4 drop-shadow-lg">
                         Добро пожаловать, {user?.name}! 👋
                     </h1>
-                    <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto px-2">
+                    <p className="text-lg sm:text-xl text-white/90 max-w-2xl mx-auto px-2 drop-shadow-md">
                         Управляйте записями детей на мастер-классы
                     </p>
                 </div>
 
                 {/* Статистика */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 sm:mb-8">
-                    <Card className="bg-orange-50/80 backdrop-blur-sm border-orange-200 hover:shadow-lg transition-all duration-300">
+                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-orange-300 hover:shadow-xl transition-all duration-300 shadow-lg">
                         <CardContent className="p-3 text-center">
                             <div className="flex items-center justify-center mb-1">
-                                <Baby className="w-5 h-5 text-orange-600 mr-2" />
-                                <div className="text-xl font-bold text-orange-600">{children.length}</div>
+                                <Baby className="w-5 h-5 text-orange-700 mr-2" />
+                                <div className="text-xl font-bold text-orange-700">{children.length}</div>
                             </div>
-                            <div className="text-xs text-gray-600">Детей</div>
+                            <div className="text-xs font-medium text-gray-700">Детей</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-purple-50/80 backdrop-blur-sm border-purple-200 hover:shadow-lg transition-all duration-300">
+                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-purple-300 hover:shadow-xl transition-all duration-300 shadow-lg">
                         <CardContent className="p-3 text-center">
                             <div className="flex items-center justify-center mb-1">
-                                <AlertCircle className="w-5 h-5 text-purple-600 mr-2" />
-                                <div className="text-xl font-bold text-purple-600">
+                                <AlertCircle className="w-5 h-5 text-purple-700 mr-2" />
+                                <div className="text-xl font-bold text-purple-700">
                                     {childrenStats.pending}
                                 </div>
                             </div>
-                            <div className="text-xs text-gray-600">Ожидают подтверждения</div>
+                            <div className="text-xs font-medium text-gray-700">Ожидают подтверждения</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-blue-50/80 backdrop-blur-sm border-blue-200 hover:shadow-lg transition-all duration-300">
+                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-blue-300 hover:shadow-xl transition-all duration-300 shadow-lg">
                         <CardContent className="p-3 text-center">
                             <div className="flex items-center justify-center mb-1">
-                                <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                <div className="text-xl font-bold text-blue-600">
+                                <CheckCircle className="w-5 h-5 text-blue-700 mr-2" />
+                                <div className="text-xl font-bold text-blue-700">
                                     {childrenStats.completed}
                                 </div>
                             </div>
-                            <div className="text-xs text-gray-600">Завершенных заказов</div>
+                            <div className="text-xs font-medium text-gray-700">Завершенных заказов</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-green-50/80 backdrop-blur-sm border-green-200 hover:shadow-lg transition-all duration-300">
+                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-green-300 hover:shadow-xl transition-all duration-300 shadow-lg">
                         <CardContent className="p-3 text-center">
                             <div className="flex items-center justify-center mb-1">
-                                <Star className="w-5 h-5 text-green-600 mr-2" />
-                                <div className="text-xl font-bold text-green-600">
+                                <Star className="w-5 h-5 text-green-700 mr-2" />
+                                <div className="text-xl font-bold text-green-700">
                                     {groupedWorkshops.total}
                                 </div>
                             </div>
-                            <div className="text-xs text-gray-600">Доступных мастер-классов</div>
+                            <div className="text-xs font-medium text-gray-700">Доступных мастер-классов</div>
                         </CardContent>
                     </Card>
                 </div>
 
                 {/* Основной контент */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-3 bg-white/80 backdrop-blur-sm">
-                        <TabsTrigger value="children" className="data-[state=active]:bg-orange-500 data-[state=active]:text-white">
+                    <TabsList className="grid w-full grid-cols-3 bg-white/90 backdrop-blur-sm border-2 border-gray-200 shadow-lg">
+                        <TabsTrigger value="children" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
                             <Baby className="w-4 h-4 mr-2" />
                             Мои дети
                         </TabsTrigger>
-                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-500 data-[state=active]:text-white">
+                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
                             <Palette className="w-4 h-4 mr-2" />
                             Мастер-классы
                         </TabsTrigger>
-                        <TabsTrigger value="history" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
+                        <TabsTrigger value="history" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
                             <CheckCircle className="w-4 h-4 mr-2" />
                             История
                         </TabsTrigger>
@@ -1449,9 +1449,9 @@ const ParentDashboard = () => {
                             <>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {children.map((child) => (
-                                        <Card key={child.id} className="hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-purple-50 border-orange-300">
+                                        <Card key={child.id} className="hover:shadow-xl transition-all duration-300 bg-white/90 backdrop-blur-sm border-2 border-orange-300 shadow-lg">
                                             <CardHeader className="p-4 sm:p-6">
-                                                <CardTitle className="text-xl sm:text-2xl text-orange-600 flex items-center justify-between">
+                                                <CardTitle className="text-xl sm:text-2xl text-orange-700 flex items-center justify-between">
                                                     <div className="flex items-center space-x-2">
                                                         <Baby className="w-5 h-5" />
                                                         <span>{child.name}</span>
@@ -2193,6 +2193,7 @@ const ParentDashboard = () => {
             <WorkshopRequestModal
                 isOpen={isWorkshopRequestOpen}
                 onOpenChange={setIsWorkshopRequestOpen}
+                onRequestCreated={loadWorkshopRequests}
             />
 
 

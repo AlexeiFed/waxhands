@@ -53,6 +53,7 @@ export const useWorkshopRequestsWebSocket = (
 
     // Функция для создания WebSocket соединения
     const connect = useCallback(() => {
+
         if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
             console.log('🔌 WorkshopRequests: WebSocket уже подключен или подключается, пропускаем');
             return;
@@ -66,11 +67,7 @@ export const useWorkshopRequestsWebSocket = (
         setWsState(prev => ({ ...prev, isConnecting: true }));
 
         try {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = protocol === 'wss:' ?
-                `wss://${host}/api/chat/ws?userId=${userId}&isAdmin=${isAdmin}` :
-                `${WS_BASE_URL}?userId=${userId}&isAdmin=${isAdmin}`;
+            const wsUrl = `${WS_BASE_URL}?userId=${userId}&isAdmin=${isAdmin}`;
 
             console.log('🔌 WorkshopRequests: Подключение к WebSocket:', wsUrl);
 
