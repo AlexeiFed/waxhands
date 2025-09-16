@@ -18,8 +18,8 @@ export const AppInitializer = () => {
         // Не выполняем перенаправление пока идет загрузка
         if (loading) return;
 
-        // Если пользователь авторизован и находится на странице логина
-        if (isAuthenticated && user && (location.pathname === '/' || location.pathname === '/login')) {
+        // Если пользователь авторизован и находится на главной странице или лендинге
+        if (isAuthenticated && user && (location.pathname === '/' || location.pathname === '/landing')) {
             // Перенаправляем на соответствующую страницу в зависимости от роли
             switch (user.role) {
                 case 'child':
@@ -32,9 +32,14 @@ export const AppInitializer = () => {
                     navigate('/admin', { replace: true });
                     break;
                 default:
-                    // Если роль неизвестна, перенаправляем на логин
-                    navigate('/login', { replace: true });
+                    // Если роль неизвестна, перенаправляем на лендинг
+                    navigate('/landing', { replace: true });
             }
+        }
+
+        // Если пользователь не авторизован и находится на главной странице
+        if (!isAuthenticated && location.pathname === '/') {
+            navigate('/landing', { replace: true });
         }
     }, [isAuthenticated, user, loading, navigate, location.pathname]);
 

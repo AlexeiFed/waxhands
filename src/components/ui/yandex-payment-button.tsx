@@ -33,6 +33,7 @@ interface YandexPaymentButtonProps {
     variant?: 'default' | 'outline' | 'secondary' | 'destructive' | 'ghost' | 'link';
     size?: 'default' | 'sm' | 'lg' | 'icon';
     disabled?: boolean;
+    isPaymentDisabled?: boolean;
 }
 
 interface PaymentStatus {
@@ -53,13 +54,23 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
     className = '',
     variant = 'default',
     size = 'default',
-    disabled = false
+    disabled = false,
+    isPaymentDisabled = false
 }) => {
     const { toast } = useToast();
     const { user } = useAuth();
     const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({ status: 'idle' });
 
     const handlePaymentClick = async () => {
+        if (isPaymentDisabled) {
+            toast({
+                title: "Оплата временно недоступна",
+                description: "Функция оплаты будет доступна в ближайшее время. Спасибо за понимание!",
+                variant: "default",
+            });
+            return;
+        }
+
         if (!user) {
             toast({
                 title: "Ошибка",
@@ -270,6 +281,15 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
     };
 
     const getButtonContent = () => {
+        if (isPaymentDisabled) {
+            return (
+                <>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Оплата будет доступна позднее
+                </>
+            );
+        }
+
         switch (paymentStatus.status) {
             case 'loading':
                 return (
@@ -306,7 +326,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
         }
     };
 
-    const isButtonDisabled = disabled || paymentStatus.status === 'loading' || paymentStatus.status === 'success';
+    const isButtonDisabled = disabled || isPaymentDisabled || paymentStatus.status === 'loading' || paymentStatus.status === 'success';
 
     return (
         <div className="space-y-2">
@@ -334,7 +354,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 </p>
             )}
 
-            {paymentStatus.status === 'idle' && (
+            {paymentStatus.status === 'idle' && !isPaymentDisabled && (
                 <div className="space-y-1">
                     <p className="text-xs text-gray-500">
                         После нажатия откроется Яндекс.Форма для проверки данных, затем переход в ЮMoney
@@ -344,6 +364,17 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                             💡 Записано детей: {children.length} • Общая сумма: {amount} ₽
                         </p>
                     )}
+                </div>
+            )}
+
+            {isPaymentDisabled && (
+                <div className="space-y-1">
+                    <p className="text-xs text-amber-600">
+                        💳 Система оплаты находится в разработке
+                    </p>
+                    <p className="text-xs text-gray-500">
+                        Счет создан, но оплата будет доступна в ближайшее время
+                    </p>
                 </div>
             )}
         </div>

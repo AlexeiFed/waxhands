@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { User } from '../types';
 
@@ -28,13 +28,7 @@ export const useUsers = (): UseUsersReturn => {
     const [total, setTotal] = useState(0);
     const [lastFetch, setLastFetch] = useState<Date | null>(null);
 
-    // Автоматическая загрузка пользователей при монтировании
-    useEffect(() => {
-        console.log('🚀 useUsers hook mounted, fetching users...');
-        fetchUsers();
-    }, []);
-
-    const fetchUsers = async (params?: { page?: number; limit?: number; role?: string }) => {
+    const fetchUsers = useCallback(async (params?: { page?: number; limit?: number; role?: string }) => {
         try {
             setLoading(true);
             setError(null);
@@ -53,15 +47,21 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    // НЕ загружаем всех пользователей автоматически - это вызывает 403 ошибку для родителей
+    // useEffect(() => {
+    //     console.log('🚀 useUsers hook mounted, fetching users...');
+    //     fetchUsers();
+    // }, [fetchUsers]);
 
     // Функция для принудительного обновления данных
-    const refreshUsers = async () => {
+    const refreshUsers = useCallback(async () => {
         console.log('🔄 Force refreshing users...');
         await fetchUsers();
-    };
+    }, [fetchUsers]);
 
-    const createUser = async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const createUser = useCallback(async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => {
         try {
             setLoading(true);
             setError(null);
@@ -75,9 +75,9 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchUsers]);
 
-    const updateUser = async (id: string, userData: Partial<User>) => {
+    const updateUser = useCallback(async (id: string, userData: Partial<User>) => {
         try {
             setLoading(true);
             setError(null);
@@ -91,9 +91,9 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchUsers]);
 
-    const deleteUser = async (id: string) => {
+    const deleteUser = useCallback(async (id: string) => {
         try {
             setLoading(true);
             setError(null);
@@ -107,9 +107,9 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchUsers]);
 
-    const getChildrenByParentId = async (parentId: string): Promise<User[]> => {
+    const getChildrenByParentId = useCallback(async (parentId: string): Promise<User[]> => {
         try {
             const response = await api.users.getChildrenByParentId(parentId);
             return response;
@@ -117,9 +117,9 @@ export const useUsers = (): UseUsersReturn => {
             console.error('Error fetching children:', err);
             return [];
         }
-    };
+    }, []);
 
-    const getUserById = async (id: string): Promise<User> => {
+    const getUserById = useCallback(async (id: string): Promise<User> => {
         try {
             setError(null);
             return await api.users.getUserById(id);
@@ -129,12 +129,8 @@ export const useUsers = (): UseUsersReturn => {
             console.error('Error getting user:', err);
             throw err;
         }
-    };
+    }, []);
 
-    // НЕ загружаем всех пользователей автоматически - это вызывает 403 ошибку
-    // useEffect(() => {
-    //     fetchUsers({ limit: undefined });
-    // }, []);
 
     return {
         users,

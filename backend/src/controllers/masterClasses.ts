@@ -366,6 +366,19 @@ export const getMasterClassEventById = async (req: Request, res: Response): Prom
             teacherPhone: masterClass.school_teacher_phone || 'Телефон не указан'
         };
 
+        // Обрабатываем участников, если они есть
+        if (masterClass.participants && Array.isArray(masterClass.participants)) {
+            // Участники уже содержат примечания из createGroupWorkshopRegistration и addParticipantToMasterClass
+            console.log('Участники мастер-класса:', masterClass.participants.length);
+            masterClass.participants.forEach((participant: Record<string, unknown>, index: number) => {
+                console.log(`Участник ${index + 1}:`, {
+                    childName: participant.childName,
+                    notes: participant.notes,
+                    hasNotes: !!participant.notes
+                });
+            });
+        }
+
         res.json({ success: true, data: masterClass });
     } catch (error) {
         console.error('Get master class event error:', error);
@@ -389,8 +402,8 @@ export const createMasterClassEvent = async (req: Request, res: Response): Promi
         // Проверка обязательных полей
         if (!date || !time || !schoolId || !classGroup || !serviceId) {
             console.error('createMasterClassEvent: отсутствуют обязательные поля:', { date, time, schoolId, classGroup, serviceId });
-            res.status(400).json({ 
-                success: false, 
+            res.status(400).json({
+                success: false,
                 error: 'Missing required fields',
                 details: { date: !!date, time: !!time, schoolId: !!schoolId, classGroup: !!classGroup, serviceId: !!serviceId }
             });
@@ -441,11 +454,11 @@ export const createMasterClassEvent = async (req: Request, res: Response): Promi
         `, [date, time, schoolId, classGroup, serviceId, JSON.stringify(executors), notes, JSON.stringify(participants), JSON.stringify(statistics ?? defaultStats)]);
 
         console.log('createMasterClassEvent: успешно создан мастер-класс:', result.rows[0]);
-        
+
         // Отправляем WebSocket уведомление о создании мастер-класса
         wsManager.notifyMasterClassUpdate(result.rows[0].id, 'created');
         console.log('📡 WebSocket уведомление отправлено для:', result.rows[0].id);
-        
+
         res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
         console.error('Create master class event error:', error);
@@ -454,8 +467,8 @@ export const createMasterClassEvent = async (req: Request, res: Response): Promi
             stack: error instanceof Error ? error.stack : 'No stack trace',
             name: error instanceof Error ? error.name : 'Unknown error type'
         });
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             error: 'Internal server error',
             details: error instanceof Error ? error.message : 'Unknown error'
         });
@@ -607,9 +620,9 @@ export const updateMasterClassEvent = async (req: Request, res: Response): Promi
         const setClause = fields.map((f, i) => {
             if (f === 'schoolId') return `school_id = $${i + 2}`;
             if (f === 'classGroup') return `class_group = $${i + 2}`;
-            if (update.executors !== undefined) return `executors = $${i + 2}`;
-            if (update.participants !== undefined) return `participants = $${i + 2}`;
-            if (update.statistics !== undefined) return `statistics = $${i + 2}`;
+            if (f === 'executors') return `executors = $${i + 2}`;
+            if (f === 'participants') return `participants = $${i + 2}`;
+            if (f === 'statistics') return `statistics = $${i + 2}`;
             return `${f} = $${i + 2}`;
         }).join(', ');
 

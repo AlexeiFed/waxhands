@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { useWorkshopRequestsWebSocket } from '@/hooks/use-workshop-requests-webs
 import { useSchools } from '@/hooks/use-schools';
 import { useToast } from '@/hooks/use-toast';
 import { WorkshopRequestWithParent, UpdateWorkshopRequestData, WorkshopRequest, SchoolWithAddress } from '@/types';
+import { WorkshopRequestsFilters } from '@/contexts/AdminFiltersContext';
 import {
     FileText,
     Clock,
@@ -32,7 +33,12 @@ import {
     Phone
 } from 'lucide-react';
 
-export default function WorkshopRequestsTab() {
+interface WorkshopRequestsTabProps {
+    filters: WorkshopRequestsFilters;
+    onFiltersChange: (filters: Partial<WorkshopRequestsFilters>) => void;
+}
+
+export default function WorkshopRequestsTab({ filters, onFiltersChange }: WorkshopRequestsTabProps) {
     console.log('🚀 WorkshopRequestsTab: Инициализация компонента...');
 
     const { getAllRequests, updateRequestStatus, deleteRequest, getRequestsStats, loading, error } = useWorkshopRequests();
@@ -75,13 +81,7 @@ export default function WorkshopRequestsTab() {
     });
     const [componentError, setComponentError] = useState<string | null>(null);
 
-    // Состояние для фильтров
-    const [filters, setFilters] = useState({
-        city: '',
-        school: '',
-        classGroup: '',
-        status: ''
-    });
+    // Используем фильтры из пропсов
 
     // Получаем уникальные значения для фильтров
     const uniqueSchools = [...new Set((requests || []).map(req => req.school_name))].sort();
@@ -118,7 +118,7 @@ export default function WorkshopRequestsTab() {
     });
 
     // Получаем классы для выбранной школы
-    const getClassesForSchool = (schoolName: string) => {
+    const getClassesForSchool = useCallback((schoolName: string) => {
         if (!schoolName) return [];
 
         // Сначала пытаемся получить классы из БД
@@ -133,7 +133,7 @@ export default function WorkshopRequestsTab() {
             .map(req => req.class_group)
             .filter((value, index, self) => self.indexOf(value) === index)
             .sort();
-    };
+    }, [schoolsWithAddresses, requests]);
 
     // Получаем школы для выбранного города
     const getSchoolsForCity = (city: string) => {
@@ -158,53 +158,20 @@ export default function WorkshopRequestsTab() {
     // Сбрасываем фильтры, если выбранные значения больше не существуют в данных
     useEffect(() => {
         if (filters.city && !uniqueCities.includes(filters.city)) {
-            setFilters(prev => ({ ...prev, city: '', school: '', classGroup: '' }));
+            onFiltersChange({ city: '', school: '', classGroup: '' });
         }
         if (filters.school && !uniqueSchools.includes(filters.school)) {
-            setFilters(prev => ({ ...prev, school: '', classGroup: '' }));
+            onFiltersChange({ school: '', classGroup: '' });
         }
         if (filters.classGroup && filters.school) {
             const availableClasses = getClassesForSchool(filters.school);
             if (!availableClasses.includes(filters.classGroup)) {
-                setFilters(prev => ({ ...prev, classGroup: '' }));
+                onFiltersChange({ classGroup: '' });
             }
         }
-    }, [(requests || []).length, filters.city, filters.school, filters.classGroup, uniqueCities, uniqueSchools]);
+    }, [filters.city, filters.school, filters.classGroup, uniqueCities, uniqueSchools, onFiltersChange, getClassesForSchool]);
 
-    // Загружаем данные при монтировании компонента
-    useEffect(() => {
-        console.log('🚀 WorkshopRequestsTab: Компонент смонтирован, WebSocket состояние:', wsConnected);
-        console.log('🚀 WorkshopRequestsTab: Проверяем авторизацию пользователя...');
-
-        // Проверяем токен авторизации
-        const authToken = localStorage.getItem('authToken');
-        if (!authToken) {
-            console.error('❌ WorkshopRequestsTab: Токен авторизации отсутствует');
-            setComponentError('Токен авторизации отсутствует. Войдите в систему заново.');
-            return;
-        }
-
-        console.log('✅ WorkshopRequestsTab: Токен авторизации найден, загружаем данные...');
-        console.log('🔍 WorkshopRequestsTab: Длина токена:', authToken.length);
-        console.log('🔍 WorkshopRequestsTab: Начало токена:', authToken.substring(0, 20) + '...');
-
-        loadData();
-    }, []);
-
-    // Отладка WebSocket состояния
-    useEffect(() => {
-        console.log('🔌 WorkshopRequestsTab: WebSocket состояние изменилось:', {
-            isConnected: wsConnected,
-            timestamp: new Date().toISOString()
-        });
-
-        // При подключении WebSocket подписываемся на обновления
-        if (wsConnected) {
-            console.log('🔌 WorkshopRequestsTab: WebSocket подключен, подписка активна');
-        }
-    }, [wsConnected]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             console.log('🔄 WorkshopRequestsTab.loadData: Начинаем загрузку данных...');
             console.log('🔍 WorkshopRequestsTab.loadData: Токен авторизации:', !!localStorage.getItem('authToken'));
@@ -266,12 +233,6 @@ export default function WorkshopRequestsTab() {
             }
 
             console.log('✅ WorkshopRequestsTab.loadData: Загрузка завершена');
-            console.log('📊 WorkshopRequestsTab.loadData: Финальное состояние:', {
-                requests: requests.length,
-                schoolsWithAddresses: schoolsWithAddresses.length,
-                stats: stats,
-                filteredRequests: filteredRequests.length
-            });
 
             // Очищаем ошибку компонента при успешной загрузке
             if (componentError) {
@@ -289,7 +250,40 @@ export default function WorkshopRequestsTab() {
             const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка при загрузке данных';
             setComponentError(errorMessage);
         }
-    };
+    }, [getSchoolsWithAddresses, getAllRequests, getRequestsStats, componentError]);
+
+    // Загружаем данные при монтировании компонента
+    useEffect(() => {
+        console.log('🚀 WorkshopRequestsTab: Компонент смонтирован, WebSocket состояние:', wsConnected);
+        console.log('🚀 WorkshopRequestsTab: Проверяем авторизацию пользователя...');
+
+        // Проверяем токен авторизации
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) {
+            console.error('❌ WorkshopRequestsTab: Токен авторизации отсутствует');
+            setComponentError('Токен авторизации отсутствует. Войдите в систему заново.');
+            return;
+        }
+
+        console.log('✅ WorkshopRequestsTab: Токен авторизации найден, загружаем данные...');
+        console.log('🔍 WorkshopRequestsTab: Длина токена:', authToken.length);
+        console.log('🔍 WorkshopRequestsTab: Начало токена:', authToken.substring(0, 20) + '...');
+
+        loadData();
+    }, [loadData, wsConnected]);
+
+    // Отладка WebSocket состояния
+    useEffect(() => {
+        console.log('🔌 WorkshopRequestsTab: WebSocket состояние изменилось:', {
+            isConnected: wsConnected,
+            timestamp: new Date().toISOString()
+        });
+
+        // При подключении WebSocket подписываемся на обновления
+        if (wsConnected) {
+            console.log('🔌 WorkshopRequestsTab: WebSocket подключен, подписка активна');
+        }
+    }, [wsConnected]);
 
     // Обработчик изменения статуса
     const handleStatusChange = (request: WorkshopRequestWithParent) => {
@@ -569,7 +563,7 @@ export default function WorkshopRequestsTab() {
                     {/* Фильтр по городу */}
                     <div className="flex flex-col space-y-2">
                         <label className="text-sm font-medium text-gray-700">Город</label>
-                        <Select value={filters.city || "all"} onValueChange={(value) => setFilters(prev => ({ ...prev, city: value === "all" ? "" : value }))}>
+                        <Select value={filters.city || "all"} onValueChange={(value) => onFiltersChange({ city: value === "all" ? "" : value })}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Выберите город" />
                             </SelectTrigger>
@@ -587,7 +581,7 @@ export default function WorkshopRequestsTab() {
                     {/* Фильтр по школе */}
                     <div className="flex flex-col space-y-2">
                         <label className="text-sm font-medium text-gray-700">Школа</label>
-                        <Select value={filters.school || "all"} onValueChange={(value) => setFilters(prev => ({ ...prev, school: value === "all" ? "" : value }))}>
+                        <Select value={filters.school || "all"} onValueChange={(value) => onFiltersChange({ school: value === "all" ? "" : value })}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Выберите школу" />
                             </SelectTrigger>
@@ -605,7 +599,7 @@ export default function WorkshopRequestsTab() {
                     {/* Фильтр по классу */}
                     <div className="flex flex-col space-y-2">
                         <label className="text-sm font-medium text-gray-700">Класс</label>
-                        <Select value={filters.classGroup || "all"} onValueChange={(value) => setFilters(prev => ({ ...prev, classGroup: value === "all" ? "" : value }))}>
+                        <Select value={filters.classGroup || "all"} onValueChange={(value) => onFiltersChange({ classGroup: value === "all" ? "" : value })}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Выберите класс" />
                             </SelectTrigger>
@@ -623,7 +617,7 @@ export default function WorkshopRequestsTab() {
                     {/* Фильтр по статусу */}
                     <div className="flex flex-col space-y-2">
                         <label className="text-sm font-medium text-gray-700">Статус</label>
-                        <Select value={filters.status || "all"} onValueChange={(value) => setFilters(prev => ({ ...prev, status: value === "all" ? "" : value }))}>
+                        <Select value={filters.status || "all"} onValueChange={(value) => onFiltersChange({ status: value === "all" ? "" : value })}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Выберите статус" />
                             </SelectTrigger>
@@ -638,7 +632,7 @@ export default function WorkshopRequestsTab() {
                     <div className="flex items-end">
                         <Button
                             variant="outline"
-                            onClick={() => setFilters({ city: '', school: '', classGroup: '', status: '' })}
+                            onClick={() => onFiltersChange({ city: '', school: '', classGroup: '', status: '' })}
                             className="flex items-center gap-2"
                         >
                             <XCircle className="w-4 h-4" />
@@ -671,7 +665,7 @@ export default function WorkshopRequestsTab() {
                     </Card>
                 ) : (
                     <div className="space-y-4">
-                        {filteredRequests.map((request) => (
+                        {(filteredRequests || []).map((request) => (
                             <Card key={request.id} className="hover:shadow-lg transition-all duration-300 bg-white/80 backdrop-blur-sm">
                                 <CardHeader className="pb-3">
                                     <div className="flex items-center justify-between">
@@ -708,13 +702,24 @@ export default function WorkshopRequestsTab() {
                                             <Mail className="w-4 h-4" />
                                             <span>{request.parent_email}</span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <Calendar className="w-4 h-4" />
-                                            <span>{new Date(request.desired_date).toLocaleDateString('ru-RU')}</span>
-                                        </div>
+                                        {request.city && (
+                                            <div className="flex items-center gap-2">
+                                                <MapPin className="w-4 h-4" />
+                                                <span>Город: {request.city}</span>
+                                            </div>
+                                        )}
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
+                                    {request.is_other_school && (
+                                        <div className="text-sm p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                            <span className="font-medium text-orange-700">Дополнительная школа:</span>
+                                            <div className="text-orange-600 mt-1">
+                                                <div><strong>Название:</strong> {request.other_school_name}</div>
+                                                <div><strong>Адрес:</strong> {request.other_school_address}</div>
+                                            </div>
+                                        </div>
+                                    )}
                                     {request.notes && (
                                         <div className="text-sm">
                                             <span className="font-medium text-gray-700">Примечания:</span>

@@ -9,6 +9,8 @@ import {
     addOptionToService,
     updateServiceStyle,
     updateServiceOption,
+    deleteServiceStyle,
+    deleteServiceOption,
     reorderServiceStyles,
     reorderServiceOptions,
     getServiceMedia
@@ -27,11 +29,13 @@ router.delete('/:id', deleteService);
 router.put('/:id/styles/reorder', reorderServiceStyles);
 router.post('/:id/styles', addStyleToService);
 router.put('/:id/styles/:styleId', updateServiceStyle);
+router.delete('/:id/styles/:styleId', deleteServiceStyle);
 
 // Маршруты для опций (специфичные маршруты должны идти ДО параметризованных)
 router.put('/:id/options/reorder', reorderServiceOptions);
 router.post('/:id/options', addOptionToService);
 router.put('/:id/options/:optionId', updateServiceOption);
+router.delete('/:id/options/:optionId', deleteServiceOption);
 
 // Маршрут для получения медиафайлов
 router.get('/:serviceId/media', getServiceMedia);

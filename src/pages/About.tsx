@@ -8,14 +8,24 @@
 import { Sparkles, Star, Palette, Gift, Users, Clock, MapPin, Hand, Award, Shield, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ParentHeader } from "@/components/ui/parent-header";
 import { ExpandableText } from "@/components/ui/expandable-text";
 import { useNavigate } from "react-router-dom";
 import { useAboutContentContext } from "@/contexts/AboutContentContext";
+import { useAboutMedia } from "@/hooks/use-about-api";
 
 const About = () => {
     const navigate = useNavigate();
     const { content, isLoading } = useAboutContentContext();
+    const { media: aboutMedia, loading: aboutMediaLoading } = useAboutMedia();
+
+    // Функция для получения URL медиа файлов
+    const getMediaUrl = (filePath: string) => {
+        if (!filePath) return '';
+        if (filePath.startsWith('http')) return filePath;
+        return `${import.meta.env.VITE_API_URL || 'http://147.45.161.83:8080'}/uploads/${filePath}`;
+    };
 
     if (isLoading) {
         return (
@@ -201,6 +211,94 @@ const About = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* Наши работы и мастер-классы */}
+                {aboutMedia && aboutMedia.length > 0 && (
+                    <div className="mt-16">
+                        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-card border border-green-200">
+                            <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center">
+                                <Sparkles className="w-8 h-8 text-green-600 mr-3" />
+                                Наши работы и мастер-классы
+                            </h2>
+                            <p className="text-lg text-gray-600 mb-8">
+                                Примеры наших мастер-классов и работ
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                {aboutMedia.slice(0, 12).map((media, index) => (
+                                    <div
+                                        key={index}
+                                        className="relative bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200"
+                                    >
+                                        {media.type === 'image' ? (
+                                            <div className="aspect-square">
+                                                <img
+                                                    src={getMediaUrl(media.file_path)}
+                                                    alt={media.title || `Работа ${index + 1}`}
+                                                    className="w-full h-full object-cover"
+                                                    loading="lazy"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="aspect-square relative">
+                                                <video
+                                                    src={getMediaUrl(media.file_path)}
+                                                    className="w-full h-full object-cover cursor-pointer"
+                                                    preload="metadata"
+                                                    muted
+                                                    onClick={() => window.open(getMediaUrl(media.file_path), '_blank')}
+                                                    onLoadedData={(e) => {
+                                                        const video = e.target as HTMLVideoElement;
+                                                        video.currentTime = 1; // Устанавливаем на 1 секунду для показа кадра
+                                                    }}
+                                                    onError={(e) => {
+                                                        const target = e.target as HTMLVideoElement;
+                                                        target.style.display = 'none';
+                                                        target.parentElement!.innerHTML = `
+                                                            <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                                                                <div class="text-center">
+                                                                    <svg class="w-8 h-8 text-gray-400 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path d="M8 5v10l8-5-8-5z"/>
+                                                                    </svg>
+                                                                    <span class="text-xs text-gray-500 font-medium">Видео</span>
+                                                                </div>
+                                                            </div>
+                                                        `;
+                                                    }}
+                                                />
+                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                    <div className="w-8 h-8 bg-black/50 rounded-full flex items-center justify-center">
+                                                        <Play className="w-4 h-4 text-white ml-0.5" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {(media.title || media.description) && (
+                                            <div className="p-2 bg-white">
+                                                {media.title && (
+                                                    <h4 className="text-xs font-medium text-gray-800 mb-1 line-clamp-1">
+                                                        {media.title}
+                                                    </h4>
+                                                )}
+                                                {media.description && (
+                                                    <p className="text-xs text-gray-600 line-clamp-2">
+                                                        {media.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            {aboutMedia.length > 12 && (
+                                <div className="text-center mt-6">
+                                    <p className="text-sm text-gray-500">
+                                        И еще {aboutMedia.length - 12} работ в полной галерее
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Контактная информация */}
                 <div className="mt-16">

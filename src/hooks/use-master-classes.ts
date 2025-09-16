@@ -13,6 +13,7 @@ interface UseMasterClassesReturn {
         schoolId?: string;
         classGroup?: string;
         userId?: string;
+        forceRefresh?: boolean;
     }) => Promise<void>;
     createMasterClass: (masterClassData: Omit<MasterClassEvent, 'id' | 'createdAt' | 'updatedAt' | 'participants' | 'statistics'>) => Promise<void>;
     createMultipleMasterClasses: (data: {
@@ -35,9 +36,10 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
     const [error, setError] = useState<string | null>(null);
     const [total, setTotal] = useState(0);
 
-    // Добавляем ref для отслеживания последнего запроса
+    // Добавляем ref для отслеживания последнего запроса и глобальный флаг загрузки
     const lastRequestRef = useRef<string>('');
     const isFetchingRef = useRef(false);
+    const globalFetchingRef = useRef<Set<string>>(new Set()); // Глобальный реестр активных запросов
 
     const fetchMasterClasses = useCallback(async (params?: {
         isActive?: boolean;
@@ -49,9 +51,15 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
         // Создаем уникальный ключ для запроса
         const requestKey = JSON.stringify(params || {});
 
-        // Проверяем, не выполняется ли уже такой же запрос
+        // Проверяем глобальный реестр активных запросов
+        if (globalFetchingRef.current.has(requestKey) && !params?.forceRefresh) {
+            console.log('fetchMasterClasses: Аналогичный запрос уже выполняется, пропускаем');
+            return;
+        }
+
+        // Проверяем, не выполняется ли уже такой же запрос локально
         if (isFetchingRef.current && !params?.forceRefresh) {
-            console.log('fetchMasterClasses: Запрос уже выполняется, пропускаем');
+            console.log('fetchMasterClasses: Локальный запрос уже выполняется, пропускаем');
             return;
         }
 
@@ -62,6 +70,8 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
         }
 
         try {
+            // Добавляем запрос в глобальный реестр
+            globalFetchingRef.current.add(requestKey);
             isFetchingRef.current = true;
             lastRequestRef.current = requestKey;
 
@@ -83,6 +93,8 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             setError(err instanceof Error ? err.message : 'Failed to fetch master classes');
             console.error('Error fetching master classes:', err);
         } finally {
+            // Удаляем запрос из глобального реестра
+            globalFetchingRef.current.delete(requestKey);
             setLoading(false);
             isFetchingRef.current = false;
         }

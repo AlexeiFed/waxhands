@@ -20,18 +20,60 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const Register = () => {
     const [isLoading, setIsLoading] = useState(false);
+    const [selectedCity, setSelectedCity] = useState<string>("");
     const [selectedSchoolId, setSelectedSchoolId] = useState<string>("");
     const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+    const [filteredSchools, setFilteredSchools] = useState<School[]>([]);
     const [children, setChildren] = useState<ChildData[]>([]);
     const [phone, setPhone] = useState("+7");
     const { toast } = useToast();
     const navigate = useNavigate();
     const { register } = useAuth();
     const { schools, loading: schoolsLoading } = useSchools();
+    // Извлекаем города из адресов школ на фронтенде как в других компонентах
+    const cities = Array.from(new Set(
+        schools.map(school => {
+            if (!school.address) return '';
+            return school.address.split(',')[0].trim();
+        }).filter(Boolean)
+    )).sort();
+
+    const citiesLoading = false;
+    const citiesError = null;
+    const schoolsError = null;
+
+    // Отладочная информация
+    console.log('Register: cities =', cities);
+    console.log('Register: citiesLoading =', citiesLoading);
+    console.log('Register: cities.length =', cities.length);
+    console.log('Register: filteredSchools =', filteredSchools);
+    console.log('Register: filteredSchools.length =', filteredSchools.length);
+
+    const handleCityChange = (city: string) => {
+        console.log('Register: handleCityChange called with city:', city);
+        setSelectedCity(city);
+        setSelectedSchoolId("");
+        setAvailableClasses([]);
+
+        if (city) {
+            console.log('Register: Filtering schools for city:', city);
+            // Фильтруем школы на фронтенде как в других компонентах
+            const schoolsInCity = schools.filter(school => {
+                if (!school.address) return false;
+                const schoolCity = school.address.split(',')[0].trim();
+                return schoolCity === city;
+            });
+            console.log('Register: Schools filtered for city:', schoolsInCity);
+            setFilteredSchools(schoolsInCity);
+        } else {
+            console.log('Register: No city selected, using all schools');
+            setFilteredSchools(schools);
+        }
+    };
 
     const handleSchoolChange = (schoolId: string) => {
         setSelectedSchoolId(schoolId);
-        const school = schools.find(s => s.id === schoolId);
+        const school = filteredSchools.find(s => s.id === schoolId);
         setAvailableClasses(school?.classes || []);
     };
 
@@ -59,6 +101,13 @@ const Register = () => {
             setChildren([emptyChild]);
         }
     }, [children.length]);
+
+    // Инициализируем отфильтрованные школы при загрузке
+    useEffect(() => {
+        if (schools.length > 0 && filteredSchools.length === 0) {
+            setFilteredSchools(schools);
+        }
+    }, [schools, filteredSchools.length]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -178,14 +227,52 @@ const Register = () => {
                             </div>
                         </div>
 
+                        {/* Выбор города */}
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Выбор города</h3>
+                            <div className="space-y-2">
+                                <Label htmlFor="city">Город *</Label>
+                                <Select
+                                    value={selectedCity}
+                                    onValueChange={handleCityChange}
+                                    required
+                                    disabled={isLoading || citiesLoading}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Выберите город" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {cities.map((city) => (
+                                            <SelectItem key={city} value={city}>
+                                                {city}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {citiesLoading && (
+                                    <p className="text-sm text-gray-500">Загрузка городов...</p>
+                                )}
+                                {citiesError && (
+                                    <p className="text-sm text-red-500">Ошибка загрузки городов: {citiesError}</p>
+                                )}
+                                {schoolsError && (
+                                    <p className="text-sm text-red-500">Ошибка загрузки школ: {schoolsError}</p>
+                                )}
+                                {!citiesLoading && !citiesError && cities.length === 0 && (
+                                    <p className="text-sm text-yellow-500">Города не найдены</p>
+                                )}
+                            </div>
+                        </div>
+
                         {/* Секция для добавления детей */}
                         <ChildFormSection
                             children={children}
                             onChildrenChange={setChildren}
-                            schools={schools}
+                            schools={filteredSchools}
                             selectedSchoolId={selectedSchoolId}
                             onSchoolChange={handleSchoolChange}
                             availableClasses={availableClasses}
+                            selectedCity={selectedCity}
                         />
 
                         <Button

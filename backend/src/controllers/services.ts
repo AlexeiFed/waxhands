@@ -657,3 +657,75 @@ export const getServiceMedia = async (req: Request, res: Response): Promise<void
         });
     }
 };
+
+export const deleteServiceStyle = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id: serviceId, styleId } = req.params;
+
+        // Получаем текущие стили услуги
+        const serviceResult = await pool.query('SELECT styles FROM services WHERE id = $1', [serviceId]);
+
+        if (serviceResult.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Service not found' });
+            return;
+        }
+
+        const currentStyles = serviceResult.rows[0].styles || [];
+        const updatedStyles = currentStyles.filter((style: { id: string }) => style.id !== styleId);
+
+        // Обновляем услугу с новым массивом стилей
+        await pool.query(
+            'UPDATE services SET styles = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [JSON.stringify(updatedStyles), serviceId]
+        );
+
+        console.log('Backend: удален стиль', styleId, 'из услуги', serviceId);
+
+        res.json({
+            success: true,
+            message: 'Style deleted successfully'
+        });
+    } catch (error) {
+        console.error('Delete service style error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+};
+
+export const deleteServiceOption = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id: serviceId, optionId } = req.params;
+
+        // Получаем текущие опции услуги
+        const serviceResult = await pool.query('SELECT options FROM services WHERE id = $1', [serviceId]);
+
+        if (serviceResult.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Service not found' });
+            return;
+        }
+
+        const currentOptions = serviceResult.rows[0].options || [];
+        const updatedOptions = currentOptions.filter((option: { id: string }) => option.id !== optionId);
+
+        // Обновляем услугу с новым массивом опций
+        await pool.query(
+            'UPDATE services SET options = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [JSON.stringify(updatedOptions), serviceId]
+        );
+
+        console.log('Backend: удалена опция', optionId, 'из услуги', serviceId);
+
+        res.json({
+            success: true,
+            message: 'Option deleted successfully'
+        });
+    } catch (error) {
+        console.error('Delete service option error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+};

@@ -11,6 +11,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { AdminFiltersProvider, useAdminFilters } from '@/contexts/AdminFiltersContext';
 import { useUsers } from '@/hooks/use-users';
 import { useSchools } from '@/hooks/use-schools';
 import { useServices } from '@/hooks/use-services';
@@ -19,6 +20,7 @@ import { useInvoices } from '@/hooks/use-invoices';
 import { useAdminChat } from '@/hooks/use-chat';
 import { useWebSocketChat } from '@/hooks/use-websocket-chat';
 import { useWorkshopRequestsWebSocket } from '@/hooks/use-workshop-requests-websocket';
+import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
 import { cn } from '@/lib/utils';
 import { Chat } from '@/types/chat';
 import { SchoolModal } from '@/components/ui/school-modal';
@@ -30,6 +32,10 @@ import { StyleOptionModal } from '@/components/ui/style-option-modal';
 import MasterClassesTab from '@/components/admin/MasterClassesTab';
 import { MasterClassDetails } from '@/components/admin/MasterClassDetails';
 import WorkshopRequestsTab from '@/components/admin/WorkshopRequestsTab';
+import OffersTab from '@/components/admin/OffersTab';
+import PrivacyPolicyTab from '@/components/admin/PrivacyPolicyTab';
+import ContactsTab from '@/components/admin/ContactsTab';
+import BonusesTab from '@/components/admin/BonusesTab';
 import { Service, ServiceStyle, ServiceOption } from '@/types';
 import { MasterClassEvent, MasterClassParticipant } from '@/types/services';
 import {
@@ -48,8 +54,8 @@ import {
     User,
     Clock,
     Send,
-    FileText,
-    RefreshCw
+    RefreshCw,
+    FileText
 } from 'lucide-react';
 import {
     Table,
@@ -88,18 +94,30 @@ interface School {
     updatedAt: string;
 }
 
-const Dashboard: React.FC = () => {
+const DashboardContent: React.FC = () => {
     const { user, logout } = useAuth();
     const { toast } = useToast();
+    const { filters, updateFilters } = useAdminFilters();
 
     // Отладка импорта логотипа (убрано для оптимизации)
     // console.log('Dashboard: logoImage импортирован:', logoImage);
     const [searchTerm, setSearchTerm] = useState('');
     const [usersSearchTerm, setUsersSearchTerm] = useState('');
     const [schoolsSearchTerm, setSchoolsSearchTerm] = useState('');
-    const [servicesSearchTerm, setServicesSearchTerm] = useState('');
+    // Используем поиск услуг из контекста
+    const servicesSearchTerm = filters.services.search;
 
-    const [selectedTab, setSelectedTab] = useState('overview');
+    const [selectedTab, setSelectedTab] = useState(() => {
+        // Восстанавливаем выбранную вкладку из localStorage
+        const savedTab = localStorage.getItem('adminSelectedTab');
+        return savedTab || 'overview';
+    });
+
+    // Функция для обновления выбранной вкладки с сохранением в localStorage
+    const handleTabChange = (newTab: string) => {
+        setSelectedTab(newTab);
+        localStorage.setItem('adminSelectedTab', newTab);
+    };
     const [schoolModalOpen, setSchoolModalOpen] = useState(false);
     const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
     const [addUserModalOpen, setAddUserModalOpen] = useState(false);
@@ -125,6 +143,16 @@ const Dashboard: React.FC = () => {
         }
     );
 
+    // WebSocket для автоматических обновлений мастер-классов
+    const { isConnected: masterClassesWsConnected } = useMasterClassesWebSocket({
+        userId: user?.id,
+        enabled: true,
+        onMasterClassUpdate: () => {
+            console.log('🔄 WebSocket: обновляем мастер-классы...');
+            fetchMasterClasses({ forceRefresh: true });
+        }
+    });
+
     // Отладка WebSocket состояния и принудительная загрузка статистики
     useEffect(() => {
         // console.log('🔌 Dashboard: WebSocket состояние заявок:', {
@@ -148,14 +176,8 @@ const Dashboard: React.FC = () => {
             return;
         }
     }, [wsRequestsConnected]);
-    const [schoolFilters, setSchoolFilters] = useState({
-        city: '',
-        school: '',
-        class: ''
-    });
-
-    // Состояния для чата
-    const [chatStatusFilter, setChatStatusFilter] = useState('all');
+    // Состояния для чата - используем из контекста
+    const chatStatusFilter = filters.chat.status;
     const [selectedAdminChat, setSelectedAdminChat] = useState<Chat | null>(null);
     const [adminMessage, setAdminMessage] = useState('');
     const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
@@ -171,7 +193,7 @@ const Dashboard: React.FC = () => {
         updateChatStatus: adminUpdateChatStatus,
         deleteChat,
         isDeletingChat
-    } = useAdminChat(selectedAdminChat);
+    } = useAdminChat(selectedAdminChat, chatStatusFilter);
 
     // WebSocket для real-time обновлений чатов
     const { isConnected: wsConnected, isConnecting: wsConnecting } = useWebSocketChat(
@@ -180,11 +202,8 @@ const Dashboard: React.FC = () => {
         true // isAdmin = true
     );
 
-    // Фильтры для пользователей
-    const [userFilters, setUserFilters] = useState({
-        role: 'all',
-        school: 'all'
-    });
+    // Фильтры для пользователей - используем из контекста
+    const userFilters = filters.users;
 
     // Состояния для модальных окон услуг
     const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);
@@ -287,7 +306,7 @@ const Dashboard: React.FC = () => {
             // console.log('🔄 Dashboard: Загружаем сервисы для мастер-классов...');
             fetchServices();
         }
-    }, []); // Убираю зависимости, выполняется только при монтировании
+    }, [fetchServices, services.length]); // Добавляем недостающие зависимости
 
     // Автоматическое обновление статистики заявок через WebSocket
     useEffect(() => {
@@ -300,7 +319,7 @@ const Dashboard: React.FC = () => {
 
             // console.log('🔌 Dashboard: WebSocket подключен для заявок, подписка активна');
         }
-    }, [wsRequestsConnected]); // Убираю wsRequestsSendMessage из зависимостей
+    }, [wsRequestsConnected, wsRequestsSendMessage]); // Убираю wsRequestsSendMessage из зависимостей
 
     // Функция загрузки статистики заявок
     const loadWorkshopRequestsStats = async () => {
@@ -582,6 +601,72 @@ const Dashboard: React.FC = () => {
         setStyleOptionModalOpen(true);
     };
 
+    const handleDeleteStyle = async (styleId: string, serviceId: string) => {
+        try {
+            console.log('Dashboard: handleDeleteStyle called with:', styleId, 'serviceId:', serviceId);
+
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/services/${serviceId}/styles/${styleId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Не удалось удалить стиль');
+            }
+
+            toast({
+                title: "Стиль удален",
+                description: "Стиль успешно удален из услуги",
+            });
+
+            // Обновляем данные через fetchServices
+            await fetchServices();
+        } catch (error) {
+            console.error('Ошибка при удалении стиля:', error);
+            toast({
+                title: "Ошибка",
+                description: error instanceof Error ? error.message : "Не удалось удалить стиль",
+                variant: "destructive"
+            });
+        }
+    };
+
+    const handleDeleteOption = async (optionId: string, serviceId: string) => {
+        try {
+            console.log('Dashboard: handleDeleteOption called with:', optionId, 'serviceId:', serviceId);
+
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/services/${serviceId}/options/${optionId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Не удалось удалить опцию');
+            }
+
+            toast({
+                title: "Опция удалена",
+                description: "Опция успешно удалена из услуги",
+            });
+
+            // Обновляем данные через fetchServices
+            await fetchServices();
+        } catch (error) {
+            console.error('Ошибка при удалении опции:', error);
+            toast({
+                title: "Ошибка",
+                description: error instanceof Error ? error.message : "Не удалось удалить опцию",
+                variant: "destructive"
+            });
+        }
+    };
+
     const handleCreateStyleOption = async (data: Omit<ServiceStyle | ServiceOption, 'id'>) => {
         if (!currentServiceId) return;
 
@@ -656,7 +741,7 @@ const Dashboard: React.FC = () => {
 
 
     const handleSchoolFiltersChange = (filters: { city: string; school: string; class: string }) => {
-        setSchoolFilters(filters);
+        updateFilters('schools', filters);
     };
 
     // Функции удаления
@@ -801,7 +886,12 @@ const Dashboard: React.FC = () => {
             toast({ title: 'Мастер-класс создан', description: 'Событие сохранено' });
 
             // Принудительно обновляем список мастер-классов
-            await fetchMasterClasses();
+            await fetchMasterClasses({ forceRefresh: true });
+
+            // Дополнительное обновление через небольшую задержку
+            setTimeout(async () => {
+                await fetchMasterClasses({ forceRefresh: true });
+            }, 500);
         } catch {
             toast({ title: 'Ошибка', description: 'Не удалось создать событие', variant: 'destructive' });
         }
@@ -810,10 +900,17 @@ const Dashboard: React.FC = () => {
     const handleEditMasterClassEvent = async (id: string, updates: Partial<MasterClassEvent>) => {
         try {
             await updateMasterClass(id, { ...updates });
-            toast({ title: 'Мастер-класс обновлен', description: 'Изменения сохранены' });
 
-            // Принудительно обновляем список мастер-классов
+            // Обновляем локальное состояние выбранного мастер-класса
+            if (selectedMasterClassEvent && selectedMasterClassEvent.id === id) {
+                setSelectedMasterClassEvent(prev => prev ? { ...prev, ...updates } : null);
+            }
+
+            // Обновляем список мастер-классов с сервера
             await fetchMasterClasses();
+            console.log('Dashboard: Обновлены данные мастер-классов после изменения');
+
+            toast({ title: 'Мастер-класс обновлен', description: 'Изменения сохранены' });
         } catch {
             toast({ title: 'Ошибка', description: 'Не удалось сохранить изменения', variant: 'destructive' });
         }
@@ -855,7 +952,7 @@ const Dashboard: React.FC = () => {
 
         const updatedEvent = {
             ...selectedMasterClassEvent,
-            participants: selectedMasterClassEvent.participants.map(p =>
+            participants: (selectedMasterClassEvent.participants || []).map(p =>
                 p.id === participantId ? { ...p, ...updates } : p
             )
         };
@@ -878,22 +975,91 @@ const Dashboard: React.FC = () => {
         handleEditMasterClassEvent(updatedEvent.id, { participants: updatedEvent.participants, statistics: updatedEvent.statistics });
     };
 
-    // Фильтрация данных
-    const filteredUsers = users.filter(user => {
-        // Поиск по имени, фамилии и email с проверкой на null/undefined
-        const searchMatch =
-            (user.name?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
-            (user.surname?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
-            (user.email?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase());
+    // Получение названия школы пользователя - простая функция без useCallback
+    const getUserSchoolName = (user: { schoolName?: string; schoolId?: string }) => {
+        try {
+            if (!user) return null;
 
-        // Фильтр по роли
-        const roleMatch = userFilters.role === 'all' || user.role === userFilters.role;
+            if (user.schoolName) {
+                return user.schoolName;
+            }
 
-        // Фильтр по школе
-        const schoolMatch = userFilters.school === 'all' || getUserSchoolName(user) === userFilters.school;
+            if (user.schoolId && schools && Array.isArray(schools) && schools.length > 0) {
+                const school = schools.find(s => s && s.id === user.schoolId);
+                return school ? school.name : null;
+            }
 
-        return searchMatch && roleMatch && schoolMatch;
-    });
+            return null;
+        } catch (error) {
+            console.error('Error in getUserSchoolName:', error);
+            return null;
+        }
+    };
+
+    // Подсчет уникальных школ в мастер-классах
+    const getUniqueSchoolsCount = () => {
+        try {
+            if (!masterClasses || masterClasses.length === 0) return 0;
+
+            // Группируем мастер-классы по школам и датам (как в MasterClassesTab)
+            const grouped = masterClasses.reduce((acc, masterClass) => {
+                const dateStr = new Date(masterClass.date).toISOString().split('T')[0];
+                const groupKey = `${masterClass.schoolId}_${dateStr}`;
+
+                if (!acc[groupKey]) {
+                    acc[groupKey] = {
+                        schoolId: masterClass.schoolId,
+                        date: dateStr,
+                        masterClasses: []
+                    };
+                }
+                acc[groupKey].masterClasses.push(masterClass);
+                return acc;
+            }, {} as Record<string, { schoolId: string; date: string; masterClasses: MasterClassEvent[] }>);
+
+            return Object.keys(grouped).length;
+        } catch (error) {
+            console.error('Error counting unique schools:', error);
+            return 0;
+        }
+    };
+
+    // Фильтрация данных - простая логика без useMemo
+    const filteredUsers = (() => {
+        if (!users || users.length === 0) return [];
+
+        return users.filter(user => {
+            try {
+                if (!user) return false;
+
+                // Поиск по имени, фамилии и email с проверкой на null/undefined
+                const searchMatch =
+                    (user.name?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
+                    (user.surname?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
+                    (user.email?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase());
+
+                // Фильтр по роли
+                const roleMatch = userFilters.role === 'all' || user.role === userFilters.role;
+
+                // Фильтр по школе
+                let schoolMatch = true;
+                if (userFilters.school !== 'all') {
+                    try {
+                        const userSchoolName = getUserSchoolName(user);
+                        schoolMatch = userSchoolName === userFilters.school;
+                    } catch (error) {
+                        console.error('Error getting school name for user:', error, user);
+                        schoolMatch = false;
+                    }
+                }
+
+                return searchMatch && roleMatch && schoolMatch;
+            } catch (error) {
+                console.error('Error filtering user:', error, user);
+                return false;
+            }
+        });
+    })();
 
     const filteredSchools = schools.filter(school => {
         // Фильтр по поисковому запросу с проверкой на null/undefined
@@ -903,13 +1069,13 @@ const Dashboard: React.FC = () => {
             (school.teacher?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase());
 
         // Фильтр по городу
-        const cityMatch = !schoolFilters.city || (school.address && school.address.split(',')[0]?.trim() === schoolFilters.city);
+        const cityMatch = !filters.schools.city || (school.address && school.address.split(',')[0]?.trim() === filters.schools.city);
 
         // Фильтр по школе
-        const schoolMatch = !schoolFilters.school || school.name === schoolFilters.school;
+        const schoolMatch = !filters.schools.school || school.name === filters.schools.school;
 
         // Фильтр по классу
-        const classMatch = !schoolFilters.class || (school.classes && school.classes.includes(schoolFilters.class));
+        const classMatch = !filters.schools.class || (school.classes && school.classes.includes(filters.schools.class));
 
         return searchMatch && cityMatch && schoolMatch && classMatch;
     });
@@ -920,18 +1086,6 @@ const Dashboard: React.FC = () => {
     );
 
 
-
-    // Получение названия школы пользователя
-    const getUserSchoolName = (user: { schoolName?: string; schoolId?: string }) => {
-        if (user.schoolName) {
-            return user.schoolName;
-        }
-        if (user.schoolId) {
-            const school = schools.find(s => s.id === user.schoolId);
-            return school ? school.name : null;
-        }
-        return null;
-    };
 
     // Получение роли пользователя для отображения иконки
     const getRoleIcon = (role: string) => {
@@ -1018,8 +1172,8 @@ const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Стильные объемные вкладки */}
-                    <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-0">
-                        <TabsList className="grid w-full grid-cols-9 gap-2 p-2 bg-transparent rounded-xl">
+                    <Tabs value={selectedTab} onValueChange={handleTabChange} className="space-y-0">
+                        <TabsList className="flex w-full overflow-x-auto gap-2 p-2 bg-transparent rounded-xl scrollbar-hide">
                             <TabsTrigger
                                 value="overview"
                                 className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
@@ -1093,6 +1247,42 @@ const Dashboard: React.FC = () => {
                                 </span>
                             </TabsTrigger>
                             <TabsTrigger
+                                value="offers"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">📄</span>
+                                    <span>Оферты</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="privacy-policy"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🔒</span>
+                                    <span>Политика</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="contacts"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">📞</span>
+                                    <span>Контакты</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="bonuses"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🎁</span>
+                                    <span>Бонусы</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
                                 value="chat"
                                 className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-cyan-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
                             >
@@ -1107,13 +1297,13 @@ const Dashboard: React.FC = () => {
 
                 {/* Основной контент с увеличенным отступом сверху */}
                 <div className="pt-12">
-                    <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
+                    <Tabs value={selectedTab} onValueChange={handleTabChange} className="space-y-4">
                         <TabsContent value="overview" className="space-y-4 relative">
                             {/* Секция обзора с кликабельными карточками статистики */}
                             <div className="relative z-10 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 w-full">
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('users')}
+                                    onClick={() => handleTabChange('users')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1131,7 +1321,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('schools')}
+                                    onClick={() => handleTabChange('schools')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1149,7 +1339,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('services')}
+                                    onClick={() => handleTabChange('services')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1167,7 +1357,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('master-classes')}
+                                    onClick={() => handleTabChange('master-classes')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1176,7 +1366,7 @@ const Dashboard: React.FC = () => {
                                         <GraduationCap className="h-4 w-4 text-muted-foreground" />
                                     </CardHeaderCompact>
                                     <CardContentCompact>
-                                        <div className="text-2xl font-bold">{masterClasses.length}</div>
+                                        <div className="text-2xl font-bold">{getUniqueSchoolsCount()}</div>
                                         <p className="text-xs text-muted-foreground">
                                             Запланированных мастер-классов
                                         </p>
@@ -1185,7 +1375,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('invoices')}
+                                    onClick={() => handleTabChange('invoices')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1209,7 +1399,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('chat')}
+                                    onClick={() => handleTabChange('chat')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1243,7 +1433,7 @@ const Dashboard: React.FC = () => {
 
                                 <Card
                                     className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => setSelectedTab('workshop-requests')}
+                                    onClick={() => handleTabChange('workshop-requests')}
                                 >
                                     <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">
@@ -1335,7 +1525,7 @@ const Dashboard: React.FC = () => {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <Label htmlFor="role-filter">Роль</Label>
-                                            <Select value={userFilters.role} onValueChange={(value) => setUserFilters(prev => ({ ...prev, role: value }))}>
+                                            <Select value={userFilters.role} onValueChange={(value) => updateFilters('users', { role: value })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Выберите роль" />
                                                 </SelectTrigger>
@@ -1351,20 +1541,33 @@ const Dashboard: React.FC = () => {
 
                                         <div className="space-y-2">
                                             <Label htmlFor="school-filter">Школа</Label>
-                                            <Select value={userFilters.school} onValueChange={(value) => setUserFilters(prev => ({ ...prev, school: value }))}>
+                                            <Select value={userFilters.school} onValueChange={(value) => updateFilters('users', { school: value })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Выберите школу" />
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="all">Все школы</SelectItem>
                                                     {(() => {
-                                                        const schoolNames = users.map(u => getUserSchoolName(u)).filter(Boolean);
-                                                        console.log('Available school names for filter:', schoolNames);
-                                                        return [...new Set(schoolNames)].map(schoolName => (
-                                                            <SelectItem key={schoolName} value={schoolName!}>
-                                                                {schoolName}
-                                                            </SelectItem>
-                                                        ));
+                                                        if (!users || users.length === 0 || !schools || schools.length === 0) return null;
+                                                        try {
+                                                            const schoolNames = users.map(u => {
+                                                                try {
+                                                                    return getUserSchoolName(u);
+                                                                } catch (error) {
+                                                                    console.error('Error getting school name for user:', error, u);
+                                                                    return null;
+                                                                }
+                                                            }).filter(Boolean);
+                                                            console.log('Available school names for filter:', schoolNames);
+                                                            return [...new Set(schoolNames)].map(schoolName => (
+                                                                <SelectItem key={schoolName} value={schoolName!}>
+                                                                    {schoolName}
+                                                                </SelectItem>
+                                                            ));
+                                                        } catch (error) {
+                                                            console.error('Error getting school names:', error);
+                                                            return null;
+                                                        }
                                                     })()}
                                                 </SelectContent>
                                             </Select>
@@ -1374,7 +1577,7 @@ const Dashboard: React.FC = () => {
                                     <div className="mt-4">
                                         <Button
                                             variant="outline"
-                                            onClick={() => setUserFilters({ role: 'all', school: 'all' })}
+                                            onClick={() => updateFilters('users', { role: 'all', school: 'all' })}
                                             className="w-full"
                                         >
                                             Сбросить фильтры
@@ -1413,7 +1616,7 @@ const Dashboard: React.FC = () => {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {filteredUsers.map((user) => (
+                                                {(filteredUsers || []).map((user) => (
                                                     <TableRow key={user.id}>
                                                         <TableCell>
                                                             <div className="flex items-center space-x-2">
@@ -1532,7 +1735,7 @@ const Dashboard: React.FC = () => {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {filteredSchools.map((school) => (
+                                                {(filteredSchools || []).map((school) => (
                                                     <TableRow key={school.id}>
                                                         <TableCell className="font-medium">
                                                             {school.name}
@@ -1591,7 +1794,7 @@ const Dashboard: React.FC = () => {
                                     <Input
                                         placeholder="Поиск услуг..."
                                         value={servicesSearchTerm}
-                                        onChange={(e) => setServicesSearchTerm(e.target.value)}
+                                        onChange={(e) => updateFilters('services', { search: e.target.value })}
                                         className="pl-8"
                                     />
                                 </div>
@@ -1624,7 +1827,7 @@ const Dashboard: React.FC = () => {
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 gap-4">
-                                            {filteredServices.map((service) => (
+                                            {(filteredServices || []).map((service) => (
                                                 <div key={service.id} className="w-full">
                                                     <ServiceCard
                                                         service={service}
@@ -1632,6 +1835,8 @@ const Dashboard: React.FC = () => {
                                                         onAddOption={handleAddOption}
                                                         onViewStyle={handleViewStyle}
                                                         onViewOption={handleViewOption}
+                                                        onDeleteStyle={handleDeleteStyle}
+                                                        onDeleteOption={handleDeleteOption}
                                                         onReorderStyles={(serviceId, order) => reorderServiceStyles(serviceId, order)}
                                                         onReorderOptions={(serviceId, order) => reorderServiceOptions(serviceId, order)}
                                                         onDelete={handleDeleteService}
@@ -1654,32 +1859,46 @@ const Dashboard: React.FC = () => {
                                 onViewMasterClass={handleViewMasterClassEvent}
                                 onDeleteMasterClass={handleDeleteMasterClass}
                                 onRefreshMasterClasses={handleRefreshMasterClasses}
+                                filters={filters.masterClasses}
+                                onFiltersChange={(newFilters) => updateFilters('masterClasses', newFilters)}
                             />
                         </TabsContent>
 
                         <TabsContent value="invoices" className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h2 className="text-2xl font-bold">Счета</h2>
-                                    <p className="text-muted-foreground">
-                                        {invoicesLoading ? 'Загрузка...' :
-                                            invoicesError ? 'Ошибка загрузки' :
-                                                `Всего счетов: ${invoicesData?.total ?? 0}`}
-                                    </p>
-                                </div>
-                            </div>
-                            <InvoicesTab />
+                            <InvoicesTab
+                                filters={filters.invoices}
+                                onFiltersChange={(newFilters) => updateFilters('invoices', newFilters)}
+                            />
                         </TabsContent>
 
                         <TabsContent value="workshop-requests" className="space-y-4">
                             <div className="flex justify-between items-center">
                                 <h2 className="text-2xl font-bold">Заявки на проведение мастер-классов</h2>
                             </div>
-                            <WorkshopRequestsTab />
+                            <WorkshopRequestsTab
+                                filters={filters.workshopRequests}
+                                onFiltersChange={(newFilters) => updateFilters('workshopRequests', newFilters)}
+                            />
                         </TabsContent>
 
                         <TabsContent value="about" className="space-y-4">
                             <AboutTab />
+                        </TabsContent>
+
+                        <TabsContent value="offers" className="space-y-4">
+                            <OffersTab />
+                        </TabsContent>
+
+                        <TabsContent value="privacy-policy" className="space-y-4">
+                            <PrivacyPolicyTab />
+                        </TabsContent>
+
+                        <TabsContent value="contacts" className="space-y-4">
+                            <ContactsTab />
+                        </TabsContent>
+
+                        <TabsContent value="bonuses" className="space-y-4">
+                            <BonusesTab />
                         </TabsContent>
 
                         <TabsContent value="chat" className="space-y-4">
@@ -1703,7 +1922,7 @@ const Dashboard: React.FC = () => {
                                     </div>
                                     <div className="flex items-center space-x-2">
                                         <span className="text-sm text-gray-600">Фильтр:</span>
-                                        <Select value={chatStatusFilter} onValueChange={setChatStatusFilter}>
+                                        <Select value={chatStatusFilter} onValueChange={(value) => updateFilters('chat', { status: value })}>
                                             <SelectTrigger className="w-32">
                                                 <SelectValue />
                                             </SelectTrigger>
@@ -1724,15 +1943,15 @@ const Dashboard: React.FC = () => {
                                             <div className="flex items-center justify-between mb-2">
                                                 <h4 className="font-semibold text-gray-900">Чаты</h4>
                                                 <Badge variant="secondary">
-                                                    {adminChats.length} всего
+                                                    {(adminChats || []).length} всего
                                                 </Badge>
                                             </div>
                                             <div className="text-sm text-gray-600">
-                                                {adminChats.filter(c => c.status === 'pending').length} ожидают ответа
+                                                {(adminChats || []).filter(c => c.status === 'pending').length} ожидают ответа
                                             </div>
                                             {/* Отладочная информация для непрочитанных */}
                                             <div className="text-xs text-gray-400 mt-2 p-2 bg-gray-100 rounded">
-                                                Debug: Всего непрочитанных: {adminChats.reduce((sum, chat) => sum + (chat.unreadCount || 0), 0)}
+                                                Debug: Всего непрочитанных: {(adminChats || []).reduce((sum, chat) => sum + (chat.unreadCount || 0), 0)}
                                             </div>
                                             {/* Статус WebSocket */}
                                             <div className="text-xs mt-2 p-2 rounded flex items-center space-x-2">
@@ -1748,12 +1967,12 @@ const Dashboard: React.FC = () => {
                                                 <div className="p-4 text-center text-gray-500">
                                                     Загрузка чатов...
                                                 </div>
-                                            ) : adminChats.length === 0 ? (
+                                            ) : (adminChats || []).length === 0 ? (
                                                 <div className="p-4 text-center text-gray-500">
                                                     Нет чатов
                                                 </div>
                                             ) : (
-                                                adminChats.map((chat) => (
+                                                (adminChats || []).map((chat) => (
                                                     <div
                                                         key={chat.id}
                                                         onClick={() => setSelectedAdminChat(chat)}
@@ -1887,12 +2106,12 @@ const Dashboard: React.FC = () => {
                                                         <div className="text-center text-gray-500">
                                                             Загрузка сообщений...
                                                         </div>
-                                                    ) : adminMessages.length === 0 ? (
+                                                    ) : (adminMessages || []).length === 0 ? (
                                                         <div className="text-center text-gray-500">
                                                             Нет сообщений
                                                         </div>
                                                     ) : (
-                                                        adminMessages.map((msg) => (
+                                                        (adminMessages || []).map((msg) => (
                                                             <div
                                                                 key={msg.id}
                                                                 className={cn(
@@ -2016,6 +2235,9 @@ const Dashboard: React.FC = () => {
                                     createdAt: '',
                                     updatedAt: ''
                                 }}
+                                onUpdateMasterClass={handleEditMasterClassEvent}
+                                allMasterClasses={masterClasses}
+                                onRefreshMasterClasses={fetchMasterClasses}
                             />
                         )}
                     </SheetContent>
@@ -2042,6 +2264,15 @@ const Dashboard: React.FC = () => {
 
             </div>
         </div>
+    );
+};
+
+// Основной компонент Dashboard с провайдером контекста
+const Dashboard: React.FC = () => {
+    return (
+        <AdminFiltersProvider>
+            <DashboardContent />
+        </AdminFiltersProvider>
     );
 };
 

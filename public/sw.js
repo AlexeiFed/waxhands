@@ -1,22 +1,39 @@
 // Service Worker для PWA
-const CACHE_NAME = 'vostokovye-ruchki-v2'; // Обновляю версию
+const CACHE_NAME = 'waxhands-pwa-v3.0.0-20250125-updated';
 const urlsToCache = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
-  '/assets/index-CnvXarV7.js', // Указываю новый JS файл
-  '/assets/index-CSh-3z-b.css'
+  '/icons/icon-72x72-white.png?v=3.0.0',
+  '/icons/icon-96x96-white.png?v=3.0.0',
+  '/icons/icon-128x128-white.png?v=3.0.0',
+  '/icons/icon-144x144-white.png?v=3.0.0',
+  '/icons/icon-152x152-white.png?v=3.0.0',
+  '/icons/icon-180x180-white.png?v=3.0.0',
+  '/icons/icon-192x192-white.png?v=3.0.0',
+  '/icons/icon-192x192-maskable.png?v=3.0.0',
+  '/icons/icon-384x384-white.png?v=3.0.0',
+  '/icons/icon-512x512-white.png?v=3.0.0',
+  '/icons/icon-512x512-maskable.png?v=3.0.0',
+  '/icons/icon-1024x1024-white.png?v=3.0.0'
 ];
 
 // Установка service worker
 self.addEventListener('install', (event) => {
+  console.log('Service Worker: Installing v3.0.0 with PWA update modal...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
+        console.log('Service Worker: Opened cache:', CACHE_NAME);
         return cache.addAll(urlsToCache);
+      })
+      .then(() => {
+        console.log('Service Worker: Cached all files');
+        // Принудительно активируем новый Service Worker
+        return self.skipWaiting();
+      })
+      .catch((error) => {
+        console.error('Service Worker: Install failed:', error);
       })
   );
 });
@@ -32,18 +49,26 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Обновление кэша
+// Активация service worker
 self.addEventListener('activate', (event) => {
+  console.log('Service Worker: Activating v3.0.0...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
+          // Удаляем ВСЕ старые кэши для принудительного обновления
           if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
+            console.log('Service Worker: Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      console.log('Service Worker: Activated v3.0.0 - All old caches cleared');
+      // Безопасно обновляем клиентов
+      return self.clients.claim();
+    }).catch((error) => {
+      console.error('Service Worker: Activation failed:', error);
     })
   );
 });
@@ -52,8 +77,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   const options = {
     body: event.data ? event.data.text() : 'Новое уведомление',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
+    icon: '/icons/icon-192x192-white.png?v=3.0.0',
+    badge: '/icons/icon-72x72-white.png?v=3.0.0',
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
@@ -63,12 +88,12 @@ self.addEventListener('push', (event) => {
       {
         action: 'explore',
         title: 'Открыть',
-        icon: '/icons/icon-192x192.png'
+        icon: '/icons/icon-192x192-white.png?v=3.0.0'
       },
       {
         action: 'close',
         title: 'Закрыть',
-        icon: '/icons/icon-192x192.png'
+        icon: '/icons/icon-192x192-white.png?v=3.0.0'
       }
     ]
   };

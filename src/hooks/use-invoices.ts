@@ -238,6 +238,39 @@ export const useParticipantInvoices = (participantId: string) => {
     });
 };
 
+// Хук для получения счетов родителя и всех его детей
+export const useParentInvoices = (parentId: string, childrenIds: string[] = []) => {
+    return useQuery({
+        queryKey: ['invoices', 'parent', parentId, childrenIds.sort().join(',')],
+        queryFn: async () => {
+            // Собираем все ID (родитель + дети)
+            const allIds = [parentId, ...childrenIds].filter(id => id);
+
+            // Получаем счета для каждого ID
+            const allInvoices = await Promise.all(
+                allIds.map(id => invoicesAPI.getInvoices({ participant_id: id }))
+            );
+
+            // Объединяем все счета
+            const combinedInvoices = allInvoices.reduce((acc, result) => {
+                return [...acc, ...result.invoices];
+            }, [] as Invoice[]);
+
+            // Убираем дубликаты по ID счета
+            const uniqueInvoices = combinedInvoices.filter((invoice, index, self) =>
+                index === self.findIndex(i => i.id === invoice.id)
+            );
+
+            return {
+                invoices: uniqueInvoices,
+                total: uniqueInvoices.length
+            };
+        },
+        enabled: !!parentId,
+        staleTime: 5 * 60 * 1000,
+    });
+};
+
 // Хук для получения счетов по мастер-классу
 export const useWorkshopInvoices = (workshopId: string) => {
     return useQuery({

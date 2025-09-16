@@ -123,7 +123,7 @@ const addParticipantToMasterClass = async (client: any, invoice: Invoice) => { /
         hasReceived: false,
         paymentMethod: undefined,
         paymentDate: undefined,
-        notes: `Индивидуальная регистрация. Счет: ${invoice.id}. Участник: ${invoice.participant_id}`
+        notes: invoice.notes || undefined
     };
 
     console.log('🔍 Добавляем участника в мастер-класс:', {
@@ -344,8 +344,8 @@ export const createInvoice = async (req: Request, res: Response): Promise<void> 
             const createQuery = `
                 INSERT INTO invoices (
                     master_class_id, workshop_date, city, school_name, class_group,
-                    participant_name, participant_id, amount, selected_styles, selected_options
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    participant_name, participant_id, amount, selected_styles, selected_options, notes
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING *
             `;
 
@@ -359,7 +359,8 @@ export const createInvoice = async (req: Request, res: Response): Promise<void> 
                 invoiceData.participant_id,
                 invoiceData.amount,
                 JSON.stringify(invoiceData.selected_styles),
-                JSON.stringify(invoiceData.selected_options)
+                JSON.stringify(invoiceData.selected_options),
+                invoiceData.notes || ''
             ];
 
             console.log('SQL запрос:', createQuery);
@@ -657,6 +658,101 @@ export const getInvoiceById = async (req: Request, res: Response): Promise<void>
     }
 };
 
+export const updateInvoice = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { selected_styles, selected_options, amount } = req.body;
+        const userId = req.user?.userId;
+        const userRole = req.user?.role;
+
+        console.log(`🔄 updateInvoice: Обновляем счет ${id}`, {
+            selected_styles: selected_styles?.length || 0,
+            selected_options: selected_options?.length || 0,
+            amount,
+            userId,
+            userRole
+        });
+
+        // Валидация входных данных
+        if (!selected_styles || !selected_options || typeof amount !== 'number') {
+            console.error(`❌ Неверные данные для обновления счета:`, {
+                selected_styles: !!selected_styles,
+                selected_options: !!selected_options,
+                amount: typeof amount
+            });
+            res.status(400).json({
+                success: false,
+                error: 'Неверные данные для обновления счета'
+            } as ApiResponse);
+            return;
+        }
+
+        // Проверяем, существует ли счет и права доступа
+        const checkResult = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
+
+        if (checkResult.rows.length === 0) {
+            console.error(`❌ Счет с ID ${id} не найден`);
+            res.status(404).json({
+                success: false,
+                error: 'Счет не найден'
+            } as ApiResponse);
+            return;
+        }
+
+        const invoice = checkResult.rows[0];
+
+        // Проверяем права доступа:
+        // - Администраторы могут обновлять любые счета
+        // - Родители могут обновлять только счета своих детей
+        if (userRole !== 'admin' && invoice.participant_id !== userId) {
+            console.log('❌ Доступ запрещен для обновления счета:', { 
+                userRole, 
+                userId, 
+                invoiceParticipantId: invoice.participant_id 
+            });
+            res.status(403).json({
+                success: false,
+                error: 'Доступ запрещен. Вы можете обновлять только счета своих детей.'
+            } as ApiResponse);
+            return;
+        }
+
+        // Обновляем счет
+        const result = await pool.query(
+            `UPDATE invoices 
+             SET selected_styles = $1, 
+                 selected_options = $2, 
+                 amount = $3, 
+                 updated_at = CURRENT_TIMESTAMP 
+             WHERE id = $4 
+             RETURNING *`,
+            [JSON.stringify(selected_styles), JSON.stringify(selected_options), amount, id]
+        );
+
+        const updatedInvoice = result.rows[0];
+        console.log(`✅ Счет обновлен:`, {
+            id: updatedInvoice.id,
+            master_class_id: updatedInvoice.master_class_id,
+            participant_id: updatedInvoice.participant_id,
+            amount: updatedInvoice.amount,
+            selected_styles_count: selected_styles.length,
+            selected_options_count: selected_options.length
+        });
+
+        res.json({
+            success: true,
+            data: updatedInvoice
+        } as ApiResponse);
+
+    } catch (error) {
+        console.error('❌ updateInvoice error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        } as ApiResponse);
+    }
+};
+
 export const updateInvoiceStatus = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
@@ -920,8 +1016,16 @@ export const getInvoicesByDate = async (req: Request, res: Response): Promise<vo
 export const deleteInvoice = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        const userId = req.user?.userId;
+        const userRole = req.user?.role;
 
-        console.log('Удаление счета:', id);
+        console.log('🔍 deleteInvoice: Заголовки запроса:', req.headers);
+        console.log('🔍 deleteInvoice: Пользователь из токена:', req.user);
+        console.log('🔍 deleteInvoice: Данные запроса:', { id, userId, userRole });
+        console.log('🔍 deleteInvoice: Полный объект req.user:', JSON.stringify(req.user, null, 2));
+        console.log('🔍 deleteInvoice: Тип req.user:', typeof req.user);
+        console.log('🔍 deleteInvoice: req.user === undefined:', req.user === undefined);
+        console.log('🔍 deleteInvoice: req.user === null:', req.user === null);
 
         // Проверяем, существует ли счет
         const checkResult = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
@@ -934,10 +1038,24 @@ export const deleteInvoice = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        const invoice = checkResult.rows[0];
+
+        // Проверяем права доступа:
+        // - Администраторы могут удалять любые счета
+        // - Родители могут удалять только свои счета (participant_id должен совпадать с user_id)
+        if (userRole !== 'admin' && invoice.participant_id !== userId) {
+            console.log('❌ Доступ запрещен:', { userRole, userId, invoiceParticipantId: invoice.participant_id });
+            res.status(403).json({
+                success: false,
+                error: 'Доступ запрещен. Вы можете удалять только свои счета.'
+            } as ApiResponse);
+            return;
+        }
+
         // Удаляем счет
         await pool.query('DELETE FROM invoices WHERE id = $1', [id]);
 
-        console.log('Счет успешно удален');
+        console.log('✅ Счет успешно удален:', { id, deletedBy: userId, userRole });
 
         res.json({
             success: true,

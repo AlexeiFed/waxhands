@@ -31,6 +31,9 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
         { label: 'Мой профиль', href: '/parent/profile', icon: '👤' },
         { label: 'Написать в поддержку', href: '#support', icon: '💬' },
         { label: 'О нас', href: '/about', icon: 'ℹ️' },
+        { label: 'Оферта', href: '/parent/offer', icon: '📄' },
+        { label: 'Политика конфиденциальности', href: '/policy', icon: '🔒' },
+        { label: 'Контакты', href: '/parent/contacts', icon: '📞' },
         { label: 'Поделиться', href: '#share', icon: '📤' },
         { label: 'Выйти', href: '#logout', icon: '🚪' }
     ];
@@ -104,56 +107,65 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
     return (
         <>
             <header className="fixed top-0 left-0 right-0 z-50 bg-gradient-wax-hands shadow-lg border-b border-orange-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-                    <div className="flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
+                    <div className="flex items-center justify-between min-w-0">
                         {/* Логотип и название */}
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
                             {/* Кнопка назад */}
                             {showBackButton && (
                                 <Button
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => navigate(-1)}
-                                    className="text-gray-700 hover:bg-orange-100 hover:text-orange-700 mr-2"
+                                    className="text-gray-700 hover:bg-orange-100 hover:text-orange-700 mr-1 sm:mr-2 flex-shrink-0"
                                 >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                                     </svg>
                                 </Button>
                             )}
-                            <div className="w-12 h-12">
+
+                            {/* Логотип */}
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 flex-shrink-0">
                                 <img
                                     src={logoImage}
                                     alt="Логотип студии"
                                     className="w-full h-full object-contain"
                                 />
                             </div>
-                            <div className="hidden sm:block">
-                                <h1 className="text-xl sm:text-2xl font-bold text-white">
-                                    Студия «МК Восковые ручки»
-                                </h1>
-                                <p className="text-sm sm:text-base text-white/90">
-                                    Творческие мастер-классы
-                                </p>
-                            </div>
-                            <div className="sm:hidden">
-                                <h1 className="text-lg font-bold text-white">
-                                    МК Восковые ручки
-                                </h1>
+
+                            {/* Название - адаптивное */}
+                            <div className="min-w-0 flex-1">
+                                {/* Для больших экранов */}
+                                <div className="hidden sm:block">
+                                    <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-white truncate">
+                                        Студия «МК Восковые ручки»
+                                    </h1>
+                                    <p className="text-xs sm:text-sm lg:text-base text-white/90 truncate">
+                                        Творческие мастер-классы
+                                    </p>
+                                </div>
+
+                                {/* Для мобильных */}
+                                <div className="sm:hidden">
+                                    <h1 className="text-sm sm:text-base font-bold text-white truncate">
+                                        МК Восковые ручки
+                                    </h1>
+                                </div>
                             </div>
                         </div>
 
                         {/* Кнопки действий */}
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
                             {/* Кнопка поделиться */}
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={handleShare}
-                                className="text-white hover:bg-white/20 hover:text-white"
+                                className="text-white hover:bg-white/20 hover:text-white w-8 h-8 sm:w-10 sm:h-10"
                                 title="Поделиться"
                             >
-                                <Share2 className="w-5 h-5" />
+                                <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
                             </Button>
 
                             {/* Гамбургер-меню */}
@@ -162,11 +174,11 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="text-white hover:bg-white/20 hover:text-white"
+                                        className="text-white hover:bg-white/20 hover:text-white w-8 h-8 sm:w-10 sm:h-10"
                                     >
                                         <div className="flex flex-col space-y-1">
-                                            <div className="w-6 h-0.5 bg-current rounded-full"></div>
-                                            <div className="w-4 h-0.5 bg-current rounded-full ml-auto"></div>
+                                            <div className="w-4 sm:w-6 h-0.5 bg-current rounded-full"></div>
+                                            <div className="w-3 sm:w-4 h-0.5 bg-current rounded-full ml-auto"></div>
                                         </div>
                                     </Button>
                                 </SheetTrigger>

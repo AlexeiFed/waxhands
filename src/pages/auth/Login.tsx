@@ -168,15 +168,15 @@ const Login = () => {
                         >
                             Зарегистрироваться
                         </Button>
-                        <div>
+                        {/*  <div>
                             <Button
                                 variant="ghost"
                                 onClick={() => navigate("/admin/login")}
                                 className="text-xs text-gray-500 hover:text-gray-700"
                             >
                                 Вход для администратора
-                            </Button>
-                        </div>
+                            </Button> 
+                        </div>*/}
                     </div>
                 </CardContent>
             </Card>

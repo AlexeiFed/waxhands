@@ -71,10 +71,10 @@ const seedData = async () => {
 
         // Создание администратора
         console.log('👤 Creating admin user...');
-        const adminPasswordHash = await bcrypt.hash('admin123', 12);
+        const adminPasswordHash = await bcrypt.hash('N1fQZhaT$', 12);
         await client.query(`
       INSERT INTO users (name, role, password_hash)
-      VALUES ('Администратор', 'admin', $1)
+      VALUES ('Admin', 'admin', $1)
       ON CONFLICT DO NOTHING
     `, [adminPasswordHash]);
         console.log('✅ Admin user created');
@@ -83,8 +83,8 @@ const seedData = async () => {
         console.log('👥 Creating test users...');
         const testUsers = [
             {
-                name: "Иван",
-                surname: "Иванов",
+                name: "Тест",
+                surname: "Родитель",
                 role: "parent" as UserRole,
                 phone: "+79991234567",
                 schoolId: schools[0]?.id,

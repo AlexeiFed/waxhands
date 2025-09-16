@@ -20,7 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { MasterClassEvent, Service } from '@/types/services';
 import { School } from '@/types';
-import { Plus, CalendarIcon, Clock, MapPin, Users, DollarSign, Trash2, UserPlus, Filter, BarChart3, FileSpreadsheet } from 'lucide-react';
+import { MasterClassesFilters } from '@/contexts/AdminFiltersContext';
+import { Plus, CalendarIcon, Clock, MapPin, Users, DollarSign, Trash2, UserPlus, Filter, BarChart3, FileSpreadsheet, ChevronUp, ChevronDown } from 'lucide-react';
 import { ru } from 'date-fns/locale';
 import { api } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -34,19 +35,53 @@ interface MasterClassesTabProps {
     onViewMasterClass: (masterClass: MasterClassEvent) => void;
     onDeleteMasterClass: (id: string) => void;
     onRefreshMasterClasses: () => void;
+    filters: MasterClassesFilters;
+    onFiltersChange: (filters: Partial<MasterClassesFilters>) => void;
 }
 
 export default function MasterClassesTab({
     services,
     schools,
-    masterClasses,
+    masterClasses: initialMasterClasses,
     onAddMasterClass,
     onEditMasterClass,
     onViewMasterClass,
     onDeleteMasterClass,
-    onRefreshMasterClasses
+    onRefreshMasterClasses,
+    filters,
+    onFiltersChange
 }: MasterClassesTabProps) {
+    // Локальное состояние для мастер-классов
+    const [masterClasses, setMasterClasses] = useState<MasterClassEvent[]>(initialMasterClasses || []);
     const { toast } = useToast();
+
+    // Синхронизация с внешними данными
+    useEffect(() => {
+        setMasterClasses(initialMasterClasses || []);
+    }, [initialMasterClasses]);
+
+    // Обертка для onEditMasterClass с обновлением локального состояния
+    const handleEditMasterClass = useCallback(async (id: string, updates: Partial<MasterClassEvent>) => {
+        try {
+            await onEditMasterClass(id, updates);
+
+            // Обновляем локальное состояние
+            setMasterClasses(prev => (prev || []).map(mc =>
+                mc.id === id ? { ...mc, ...updates } : mc
+            ));
+
+            // Принудительно обновляем данные с сервера
+            await onRefreshMasterClasses();
+
+            // Дополнительно обновляем локальное состояние после обновления с сервера
+            setTimeout(() => {
+                onRefreshMasterClasses();
+            }, 100);
+        } catch (error) {
+            console.error('Error updating master class:', error);
+            throw error;
+        }
+    }, [onEditMasterClass, onRefreshMasterClasses]);
 
     // Отладка при загрузке компонента
     console.log('MasterClassesTab: компонент загружен');
@@ -58,6 +93,7 @@ export default function MasterClassesTab({
     // Состояние формы
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [formData, setFormData] = useState({
+        city: '',
         date: '',
         time: '',
         schoolId: '',
@@ -76,12 +112,31 @@ export default function MasterClassesTab({
     const [selectedMasterClass, setSelectedMasterClass] = useState<MasterClassEvent | null>(null);
     const [editingExecutors, setEditingExecutors] = useState<string[]>([]);
 
-    // Фильтры
-    const [filterCity, setFilterCity] = useState('all');
-    const [filterSchool, setFilterSchool] = useState('all');
-    const [filterClass, setFilterClass] = useState('all');
-    const [filterDateFrom, setFilterDateFrom] = useState('');
-    const [filterDateTo, setFilterDateTo] = useState('');
+    // Состояние для группировки по школам
+    const [expandedSchools, setExpandedSchools] = useState<Set<string>>(new Set());
+
+    // Состояние для скрытия прошедших мастер-классов
+    const [hidePastClasses, setHidePastClasses] = useState(false);
+
+    // Функция для переключения развернутого состояния школы
+    const toggleSchoolExpansion = (schoolId: string) => {
+        setExpandedSchools(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(schoolId)) {
+                newSet.delete(schoolId);
+            } else {
+                newSet.add(schoolId);
+            }
+            return newSet;
+        });
+    };
+
+    // Используем фильтры из пропсов
+    const filterCity = filters.city;
+    const filterSchool = filters.school;
+    const filterClass = filters.class;
+    const filterDateFrom = filters.dateFrom;
+    const filterDateTo = filters.dateTo;
 
     // Получение уникальных городов
     const getUniqueCities = (): string[] => {
@@ -101,6 +156,15 @@ export default function MasterClassesTab({
         });
     };
 
+    // Получение школ по выбранному городу
+    const getSchoolsByCity = (): School[] => {
+        if (!formData.city) return schools || [];
+        return (schools || []).filter(school => {
+            const schoolCity = school.address ? school.address.split(',')[0].trim() : '';
+            return schoolCity === formData.city;
+        });
+    };
+
     // Получение отфильтрованных классов
     const getFilteredClasses = (): string[] => {
         if (!formData.schoolId) return [];
@@ -109,11 +173,13 @@ export default function MasterClassesTab({
     };
 
     // Получение отфильтрованных мастер-классов
-    const getFilteredMasterClasses = (): MasterClassEvent[] => {
+    const getFilteredMasterClasses = useCallback((): MasterClassEvent[] => {
         let filtered = masterClasses || [];
+        console.log('getFilteredMasterClasses: исходные мастер-классы:', filtered.length);
+        console.log('getFilteredMasterClasses: фильтры:', { filterCity, filterSchool, filterClass, filterDateFrom, filterDateTo });
 
         // Фильтр по городу
-        if (filterCity !== 'all') {
+        if (filterCity !== 'all' && filterCity !== '') {
             filtered = filtered.filter(mc => {
                 const school = (schools || []).find(s => s.id === mc.schoolId);
                 if (school && school.address) {
@@ -122,30 +188,113 @@ export default function MasterClassesTab({
                 }
                 return false;
             });
+            console.log('getFilteredMasterClasses: после фильтра по городу:', filtered.length);
         }
 
         // Фильтр по школе
-        if (filterSchool !== 'all') {
+        if (filterSchool !== 'all' && filterSchool !== '') {
             filtered = filtered.filter(mc => mc.schoolId === filterSchool);
+            console.log('getFilteredMasterClasses: после фильтра по школе:', filtered.length);
         }
 
         // Фильтр по классу
-        if (filterClass !== 'all') {
+        if (filterClass !== 'all' && filterClass !== '') {
             filtered = filtered.filter(mc => mc.classGroup === filterClass);
+            console.log('getFilteredMasterClasses: после фильтра по классу:', filtered.length);
         }
 
         // Фильтр по дате от
         if (filterDateFrom) {
-            filtered = filtered.filter(mc => mc.date >= filterDateFrom);
+            const fromDate = new Date(filterDateFrom);
+            filtered = filtered.filter(mc => {
+                const mcDate = new Date(mc.date);
+                return mcDate >= fromDate;
+            });
+            console.log('getFilteredMasterClasses: после фильтра по дате от:', filtered.length);
         }
 
         // Фильтр по дате до
         if (filterDateTo) {
-            filtered = filtered.filter(mc => mc.date <= filterDateTo);
+            const toDate = new Date(filterDateTo);
+            filtered = filtered.filter(mc => {
+                const mcDate = new Date(mc.date);
+                return mcDate <= toDate;
+            });
+            console.log('getFilteredMasterClasses: после фильтра по дате до:', filtered.length);
         }
 
+        // Фильтр по прошедшим мастер-классам
+        if (hidePastClasses) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            filtered = filtered.filter(mc => {
+                const mcDate = new Date(mc.date);
+                return mcDate >= today;
+            });
+            console.log('getFilteredMasterClasses: после фильтра прошедших:', filtered.length);
+        }
+
+        console.log('getFilteredMasterClasses: итоговый результат:', filtered.length);
         return filtered;
-    };
+    }, [masterClasses, schools, filterCity, filterSchool, filterClass, filterDateFrom, filterDateTo, hidePastClasses]);
+
+    // Группировка мастер-классов по школам и датам
+    const getGroupedMasterClasses = useCallback(() => {
+        const filtered = getFilteredMasterClasses();
+        console.log('getGroupedMasterClasses: отфильтрованные мастер-классы:', filtered.length);
+
+        const grouped = filtered.reduce((acc, masterClass) => {
+            // Создаем ключ из schoolId + даты
+            const dateStr = new Date(masterClass.date).toISOString().split('T')[0];
+            const groupKey = `${masterClass.schoolId}_${dateStr}`;
+
+            if (!acc[groupKey]) {
+                acc[groupKey] = {
+                    schoolId: masterClass.schoolId,
+                    date: dateStr,
+                    masterClasses: []
+                };
+            }
+            acc[groupKey].masterClasses.push(masterClass);
+            return acc;
+        }, {} as Record<string, { schoolId: string; date: string; masterClasses: MasterClassEvent[] }>);
+
+        // Сортируем группы по дате, затем по школе
+        const sortedGroups = Object.values(grouped).sort((a, b) => {
+            const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+            if (dateCompare !== 0) return dateCompare;
+            return a.schoolId.localeCompare(b.schoolId);
+        });
+
+        // Сортируем мастер-классы внутри каждой группы по классу (от меньшего к старшему, затем по алфавиту) и по времени
+        sortedGroups.forEach(group => {
+            group.masterClasses.sort((a, b) => {
+                // Сначала сортируем по классу
+                const classA = a.classGroup;
+                const classB = b.classGroup;
+
+                // Извлекаем числовую часть класса (например, "5А" -> 5, "10Б" -> 10)
+                const numA = parseInt(classA.match(/\d+/)?.[0] || '0');
+                const numB = parseInt(classB.match(/\d+/)?.[0] || '0');
+
+                // Сортируем по числовой части (от меньшего к старшему)
+                if (numA !== numB) {
+                    return numA - numB;
+                }
+
+                // Если числовая часть одинаковая, сортируем по алфавиту
+                if (classA !== classB) {
+                    return classA.localeCompare(classB);
+                }
+
+                // Если классы одинаковые, сортируем по времени
+                return a.time.localeCompare(b.time);
+            });
+        });
+
+        console.log('getGroupedMasterClasses: сгруппированные группы:', sortedGroups.length);
+        return sortedGroups;
+    }, [getFilteredMasterClasses]);
 
     // Получение финансовой статистики по отфильтрованным мастер-классам
     const getFinancialStats = () => {
@@ -158,11 +307,29 @@ export default function MasterClassesTab({
         }, 0);
         const unpaidAmount = totalAmount - paidAmount;
 
+        // Подсчитываем количество школ (группируем по школам и датам)
+        const grouped = filteredClasses.reduce((acc, masterClass) => {
+            const dateStr = new Date(masterClass.date).toISOString().split('T')[0];
+            const groupKey = `${masterClass.schoolId}_${dateStr}`;
+
+            if (!acc[groupKey]) {
+                acc[groupKey] = {
+                    schoolId: masterClass.schoolId,
+                    date: dateStr,
+                    masterClasses: []
+                };
+            }
+            acc[groupKey].masterClasses.push(masterClass);
+            return acc;
+        }, {} as Record<string, { schoolId: string; date: string; masterClasses: MasterClassEvent[] }>);
+
+        const totalSchools = Object.keys(grouped).length;
+
         return {
             totalAmount,
             paidAmount,
             unpaidAmount,
-            totalClasses: filteredClasses.length
+            totalClasses: totalSchools // Теперь это количество школ, а не классов
         };
     };
 
@@ -194,13 +361,9 @@ export default function MasterClassesTab({
         if (!selectedMasterClass) return;
 
         try {
-            await onEditMasterClass(selectedMasterClass.id, {
+            await handleEditMasterClass(selectedMasterClass.id, {
                 executors: editingExecutors
             });
-
-            // Обновляем локальное состояние
-            const updatedMasterClass = { ...selectedMasterClass, executors: editingExecutors };
-            // Здесь можно обновить локальный список мастер-классов, если нужно
 
             setExecutorsModalOpen(false);
             setSelectedMasterClass(null);
@@ -229,7 +392,7 @@ export default function MasterClassesTab({
     };
 
     // Получение статистики по стилям и опциям
-    const getStylesAndOptionsStats = () => {
+    const getStylesAndOptionsStats = useCallback(() => {
         console.log('🔍 getStylesAndOptionsStats: ФУНКЦИЯ ВЫЗВАНА!');
         const filteredClasses = getFilteredMasterClasses();
         const stylesStats: Record<string, number> = {};
@@ -373,15 +536,11 @@ export default function MasterClassesTab({
         console.log('getStylesAndOptionsStats: итоговая статистика:', { stylesStats, optionsStats });
 
         return { stylesStats, optionsStats };
-    };
+    }, [getFilteredMasterClasses, services, masterClasses]);
 
-    // Получение мастер-классов для календаря
-    const getMasterClassesForDate = useCallback((date: Date): MasterClassEvent[] => {
+    // Получение количества школ для календаря
+    const getSchoolsCountForDate = useCallback((date: Date): number => {
         const dateStr = formatDateForComparison(date);
-
-        // Отладочная информация для понимания проблемы
-        console.log(`getMasterClassesForDate: ищем для даты ${dateStr}`);
-        console.log(`getMasterClassesForDate: доступные даты в данных:`, (masterClasses || []).map(mc => mc.date));
 
         const filtered = masterClasses.filter(mc => {
             // Обрабатываем разные форматы дат
@@ -389,25 +548,12 @@ export default function MasterClassesTab({
             if (mcDate.includes('T')) {
                 mcDate = mcDate.split('T')[0];
             }
-            const matches = mcDate === dateStr;
-
-            // Отладочная информация для каждой даты
-            console.log(`getMasterClassesForDate: проверяем ${mcDate} === ${dateStr} -> ${matches}`);
-
-            if (matches) {
-                console.log(`getMasterClassesForDate: найдено совпадение: ${mcDate} === ${dateStr}`);
-            }
-            return matches;
+            return mcDate === dateStr;
         });
 
-        // Отладочная информация
-        if (filtered.length > 0) {
-            console.log(`getMasterClassesForDate: ${dateStr} -> ${filtered.length} мастер-классов`);
-        } else {
-            console.log(`getMasterClassesForDate: для ${dateStr} мастер-классов не найдено`);
-        }
-
-        return filtered;
+        // Получаем уникальные школы для этой даты
+        const uniqueSchools = [...new Set((filtered || []).map(mc => mc.schoolName))];
+        return uniqueSchools.length;
     }, [masterClasses]);
 
     // Форматирование даты для сравнения
@@ -424,28 +570,34 @@ export default function MasterClassesTab({
         return formatted;
     };
 
-    // Обработка выбора даты
+    // Обработка выбора даты с фильтрацией
     const handleDateSelect = (date: Date | undefined) => {
         if (date) {
-            // Отладочная информация для понимания проблемы с датами
-            console.log(`handleDateSelect: получена дата:`, {
-                originalDate: date,
-                toLocaleDateString: date.toLocaleDateString(),
-                toISOString: date.toISOString(),
-                getTime: date.getTime(),
-                getFullYear: date.getFullYear(),
-                getMonth: date.getMonth(),
-                getDate: date.getDate()
-            });
+            // Форматируем дату для фильтрации
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
 
-            // Устанавливаем выбранную дату в форму используя локальное форматирование
-            const formattedDate = formatDateForComparison(date);
-            setFormData(prev => ({ ...prev, date: formattedDate }));
+            // Применяем фильтр по дате
+            onFiltersChange({ dateFrom: dateStr, dateTo: dateStr });
 
-            // Открываем модальное окно создания мастер-класса
-            setIsAddDialogOpen(true);
-            console.log(`Открыто модальное окно для даты ${date.toLocaleDateString()} -> ${formattedDate}`);
+            console.log(`handleDateSelect: применен фильтр по дате:`, dateStr);
+        } else {
+            // Сбрасываем фильтр по дате
+            onFiltersChange({ dateFrom: '', dateTo: '' });
+            console.log(`handleDateSelect: сброшен фильтр по дате`);
         }
+    };
+
+    // Обработка изменения города
+    const handleCityChange = (city: string) => {
+        setFormData(prev => ({
+            ...prev,
+            city,
+            schoolId: '',
+            classGroups: []
+        }));
     };
 
     // Обработка изменения школы
@@ -528,8 +680,14 @@ export default function MasterClassesTab({
                 // Обновляем список мастер-классов через callback
                 onRefreshMasterClasses();
 
+                // Дополнительное принудительное обновление через небольшую задержку
+                setTimeout(() => {
+                    onRefreshMasterClasses();
+                }, 500);
+
                 // Сброс формы
                 setFormData({
+                    city: '',
                     date: '',
                     time: '',
                     schoolId: '',
@@ -608,9 +766,9 @@ export default function MasterClassesTab({
             // Проверяем несколько дат месяца
             for (let day = 1; day <= 31; day++) {
                 const testDate = new Date(currentYear, currentMonth, day);
-                const found = getMasterClassesForDate(testDate);
-                if (found.length > 0) {
-                    console.log(`MasterClassesTab: Тест даты ${testDate.toLocaleDateString()}: найдено ${found.length} мастер-классов`);
+                const schoolsCount = getSchoolsCountForDate(testDate);
+                if (schoolsCount > 0) {
+                    console.log(`MasterClassesTab: Тест даты ${testDate.toLocaleDateString()}: найдено ${schoolsCount} школ`);
                 }
             }
 
@@ -619,7 +777,7 @@ export default function MasterClassesTab({
             const stats = getStylesAndOptionsStats();
             console.log('🔍 MasterClassesTab: Результат getStylesAndOptionsStats():', stats);
         }
-    }, [masterClasses, schools, services, getMasterClassesForDate]);
+    }, [masterClasses, schools, services, getSchoolsCountForDate, getStylesAndOptionsStats]);
 
     // Экспорт финансовой статистики в Excel
     const exportFinancialStats = () => {
@@ -656,11 +814,11 @@ export default function MasterClassesTab({
         currentRow += 1;
 
         // Данные по школам (уникальные)
-        const uniqueSchools = Array.from(new Set(filteredClasses.map(mc => mc.schoolId)))
+        const uniqueSchools = Array.from(new Set((filteredClasses || []).map(mc => mc.schoolId)))
             .map(schoolId => (schools || []).find(s => s.id === schoolId))
             .filter(Boolean);
 
-        const schoolsData = uniqueSchools.map(school => [
+        const schoolsData = (uniqueSchools || []).map(school => [
             school?.name || 'Неизвестная школа',
             school?.address || 'Адрес не указан'
         ]);
@@ -832,13 +990,29 @@ export default function MasterClassesTab({
                                 </div>
 
                                 <div className="space-y-2">
+                                    <Label htmlFor="city">Город</Label>
+                                    <Select value={formData.city} onValueChange={handleCityChange}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Выберите город" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {getUniqueCities().map(city => (
+                                                <SelectItem key={city} value={city}>
+                                                    {city}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
                                     <Label htmlFor="school">Школа/Садик</Label>
                                     <Select value={formData.schoolId} onValueChange={handleSchoolChange}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Выберите школу/садик" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {(schools || []).map(school => (
+                                            {getSchoolsByCity().map(school => (
                                                 <SelectItem key={school.id} value={school.id}>
                                                     {school.name}
                                                 </SelectItem>
@@ -985,7 +1159,7 @@ export default function MasterClassesTab({
                 </div>
 
                 <div className="text-sm text-muted-foreground">
-                    Найдено: {getFilteredMasterClasses().length} мастер-классов
+                    Найдено: {(getGroupedMasterClasses() || []).length} мастер-классов
                 </div>
             </div>
 
@@ -1003,7 +1177,7 @@ export default function MasterClassesTab({
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="city-filter">Город</Label>
-                                <Select value={filterCity} onValueChange={setFilterCity}>
+                                <Select value={filterCity} onValueChange={(value) => onFiltersChange({ city: value })}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Выберите город" />
                                     </SelectTrigger>
@@ -1020,7 +1194,7 @@ export default function MasterClassesTab({
 
                             <div className="space-y-2">
                                 <Label htmlFor="school-filter">Школа/Садик</Label>
-                                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                                <Select value={filterSchool} onValueChange={(value) => onFiltersChange({ school: value })}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Выберите школу" />
                                     </SelectTrigger>
@@ -1037,13 +1211,13 @@ export default function MasterClassesTab({
 
                             <div className="space-y-2">
                                 <Label htmlFor="class-filter">Класс/Группа</Label>
-                                <Select value={filterClass} onValueChange={setFilterClass}>
+                                <Select value={filterClass} onValueChange={(value) => onFiltersChange({ class: value })}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Выберите класс" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">Все классы</SelectItem>
-                                        {getFilteredMasterClasses()
+                                        {(getFilteredMasterClasses() || [])
                                             .map(mc => mc.classGroup)
                                             .filter((value, index, self) => self.indexOf(value) === index)
                                             .map(className => (
@@ -1061,7 +1235,7 @@ export default function MasterClassesTab({
                                     id="date-from-filter"
                                     type="date"
                                     value={filterDateFrom}
-                                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                                    onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
                                     placeholder="Выберите дату"
                                 />
                             </div>
@@ -1072,7 +1246,7 @@ export default function MasterClassesTab({
                                     id="date-to-filter"
                                     type="date"
                                     value={filterDateTo}
-                                    onChange={(e) => setFilterDateTo(e.target.value)}
+                                    onChange={(e) => onFiltersChange({ dateTo: e.target.value })}
                                     placeholder="Выберите дату"
                                 />
                             </div>
@@ -1080,13 +1254,13 @@ export default function MasterClassesTab({
                             <div className="space-y-2 flex items-end">
                                 <Button
                                     variant="outline"
-                                    onClick={() => {
-                                        setFilterCity("all");
-                                        setFilterSchool("all");
-                                        setFilterClass("all");
-                                        setFilterDateFrom("");
-                                        setFilterDateTo("");
-                                    }}
+                                    onClick={() => onFiltersChange({
+                                        city: "all",
+                                        school: "all",
+                                        class: "all",
+                                        dateFrom: "",
+                                        dateTo: ""
+                                    })}
                                     className="w-full"
                                 >
                                     Сбросить фильтры
@@ -1113,7 +1287,7 @@ export default function MasterClassesTab({
                                     totalStyles,
                                     totalOptions,
                                     masterClassesCount: masterClasses.length,
-                                    filteredCount: getFilteredMasterClasses().length
+                                    filteredCount: (getFilteredMasterClasses() || []).length
                                 });
 
                                 return (
@@ -1183,13 +1357,27 @@ export default function MasterClassesTab({
                 {/* Календарь - справа */}
                 <Card className="w-fit">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <CalendarIcon className="h-5 w-5" />
-                            Календарь
-                        </CardTitle>
-                        <CardDescription>
-                            Кликните на дату для создания нового мастер-класса
-                        </CardDescription>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2">
+                                    <CalendarIcon className="h-5 w-5" />
+                                    Календарь
+                                </CardTitle>
+                                <CardDescription>
+                                    Кликните на дату для фильтрации мастер-классов
+                                </CardDescription>
+                            </div>
+                            {(filters.dateFrom || filters.dateTo) && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => onFiltersChange({ dateFrom: '', dateTo: '' })}
+                                    className="text-xs"
+                                >
+                                    Сбросить фильтр
+                                </Button>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <Calendar
@@ -1199,20 +1387,7 @@ export default function MasterClassesTab({
                             className="rounded-md border"
                             components={{
                                 DayContent: ({ date, displayMonth, activeModifiers, ...props }) => {
-                                    const masterClasses = getMasterClassesForDate(date);
-
-                                    // Отладочная информация для каждой даты
-                                    if (masterClasses.length > 0) {
-                                        const formattedDate = formatDateForComparison(date);
-                                        console.log(`DayContent: ${date.toLocaleDateString()} (${formattedDate}) -> ${masterClasses.length} мастер-классов`);
-                                    } else {
-                                        // Отладочная информация для дат без мастер-классов (только для нескольких дат)
-                                        const day = date.getDate();
-                                        if (day <= 5) { // Показываем только для первых 5 дней месяца
-                                            const formattedDate = formatDateForComparison(date);
-                                            console.log(`DayContent: ${date.toLocaleDateString()} (${formattedDate}) -> 0 мастер-классов`);
-                                        }
-                                    }
+                                    const schoolsCount = getSchoolsCountForDate(date);
 
                                     return (
                                         <div className="relative w-full h-full">
@@ -1222,9 +1397,9 @@ export default function MasterClassesTab({
                                             >
                                                 {date.getDate()}
                                             </div>
-                                            {masterClasses.length > 0 && (
-                                                <div className="absolute -top-1 -right-1 bg-white/90 text-black text-xs rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-lg z-10 border border-gray-300">
-                                                    {masterClasses.length}
+                                            {schoolsCount > 0 && (
+                                                <div className="absolute -top-1 -right-1 bg-red-400/80 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-lg z-10">
+                                                    {schoolsCount}
                                                 </div>
                                             )}
                                         </div>
@@ -1286,121 +1461,211 @@ export default function MasterClassesTab({
                 </CardContent>
             </Card>
 
-            {/* Список мастер-классов */}
+            {/* Список мастер-классов с группировкой по школам */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Список мастер-классов</CardTitle>
-                    <CardDescription>
-                        Все запланированные мастер-классы
-                    </CardDescription>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <CardTitle>Список мастер-классов</CardTitle>
+                            <CardDescription>
+                                Все запланированные мастер-классы, сгруппированные по школам
+                                {(getFilteredMasterClasses() || []).length > 0 && (
+                                    <span className="ml-2 text-blue-600 font-medium">
+                                        ({(getFilteredMasterClasses() || []).length} мастер-классов)
+                                    </span>
+                                )}
+                            </CardDescription>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setHidePastClasses(!hidePastClasses)}
+                            className="flex items-center gap-2"
+                        >
+                            {hidePastClasses ? (
+                                <>
+                                    <CalendarIcon className="h-4 w-4" />
+                                    Показать прошедшие
+                                </>
+                            ) : (
+                                <>
+                                    <CalendarIcon className="h-4 w-4" />
+                                    Скрыть прошедшие
+                                </>
+                            )}
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-3">
-                        {getFilteredMasterClasses().map(masterClass => (
-                            <Card key={masterClass.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                                <CardContent className="p-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="flex items-center gap-2">
-                                                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                                                <span className="font-medium">
-                                                    {new Date(masterClass.date).toLocaleDateString('ru-RU')}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                                <span>{masterClass.time}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="h-4 w-4 text-muted-foreground" />
-                                                <span>{schools.find(s => s.id === masterClass.schoolId)?.name || 'Школа'}</span>
-                                            </div>
-                                            <Badge variant="outline">{masterClass.classGroup}</Badge>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm text-muted-foreground">Исполнители:</span>
-                                                <div className="flex gap-1">
-                                                    {(masterClass.executors || []).map((executorId, index) => {
-                                                        const executorName = (availableExecutors || []).find(e => e.id === executorId)?.name || executorId;
-                                                        return (
-                                                            <Badge key={index} variant="secondary" className="text-xs">
-                                                                {executorName}
-                                                            </Badge>
-                                                        );
-                                                    })}
-                                                </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-6 w-6 p-0"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openExecutorsModal(masterClass);
-                                                    }}
-                                                >
-                                                    <UserPlus className="h-3 w-3" />
-                                                </Button>
-                                            </div>
+                    <div className="space-y-4">
+                        {(getGroupedMasterClasses() || []).map((group) => {
+                            const school = schools.find(s => s.id === group.schoolId);
+                            const schoolName = school?.name || 'Неизвестная школа';
+                            const groupKey = `${group.schoolId}_${group.date}`;
+                            const isExpanded = expandedSchools.has(groupKey);
+                            const firstMasterClass = group.masterClasses[0];
 
-                                            {/* Примечания */}
-                                            {masterClass.notes && (
+                            return (
+                                <Card key={groupKey} className="border-l-4 border-l-blue-500">
+                                    <CardContent className="p-4">
+                                        {/* Заголовок школы */}
+                                        <div
+                                            className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+                                            onClick={() => toggleSchoolExpansion(groupKey)}
+                                        >
+                                            <div className="flex items-center gap-4">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-sm text-muted-foreground">Примечания:</span>
-                                                    <span className="text-sm text-muted-foreground max-w-48 truncate" title={masterClass.notes}>
-                                                        {masterClass.notes}
+                                                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                                                    <span className="font-medium">
+                                                        {new Date(firstMasterClass.date).toLocaleDateString('ru-RU')}
                                                     </span>
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="flex items-center gap-2">
-                                                <Users className="h-4 w-4 text-muted-foreground" />
-                                                <span>{masterClass.statistics.totalParticipants}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                                                <span>{masterClass.statistics.totalAmount} ₽</span>
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                                                    <div>
+                                                        <div className="font-semibold text-lg">{schoolName}</div>
+                                                        {school?.address && (
+                                                            <div className="text-sm text-muted-foreground">{school.address}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                                    {group.masterClasses.length} класса(ов)
+                                                </Badge>
                                             </div>
                                             <Button
-                                                variant="outline"
+                                                variant="ghost"
                                                 size="sm"
-                                                onClick={() => onViewMasterClass(masterClass)}
+                                                className="h-8 w-8 p-0"
                                             >
-                                                Подробнее
+                                                {isExpanded ? (
+                                                    <ChevronUp className="h-4 w-4" />
+                                                ) : (
+                                                    <ChevronDown className="h-4 w-4" />
+                                                )}
                                             </Button>
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button
-                                                        variant="destructive"
-                                                        size="sm"
-                                                        className="h-8 w-8 p-0"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Удалить мастер-класс?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Это действие нельзя отменить. Мастер-класс будет удален навсегда.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Отмена</AlertDialogCancel>
-                                                        <AlertDialogAction
-                                                            onClick={() => onDeleteMasterClass(masterClass.id)}
-                                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                        >
-                                                            Удалить
-                                                        </AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
                                         </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+
+                                        {/* Список мастер-классов школы */}
+                                        {isExpanded && (
+                                            <div className="mt-4 space-y-3 pl-4 border-l-2 border-gray-200">
+                                                {group.masterClasses.map(masterClass => (
+                                                    <Card key={masterClass.id} className="cursor-pointer hover:shadow-md transition-shadow bg-gray-50">
+                                                        <CardContent className="p-4">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Clock className="h-4 w-4 text-muted-foreground" />
+                                                                        <span>{masterClass.time}</span>
+                                                                    </div>
+                                                                    <Badge variant="outline">{masterClass.classGroup}</Badge>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm text-muted-foreground">Исполнители:</span>
+                                                                        <div className="flex gap-1">
+                                                                            {(masterClass.executors || []).map((executorId, index) => {
+                                                                                const executorName = (availableExecutors || []).find(e => e.id === executorId)?.name || executorId;
+                                                                                return (
+                                                                                    <Badge key={index} variant="secondary" className="text-xs">
+                                                                                        {executorName}
+                                                                                    </Badge>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-6 w-6 p-0"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                openExecutorsModal(masterClass);
+                                                                            }}
+                                                                        >
+                                                                            <UserPlus className="h-3 w-3" />
+                                                                        </Button>
+                                                                    </div>
+
+                                                                    {/* Примечания */}
+                                                                    {masterClass.notes && (
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-sm text-muted-foreground">Примечания:</span>
+                                                                            <span className="text-sm text-muted-foreground max-w-48 truncate" title={masterClass.notes}>
+                                                                                {masterClass.notes}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Users className="h-4 w-4 text-muted-foreground" />
+                                                                        <span>{masterClass.statistics.totalParticipants}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                                                                        <span>{masterClass.statistics.totalAmount} ₽</span>
+                                                                    </div>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        onClick={() => onViewMasterClass(masterClass)}
+                                                                    >
+                                                                        Подробнее
+                                                                    </Button>
+                                                                    <AlertDialog>
+                                                                        <AlertDialogTrigger asChild>
+                                                                            <Button
+                                                                                variant="destructive"
+                                                                                size="sm"
+                                                                                className="h-8 w-8 p-0"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            >
+                                                                                <Trash2 className="h-4 w-4" />
+                                                                            </Button>
+                                                                        </AlertDialogTrigger>
+                                                                        <AlertDialogContent>
+                                                                            <AlertDialogHeader>
+                                                                                <AlertDialogTitle>Удалить мастер-класс?</AlertDialogTitle>
+                                                                                <AlertDialogDescription>
+                                                                                    Это действие нельзя отменить. Мастер-класс будет удален навсегда.
+                                                                                </AlertDialogDescription>
+                                                                            </AlertDialogHeader>
+                                                                            <AlertDialogFooter>
+                                                                                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                                                                <AlertDialogAction
+                                                                                    onClick={() => onDeleteMasterClass(masterClass.id)}
+                                                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                                                >
+                                                                                    Удалить
+                                                                                </AlertDialogAction>
+                                                                            </AlertDialogFooter>
+                                                                        </AlertDialogContent>
+                                                                    </AlertDialog>
+                                                                </div>
+                                                            </div>
+                                                        </CardContent>
+                                                    </Card>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+
+                        {/* Сообщение когда нет мастер-классов */}
+                        {(getGroupedMasterClasses() || []).length === 0 && (
+                            <div className="text-center py-8 text-muted-foreground">
+                                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                <p className="text-lg font-medium mb-2">
+                                    {hidePastClasses ? 'Нет будущих мастер-классов' : 'Нет мастер-классов'}
+                                </p>
+                                <p className="text-sm">
+                                    {hidePastClasses
+                                        ? 'Все мастер-классы уже прошли. Нажмите "Показать прошедшие" чтобы увидеть их.'
+                                        : 'Создайте первый мастер-класс, нажав кнопку "Создать мастер-класс"'
+                                    }
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>

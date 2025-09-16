@@ -33,7 +33,7 @@
         "removeComments": false,
         "noEmitOnError": true,
         "incremental": true,
-        "tsBuildInfoFile": "./dist/.tsbuildinfo"
+        "tsBuildInfoFile": "./.tsbuildinfo"
     },
     "include": [
         "src/**/*"

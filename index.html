@@ -9,7 +9,7 @@
   <meta name="author" content="Студия МК 'Восковые ручки'" />
 
   <!-- PWA Manifest -->
-  <link rel="manifest" href="/manifest.json" />
+  <link rel="manifest" href="/manifest.json?v=2.0.8" />
   <meta name="theme-color" content="#ff8c00" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -19,34 +19,49 @@
   <meta name="msapplication-TileColor" content="#ff8c00" />
   <meta name="msapplication-config" content="/browserconfig.xml" />
 
+  <!-- Принудительное обновление кэша PWA -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta http-equiv="Surrogate-Control" content="no-store" />
+  <meta name="cache-control" content="no-cache, no-store, must-revalidate" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Восковые ручки" />
+  <meta name="application-name" content="Восковые ручки" />
+  <meta name="msapplication-TileColor" content="#ff8c00" />
+  <meta name="msapplication-config" content="/browserconfig.xml" />
+
   <!-- Favicon -->
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="apple-touch-icon" href="/icon-180x180.png" />
-  <link rel="apple-touch-icon" sizes="72x72" href="/icon-72x72.png" />
-  <link rel="apple-touch-icon" sizes="96x96" href="/icon-96x96.png" />
-  <link rel="apple-touch-icon" sizes="128x128" href="/icon-128x128.png" />
-  <link rel="apple-touch-icon" sizes="144x144" href="/icon-144x144.png" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/icon-152x152.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180x180.png" />
-  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
-  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2.0.8" />
+  <link rel="apple-touch-icon" href="/icon-180x180.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="72x72" href="/icon-72x72.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="96x96" href="/icon-96x96.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="128x128" href="/icon-128x128.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="144x144" href="/icon-144x144.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/icon-152x152.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180x180.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png?v=2.0.7" />
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png?v=2.0.7" />
 
   <!-- Open Graph -->
   <meta property="og:title" content="Студия МК 'Восковые ручки'" />
   <meta property="og:description" content="Платформа для записи на мастер-классы по созданию ручек из воска" />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="/icon-512x512.png" />
+  <meta property="og:image" content="/icon-512x512.png?v=2.0.7" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Студия МК 'Восковые ручки'" />
   <meta name="twitter:description" content="Платформа для записи на мастер-классы по созданию ручек из воска" />
-  <meta name="twitter:image" content="/icon-512x512.png" />
+  <meta name="twitter:image" content="/icon-512x512.png?v=2.0.7" />
 </head>
 
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
+
+  <!-- Service Worker регистрируется в main.tsx -->
 </body>
 
 </html>

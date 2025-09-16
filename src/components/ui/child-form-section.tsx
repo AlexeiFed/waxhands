@@ -21,6 +21,7 @@ interface ChildFormSectionProps {
     selectedSchoolId: string;
     onSchoolChange: (schoolId: string) => void;
     availableClasses: string[];
+    selectedCity?: string;
 }
 
 export const ChildFormSection: React.FC<ChildFormSectionProps> = ({
@@ -30,6 +31,7 @@ export const ChildFormSection: React.FC<ChildFormSectionProps> = ({
     selectedSchoolId,
     onSchoolChange,
     availableClasses,
+    selectedCity,
 }) => {
     const addChild = () => {
         const newChild: ChildData = {
@@ -147,9 +149,10 @@ export const ChildFormSection: React.FC<ChildFormSectionProps> = ({
                                     handleSchoolChange(value);
                                 }}
                                 required
+                                disabled={!selectedCity}
                             >
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Выберите школу или сад" />
+                                    <SelectValue placeholder={selectedCity ? "Выберите школу или сад" : "Сначала выберите город"} />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {schools.map((school) => (
@@ -162,6 +165,9 @@ export const ChildFormSection: React.FC<ChildFormSectionProps> = ({
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {!selectedCity && (
+                                <p className="text-sm text-gray-500">Сначала выберите город выше</p>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">

@@ -42,6 +42,66 @@ router.get('/with-addresses', authenticateToken, requireRole('admin'), async (re
     }
 });
 
+// Эндпоинт для получения уникальных городов из адресов школ
+router.get('/cities', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT 
+                CASE 
+                    WHEN position(',' in address) > 0 
+                    THEN trim(substring(address from 1 for position(',' in address) - 1))
+                    ELSE address
+                END as city
+            FROM schools 
+            WHERE address IS NOT NULL AND address != ''
+            ORDER BY city ASC
+        `;
+
+        const result = await db.query(query);
+        const cities = result.rows.map(row => row.city).filter(city => city && city.trim() !== '');
+
+        res.json({
+            success: true,
+            data: cities,
+            message: 'Города загружены успешно'
+        });
+    } catch (error) {
+        console.error('Ошибка при получении городов:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Не удалось получить города'
+        });
+    }
+});
+
+// Эндпоинт для получения школ по городу
+router.get('/by-city/:city', async (req, res) => {
+    try {
+        const { city } = req.params;
+
+        const query = `
+            SELECT id, name, address, classes
+            FROM schools 
+            WHERE address LIKE $1
+            ORDER BY name ASC
+        `;
+
+        const result = await db.query(query, [`${city}%`]);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            message: 'Школы по городу загружены успешно'
+        });
+    } catch (error) {
+        console.error('Ошибка при получении школ по городу:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Не удалось получить школы по городу'
+        });
+    }
+});
+
 router.get('/:id', getSchoolById);
 router.get('/:id/classes', getSchoolClasses);
 

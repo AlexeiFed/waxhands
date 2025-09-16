@@ -112,6 +112,14 @@ export default {
 				'bounce-gentle': {
 					'0%, 100%': { transform: 'translateY(0)' },
 					'50%': { transform: 'translateY(-5px)' }
+				},
+				'gradient': {
+					'0%, 100%': { backgroundPosition: '0% 50%' },
+					'50%': { backgroundPosition: '100% 50%' }
+				},
+				'shimmer': {
+					'0%': { backgroundPosition: '-200% 0' },
+					'100%': { backgroundPosition: '200% 0' }
 				}
 			},
 			animation: {
@@ -119,9 +127,11 @@ export default {
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'float': 'float 3s ease-in-out infinite',
 				'spin-slow': 'spin-slow 8s linear infinite',
-				'bounce-gentle': 'bounce-gentle 2s ease-in-out infinite'
+				'bounce-gentle': 'bounce-gentle 2s ease-in-out infinite',
+				'gradient': 'gradient 3s ease infinite',
+				'shimmer': 'shimmer 2s linear infinite'
 			}
 		}
 	},
-	plugins: [import("tailwindcss-animate")],
+	plugins: [import("tailwindcss-animate"), import("@tailwindcss/line-clamp")],
 } satisfies Config;

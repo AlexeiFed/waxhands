@@ -49,8 +49,8 @@ export class WorkshopRequestsController {
             }
 
             const query = `
-                INSERT INTO workshop_requests (parent_id, school_name, class_group, desired_date, notes, admin_id)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO workshop_requests (parent_id, school_name, class_group, desired_date, notes, admin_id, city, is_other_school, other_school_name, other_school_address)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id
             `;
 
@@ -58,9 +58,13 @@ export class WorkshopRequestsController {
                 data.parent_id,
                 data.school_name,
                 data.class_group,
-                data.desired_date,
+                data.desired_date || null,
                 data.notes || null,
-                adminId
+                adminId,
+                data.city || null,
+                data.is_other_school || false,
+                data.other_school_name || null,
+                data.other_school_address || null
             ]);
 
             const requestId = result.rows[0].id;

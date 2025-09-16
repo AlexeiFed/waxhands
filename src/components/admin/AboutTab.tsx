@@ -811,7 +811,7 @@ const AboutTab: React.FC = () => {
                             {/* Список медиа */}
                             <div className="space-y-3">
                                 {media && media.length > 0 ? (
-                                    media.map((item) => (
+                                    (media || []).map((item) => (
                                         <div
                                             key={item.id}
                                             className={`flex items-center gap-3 p-3 border rounded-lg ${draggedItem?.id === item.id ? 'opacity-50' : ''}`}

@@ -8,7 +8,7 @@ import { createServer } from 'http';
 import routes from './routes/index.js';
 import { errorHandler, logRequest } from './middleware/auth.js';
 import { testConnection } from './database/connection.js';
-import { initializeWebSocketManager } from './websocket-server.js';
+// import { initializeWebSocketManager } from './websocket-server.js'; // Отключено - используется отдельный WebSocket сервер
 
 // Загружаем переменные окружения
 dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env' });
@@ -159,8 +159,8 @@ const startServer = async () => {
             process.exit(1);
         }
 
-        // Инициализируем WebSocket сервер
-        await initializeWebSocketManager(server);
+        // WebSocket сервер запущен отдельно на порту 3002
+        // await initializeWebSocketManager(server); // Отключено
 
         server.listen(parseInt(PORT.toString()), HOST, () => {
             console.log(`🚀 Server running on ${HOST}:${PORT}`);

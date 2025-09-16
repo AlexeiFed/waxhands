@@ -62,7 +62,12 @@ export const saveMediaFile = async (file: File, type: 'image' | 'video'): Promis
 
         // Сжимаем изображения
         if (type === 'image' && file.type.startsWith('image/')) {
-            processedFile = await compressImage(file);
+            const compressedBlob = await compressImage(file);
+            // Создаем новый File объект из Blob
+            processedFile = new File([compressedBlob], file.name, {
+                type: compressedBlob.type,
+                lastModified: file.lastModified
+            });
         }
 
         // Создаем blob URL для отображения
@@ -199,9 +204,10 @@ export const clearAllMediaFiles = (): void => {
         const savedFiles = JSON.parse(localStorage.getItem('aboutMediaFiles') || '{}');
 
         // Освобождаем все blob URL
-        Object.values(savedFiles).forEach((fileData: any) => {
-            if (fileData.blobUrl) {
-                URL.revokeObjectURL(fileData.blobUrl);
+        Object.values(savedFiles).forEach((fileData: unknown) => {
+            const data = fileData as { blobUrl?: string };
+            if (data.blobUrl) {
+                URL.revokeObjectURL(data.blobUrl);
             }
         });
 
@@ -221,7 +227,7 @@ export const cleanupBlobUrls = (): void => {
         // Оставляем только 5 последних файлов
         if (keys.length > 5) {
             const recentKeys = keys.slice(-5);
-            const recentFiles: any = {};
+            const recentFiles: Record<string, unknown> = {};
 
             // Освобождаем blob URL для удаляемых файлов
             keys.forEach(key => {

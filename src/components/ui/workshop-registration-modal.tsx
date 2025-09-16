@@ -25,6 +25,7 @@ interface CreateRegistrationData {
     userClass: string;
     schoolName: string;
     status: 'pending' | 'confirmed' | 'cancelled';
+    notes?: string;
 }
 
 interface WorkshopRegistrationModalProps {
@@ -58,6 +59,7 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
 
     const [selectedStyle, setSelectedStyle] = useState<string>('');
     const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+    const [notes, setNotes] = useState<string>('');
     const [step, setStep] = useState<'registration' | 'success'>('registration');
     const [registrationData, setRegistrationData] = useState<CreateRegistrationData | null>(null);
 
@@ -126,6 +128,7 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
             userClass: 'Не указано',
             schoolName: 'Не указано',
             status: 'pending' as const,
+            notes: notes.trim() || undefined,
         };
 
         try {
@@ -146,6 +149,7 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
         setStep('registration');
         setSelectedStyle('');
         setSelectedOptions([]);
+        setNotes('');
         setRegistrationData(null);
         onClose();
     };
@@ -371,6 +375,28 @@ export const WorkshopRegistrationModal: React.FC<WorkshopRegistrationModalProps>
                                     <span>Итого:</span>
                                     <span>{calculateTotalPrice()} ₽</span>
                                 </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Примечания к заказу */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Примечания к заказу</CardTitle>
+                            <CardDescription>
+                                Опишите, как вы хотите украсить ручку или добавьте особые пожелания
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                placeholder="Например: Хочу добавить блестки, сделать ручку в виде цветка..."
+                                className="w-full min-h-[100px] p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                maxLength={500}
+                            />
+                            <div className="text-right text-sm text-gray-500 mt-1">
+                                {notes.length}/500 символов
                             </div>
                         </CardContent>
                     </Card>

@@ -10,9 +10,13 @@ import path from 'path';
 
 export const uploadFiles = async (req: Request, res: Response): Promise<void> => {
     try {
+        console.log('=== UPLOAD DEBUG START ===');
         console.log('Upload files request - req.files:', req.files);
         console.log('Upload files request - req.body:', req.body);
         console.log('Upload files request - headers:', req.headers);
+        console.log('Upload files request - Content-Type:', req.get('Content-Type'));
+        console.log('Upload files request - Content-Length:', req.get('Content-Length'));
+        console.log('=== UPLOAD DEBUG END ===');
 
         if (!req.files) {
             console.log('No files received in request');

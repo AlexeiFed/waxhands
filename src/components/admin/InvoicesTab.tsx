@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardContentCompact, CardDescription, CardHeader, CardHeaderCompact, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,30 +17,99 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useInvoices, useUpdateInvoiceStatus } from '@/hooks/use-invoices';
 import { Invoice, InvoiceFilters } from '@/types';
+import { InvoicesFilters } from '@/contexts/AdminFiltersContext';
 import { Search, Filter, Eye, CheckCircle, XCircle, Clock, DollarSign, Calendar as CalendarIcon, MapPin, Users, Plus, Trash2, RefreshCw } from 'lucide-react';
 import PaymentStatus from '@/components/ui/payment-status';
 import { ru } from 'date-fns/locale';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-const InvoicesTab: React.FC = () => {
+interface InvoicesTabProps {
+    filters: InvoicesFilters;
+    onFiltersChange: (filters: Partial<InvoicesFilters>) => void;
+}
+
+const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-    const [filters, setFilters] = useState<InvoiceFilters>({
-        city: '',
-        school_name: '',
-        class_group: '',
-        status: 'all',
-        workshop_date: ''
-    });
     const [userFullNames, setUserFullNames] = useState<{ [key: string]: string }>({});
 
     const { data: invoicesData, isLoading, error } = useInvoices(filters);
     const updateStatusMutation = useUpdateInvoiceStatus();
 
+    // Получаем уникальные значения для фильтров из данных счетов
+    const invoices = useMemo(() => invoicesData?.invoices || [], [invoicesData?.invoices]);
+
+    // Получаем уникальные города из поля city
+    const uniqueCities = [...new Set(
+        invoices
+            .map(invoice => invoice.city)
+            .filter(city => city && city !== '')
+    )].sort();
+
+    // Получаем уникальные школы/садики
+    const uniqueSchools = [...new Set(
+        invoices
+            .map(invoice => invoice.school_name)
+            .filter(school => school && school !== '')
+    )].sort();
+
+    // Получаем уникальные классы/группы
+    const uniqueClasses = [...new Set(
+        invoices
+            .map(invoice => invoice.class_group)
+            .filter(className => className && className !== '')
+    )].sort();
+
+    // Мемоизируем школы для выбранного города
+    const schoolsForCity = useMemo(() => {
+        if (!filters.city) return uniqueSchools;
+
+        return invoices
+            .filter(invoice => invoice.city === filters.city)
+            .map(invoice => invoice.school_name)
+            .filter((school, index, self) => self.indexOf(school) === index)
+            .sort();
+    }, [filters.city, uniqueSchools, invoices]);
+
+    // Мемоизируем классы для выбранной школы
+    const classesForSchool = useMemo(() => {
+        if (!filters.school_name) return uniqueClasses;
+
+        return invoices
+            .filter(invoice => invoice.school_name === filters.school_name)
+            .map(invoice => invoice.class_group)
+            .filter((className, index, self) => self.indexOf(className) === index)
+            .sort();
+    }, [filters.school_name, uniqueClasses, invoices]);
+
+    // Мемоизируем обработчики изменений фильтров
+    const handleCityChange = useCallback((value: string) => {
+        const newCity = value === "all" ? "" : value;
+        onFiltersChange({
+            city: newCity,
+            // Сбрасываем школу и класс только при изменении города
+            school_name: newCity !== filters.city ? "" : filters.school_name,
+            class_group: newCity !== filters.city ? "" : filters.class_group
+        });
+    }, [filters.city, filters.school_name, filters.class_group, onFiltersChange]);
+
+    const handleSchoolChange = useCallback((value: string) => {
+        const newSchool = value === "all" ? "" : value;
+        onFiltersChange({
+            school_name: newSchool,
+            // Сбрасываем класс только при изменении школы
+            class_group: newSchool !== filters.school_name ? "" : filters.class_group
+        });
+    }, [filters.school_name, filters.class_group, onFiltersChange]);
+
+    const handleClassChange = useCallback((value: string) => {
+        onFiltersChange({ class_group: value === "all" ? "" : value });
+    }, [onFiltersChange]);
+
     // Функция для получения полных имен пользователей
-    const fetchUserFullNames = async (userIds: string[]) => {
+    const fetchUserFullNames = useCallback(async (userIds: string[]) => {
         try {
             const uniqueIds = [...new Set(userIds)].filter(id => !userFullNames[id]);
             if (uniqueIds.length === 0) return;
@@ -83,7 +152,7 @@ const InvoicesTab: React.FC = () => {
         } catch (error) {
             console.error('Ошибка при получении полных имен пользователей:', error);
         }
-    };
+    }, [userFullNames]);
 
     // Автоматическая синхронизация при загрузке страницы (только один раз)
     const [isAutoSyncing, setIsAutoSyncing] = useState(false);
@@ -117,14 +186,13 @@ const InvoicesTab: React.FC = () => {
         // Запускаем синхронизацию через 1 секунду после загрузки
         const timer = setTimeout(autoSync, 1000);
         return () => clearTimeout(timer);
-    }, []); // Убираем queryClient из зависимостей
+    }, [queryClient]); // Убираем queryClient из зависимостей
 
     console.log('InvoicesTab - invoicesData:', invoicesData);
     console.log('InvoicesTab - error:', error);
     console.log('InvoicesTab - invoicesData.invoices:', invoicesData?.invoices);
     console.log('InvoicesTab - invoicesData.total:', invoicesData?.total);
 
-    const invoices = invoicesData?.invoices || [];
     const total = invoicesData?.total || 0;
 
     // Загружаем полные имена пользователей при изменении счетов
@@ -133,7 +201,8 @@ const InvoicesTab: React.FC = () => {
             const userIds = invoices.map(invoice => invoice.participant_id);
             fetchUserFullNames(userIds);
         }
-    }, [invoices]);
+    }, [invoices, fetchUserFullNames]);
+
 
     const handleStatusUpdate = async (invoiceId: string, newStatus: string) => {
         try {
@@ -310,15 +379,15 @@ const InvoicesTab: React.FC = () => {
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${day}`;
-            setFilters(prev => ({ ...prev, workshop_date: dateStr }));
+            onFiltersChange({ workshop_date: dateStr });
         } else {
-            setFilters(prev => ({ ...prev, workshop_date: '' }));
+            onFiltersChange({ workshop_date: '' });
         }
     };
 
     // Сброс всех фильтров
     const resetFilters = () => {
-        setFilters({
+        onFiltersChange({
             city: '',
             school_name: '',
             class_group: '',
@@ -353,24 +422,6 @@ const InvoicesTab: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {/* Заголовок и кнопки действий */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold text-primary">Счета мастер-классов</h2>
-                    <p className="text-muted-foreground">
-                        Управление счетами и статусами оплаты
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${isAutoSyncing
-                        ? 'bg-blue-50 border border-blue-200 text-blue-700'
-                        : 'bg-green-50 border border-green-200 text-green-700'
-                        }`}>
-                        <RefreshCw className={`w-4 h-4 ${isAutoSyncing ? 'animate-spin' : ''}`} />
-                        <span>{isAutoSyncing ? 'Синхронизация...' : 'Автосинхронизация'}</span>
-                    </div>
-                </div>
-            </div>
 
             {/* Статистика */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -437,37 +488,58 @@ const InvoicesTab: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="city-filter">Город</Label>
-                                <Input
-                                    id="city-filter"
-                                    placeholder="Все города"
-                                    value={filters.city}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, city: e.target.value }))}
-                                />
+                                <Select value={filters.city || "all"} onValueChange={handleCityChange}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Все города" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Все города</SelectItem>
+                                        {uniqueCities.map((city) => (
+                                            <SelectItem key={city} value={city}>
+                                                {city}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="school-filter">Школа</Label>
-                                <Input
-                                    id="school-filter"
-                                    placeholder="Все школы"
-                                    value={filters.school_name}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, school_name: e.target.value }))}
-                                />
+                                <Label htmlFor="school-filter">Школа/Садик</Label>
+                                <Select value={filters.school_name || "all"} onValueChange={handleSchoolChange}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Все школы" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Все школы</SelectItem>
+                                        {schoolsForCity.map((school) => (
+                                            <SelectItem key={school} value={school}>
+                                                {school}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="class-filter">Класс</Label>
-                                <Input
-                                    id="class-filter"
-                                    placeholder="Все классы"
-                                    value={filters.class_group}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, class_group: e.target.value }))}
-                                />
+                                <Label htmlFor="class-filter">Класс/Группа</Label>
+                                <Select value={filters.class_group || "all"} onValueChange={handleClassChange}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Все классы" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Все классы</SelectItem>
+                                        {classesForSchool.map((className) => (
+                                            <SelectItem key={className} value={className}>
+                                                {className}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                             <div className="space-y-2">
                                 <Label htmlFor="status-filter">Статус</Label>
-                                <Select value={filters.status} onValueChange={(value: 'all' | 'pending' | 'paid' | 'cancelled') => setFilters(prev => ({ ...prev, status: value }))}>
+                                <Select value={filters.status} onValueChange={(value: 'all' | 'pending' | 'paid' | 'cancelled') => onFiltersChange({ status: value })}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Все статусы" />
                                     </SelectTrigger>
@@ -485,7 +557,7 @@ const InvoicesTab: React.FC = () => {
                                     id="date-filter"
                                     type="date"
                                     value={filters.workshop_date}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, workshop_date: e.target.value }))}
+                                    onChange={(e) => onFiltersChange({ workshop_date: e.target.value })}
                                 />
                             </div>
                         </div>

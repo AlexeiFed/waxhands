@@ -16,6 +16,11 @@ import paymentWebhookDiagnosticRoutes from './payment-webhook-diagnostic.js';
 import paymentsRoutes from './payments.js';
 import paymentCheckRoutes from './payment-check.js';
 import paymentPollerRoutes from './payment-poller.js';
+import offersRoutes from './offers.js';
+import offersPdfRoutes from './offers-pdf.js';
+import privacyPolicyRoutes from './privacy-policy.js';
+import contactsRoutes from './contacts.js';
+import bonusesRoutes from './bonuses.js';
 
 const router = Router();
 
@@ -37,6 +42,11 @@ router.use('/payment-webhook-diagnostic', paymentWebhookDiagnosticRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/payment-check', paymentCheckRoutes);
 router.use('/payment-poller', paymentPollerRoutes);
+router.use('/offers', offersRoutes);
+router.use('/offers-pdf', offersPdfRoutes);
+router.use('/privacy-policy', privacyPolicyRoutes);
+router.use('/contacts', contactsRoutes);
+router.use('/bonuses', bonusesRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
@@ -65,7 +75,11 @@ router.get('/', (req, res) => {
             'workshop-requests': '/workshop-requests',
             payments: '/payments',
             'payment-check': '/payment-check',
-            'payment-poller': '/payment-poller'
+            'payment-poller': '/payment-poller',
+            offers: '/offers',
+            'privacy-policy': '/privacy-policy',
+            contacts: '/contacts',
+            bonuses: '/bonuses'
         }
     });
 });

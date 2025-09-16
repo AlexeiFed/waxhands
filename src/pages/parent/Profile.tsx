@@ -36,12 +36,6 @@ const ParentProfile = () => {
     const [children, setChildren] = useState<UserType[]>([]);
     const [isLoadingChildren, setIsLoadingChildren] = useState(false);
 
-    const initials = useMemo(() => {
-        const name = user?.name || '';
-        const surname = user?.surname || '';
-        return (name[0] + surname[0]).toUpperCase();
-    }, [user?.name, user?.surname]);
-
     // Загружаем детей родителя
     const loadChildren = async () => {
         if (!user?.id) return;
@@ -83,55 +77,56 @@ const ParentProfile = () => {
 
     return (
         <div className="min-h-screen bg-gradient-wax-hands">
-            <ParentHeader showBackButton={true} />
+            <ParentHeader />
 
-            <div className="max-w-4xl mx-auto px-4 pt-28 pb-6 space-y-6">
+            <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-20 sm:pt-24 pb-6 space-y-4 sm:space-y-6">
                 {/* Профиль родителя */}
                 <Card className="bg-white/95 backdrop-blur-sm border-2 border-orange-300 shadow-lg">
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-purple-500 flex items-center justify-center text-white text-2xl font-bold">
-                                {initials}
-                            </div>
+                    <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 min-w-0">
                             <div>
-                                <CardTitle className="text-3xl text-gray-800">{user?.name} {user?.surname}</CardTitle>
-                                <CardDescription className="text-gray-600">Профиль родителя</CardDescription>
+                                <CardTitle className="text-xl sm:text-2xl lg:text-3xl text-gray-800 break-words">
+                                    {user?.name} {user?.surname}
+                                </CardTitle>
+                                <CardDescription className="text-gray-600 text-sm sm:text-base">
+                                    Профиль родителя
+                                </CardDescription>
                             </div>
                         </div>
                         <Button
                             onClick={() => setIsEditModalOpen(true)}
                             variant="outline"
                             size="sm"
-                            className="border-orange-300 hover:bg-orange-50"
+                            className="border-orange-300 hover:bg-orange-50 w-full sm:w-auto"
                         >
                             <Edit className="w-4 h-4 mr-2" />
                             Редактировать
                         </Button>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         {user?.email && (
-                            <div className="flex items-center gap-3">
-                                <Mail className="w-5 h-5 text-blue-600" />
-                                <div>
-                                    <div className="text-sm text-gray-500">Email</div>
-                                    <div className="font-medium">{user.email}</div>
+                            <div className="flex items-center gap-3 p-2 sm:p-3 bg-gray-50 rounded-lg">
+                                <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs sm:text-sm text-gray-500">Email</div>
+                                    <div className="font-medium text-sm sm:text-base truncate">{user.email}</div>
                                 </div>
                             </div>
                         )}
                         {user?.phone && (
-                            <div className="flex items-center gap-3">
-                                <Phone className="w-5 h-5 text-green-600" />
-                                <div>
-                                    <div className="text-sm text-gray-500">Телефон</div>
-                                    <div className="font-medium">{user.phone}</div>
+                            <div className="flex items-center gap-3 p-2 sm:p-3 bg-gray-50 rounded-lg">
+                                <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-green-600 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs sm:text-sm text-gray-500">Телефон</div>
+                                    <div className="font-medium text-sm sm:text-base">{user.phone}</div>
                                 </div>
                             </div>
                         )}
-                        <div className="flex items-center gap-3">
-                            <Baby className="w-5 h-5 text-pink-600" />
-                            <div>
-                                <div className="text-sm text-gray-500">Количество детей</div>
-                                <div className="font-medium">{children.length}</div>
+                        <div className="flex items-center gap-3 p-2 sm:p-3 bg-gray-50 rounded-lg">
+                            <Baby className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                                <div className="text-xs sm:text-sm text-gray-500">Количество детей</div>
+                                <div className="font-medium text-sm sm:text-base">{children.length}</div>
                             </div>
                         </div>
                     </CardContent>
@@ -140,11 +135,11 @@ const ParentProfile = () => {
                 {/* Список детей */}
                 <Card className="bg-white/95 backdrop-blur-sm border-2 border-purple-300 shadow-lg">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-gray-800">
-                            <Baby className="w-5 h-5 text-pink-600" />
+                        <CardTitle className="flex items-center gap-2 text-gray-800 text-lg sm:text-xl">
+                            <Baby className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
                             Мои дети
                         </CardTitle>
-                        <CardDescription className="text-gray-600">
+                        <CardDescription className="text-gray-600 text-sm">
                             Управление профилями детей
                         </CardDescription>
                     </CardHeader>
@@ -154,33 +149,30 @@ const ParentProfile = () => {
                                 Загрузка данных о детях...
                             </div>
                         ) : children.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500">
-                                <Baby className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                                <p>У вас пока нет добавленных детей</p>
+                            <div className="text-center py-6 sm:py-8 text-gray-500">
+                                <Baby className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 sm:mb-4 text-gray-300" />
+                                <p className="text-sm sm:text-base mb-3 sm:mb-4">У вас пока нет добавленных детей</p>
                                 <Button
                                     onClick={() => window.location.href = '/parent'}
-                                    className="mt-4 bg-gradient-to-r from-orange-500 to-purple-500"
+                                    className="bg-gradient-to-r from-orange-500 to-purple-500 text-sm sm:text-base"
                                 >
                                     <Plus className="w-4 h-4 mr-2" />
                                     Добавить ребенка
                                 </Button>
                             </div>
                         ) : (
-                            <div className="space-y-4">
+                            <div className="space-y-3 sm:space-y-4">
                                 {children.map((child) => (
                                     <div
                                         key={child.id}
-                                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 sm:p-4 border border-gray-200 rounded-lg hover:bg-gray-50 space-y-2 sm:space-y-0"
                                     >
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-400 to-blue-500 flex items-center justify-center text-white font-bold">
-                                                {child.name?.[0]?.toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <div className="font-medium">
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-1">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="font-medium text-sm sm:text-base break-words">
                                                     {child.name} {child.surname}
                                                 </div>
-                                                <div className="text-sm text-gray-500 flex items-center gap-4">
+                                                <div className="text-xs sm:text-sm text-gray-500 flex flex-wrap items-center gap-2 sm:gap-4 mt-1">
                                                     {child.age && (
                                                         <span className="flex items-center gap-1">
                                                             <Baby className="w-3 h-3" />
@@ -196,13 +188,15 @@ const ParentProfile = () => {
                                                     {child.schoolId && (
                                                         <span className="flex items-center gap-1">
                                                             <SchoolIcon className="w-3 h-3" />
-                                                            {getSchoolName(child.schoolId)}
+                                                            <span className="truncate max-w-32 sm:max-w-48">
+                                                                {getSchoolName(child.schoolId)}
+                                                            </span>
                                                         </span>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
-                                        <Badge variant="secondary" className="capitalize">
+                                        <Badge variant="secondary" className="capitalize text-xs sm:text-sm w-fit">
                                             {child.role}
                                         </Badge>
                                     </div>
@@ -211,8 +205,6 @@ const ParentProfile = () => {
                         )}
                     </CardContent>
                 </Card>
-
-
             </div>
 
             <ParentProfileEditModal

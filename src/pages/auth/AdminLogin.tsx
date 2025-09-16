@@ -41,13 +41,13 @@ export default function AdminLogin() {
             if (success) {
                 toast({
                     title: "Успешно",
-                    description: "Добро пожаловать в панель администратора",
+                    description: "Добро пожаловать в систему",
                 });
                 navigate("/admin");
             } else {
                 toast({
                     title: "Ошибка",
-                    description: "Неверные учетные данные администратора",
+                    description: "Неверные учетные данные",
                     variant: "destructive",
                 });
             }
@@ -70,10 +70,10 @@ export default function AdminLogin() {
                         <Shield className="h-6 w-6 text-orange-600" />
                     </div>
                     <CardTitle className="text-2xl font-bold text-gray-900">
-                        Панель администратора
+                        Вход в систему
                     </CardTitle>
                     <CardDescription>
-                        Войдите в систему управления
+                        Введите данные для входа
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -119,15 +119,6 @@ export default function AdminLogin() {
                         </Button>
                     </form>
 
-                    <div className="mt-6 text-center">
-                        <Button
-                            variant="ghost"
-                            onClick={() => navigate("/")}
-                            className="text-sm text-gray-600 hover:text-gray-900"
-                        >
-                            ← Вернуться к обычному входу
-                        </Button>
-                    </div>
                 </CardContent>
             </Card>
         </div>

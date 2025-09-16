@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,13 +17,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import BonusBlock from "@/components/BonusBlock";
 import { useMasterClasses } from "@/hooks/use-master-classes";
 import { useSchools } from "@/hooks/use-schools";
 import { useServices } from "@/hooks/use-services";
 import { useWorkshopRegistrations } from "@/hooks/use-workshop-registrations";
-import { useWorkshopParticipation, useParticipantInvoices } from "@/hooks/use-invoices";
+import { useWorkshopParticipation, useParticipantInvoices, useParentInvoices } from "@/hooks/use-invoices";
 import { useUsers } from "@/hooks/use-users";
 import { useWorkshopRequestsWebSocket } from "@/hooks/use-workshop-requests-websocket";
+import { useMasterClassesWebSocket } from "@/hooks/use-master-classes-websocket";
+import { useAboutContent, useAboutMedia } from "@/hooks/use-about-api";
 import { MasterClass, School, Service, WorkshopRegistration, Invoice, User, WorkshopRequestWithParent } from "@/types";
 
 import { AnimatedStars } from "@/components/ui/animated-stars";
@@ -48,6 +51,10 @@ import {
     GraduationCap,
     X,
     Edit,
+    Info,
+    FileImage,
+    FileVideo,
+    Play,
 } from "lucide-react";
 
 interface ChildData {
@@ -95,7 +102,6 @@ interface NewChildData {
 }
 
 const ParentDashboard = () => {
-    console.log('🔄 ParentDashboard: Компонент рендерится');
 
     const { user } = useAuth();
     const { toast } = useToast();
@@ -104,15 +110,50 @@ const ParentDashboard = () => {
     const { schools } = useSchools();
     const { services } = useServices();
     const { getUserRegistrations } = useWorkshopRegistrations();
-    const { data: participantInvoices } = useParticipantInvoices(user?.id || '');
     // Получаем счета для всех мастер-классов
     const [workshopInvoices, setWorkshopInvoices] = useState<{ [workshopId: string]: Invoice[] }>({});
     const { getChildrenByParentId, createUser, updateUser } = useUsers();
+    const { content: aboutContent, loading: aboutContentLoading } = useAboutContent();
+    const { media: aboutMedia, loading: aboutMediaLoading } = useAboutMedia();
 
-    const [activeTab, setActiveTab] = useState("children");
+    const [activeTab, setActiveTab] = useState("about");
     const [children, setChildren] = useState<ChildData[]>([]);
+
+    // Получаем ID всех детей
+    const childrenIds = (children || []).map(child => child.id);
+    const { data: participantInvoices } = useParentInvoices(user?.id || '', childrenIds);
     const [userRegistrations, setUserRegistrations] = useState<WorkshopRegistration[]>([]);
     const [isAddChildDialogOpen, setIsAddChildDialogOpen] = useState(false);
+
+    // Функция для получения URL медиа файлов
+    const getMediaUrl = useCallback((filePath: string) => {
+        // Преобразуем путь из БД в URL для отображения
+        if (filePath.startsWith('/src/assets/')) {
+            return filePath;
+        }
+
+        // Обработка путей из папки uploads
+        if (filePath.startsWith('@uploads/')) {
+            const result = filePath.replace('@uploads/', '/uploads/');
+            return result;
+        }
+
+        // Обработка путей из папки uploads (без @)
+        if (filePath.startsWith('uploads/')) {
+            const result = filePath.replace('uploads/', '/uploads/');
+            return result;
+        }
+
+        // Если путь уже содержит полный URL
+        if (filePath.startsWith('http')) {
+            return filePath;
+        }
+
+        // По умолчанию добавляем правильный базовый URL для production
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://waxhands.ru' : 'http://localhost:3001';
+        const result = `${baseUrl}${filePath}`;
+        return result;
+    }, []);
     const [newChild, setNewChild] = useState<NewChildData>({
         name: '',
         surname: '',
@@ -126,7 +167,6 @@ const ParentDashboard = () => {
     const [isWorkshopRegistrationOpen, setIsWorkshopRegistrationOpen] = useState(false);
     const [isOrderDetailsOpen, setIsOrderDetailsOpen] = useState(false);
     const [selectedWorkshop, setSelectedWorkshop] = useState<WorkshopCardData | null>(null);
-    const [refreshTrigger, setRefreshTrigger] = useState(0); // Триггер для принудительного обновления
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => {
         // Проверяем, был ли уже показан онбординг
         const hasSeenOnboarding = localStorage.getItem('parent-onboarding-completed');
@@ -150,74 +190,82 @@ const ParentDashboard = () => {
         user?.id,
         false,
         (message) => {
-            console.log('🔌 ParentDashboard: Получено WebSocket сообщение:', message);
 
             if (message.type === 'workshop_request_status_change' || message.type === 'workshop_request_update') {
-                console.log('📋 ParentDashboard: Обновление заявки через WebSocket, перезагружаем данные...');
                 loadWorkshopRequests();
             } else if (message.type === 'workshop_request_created') {
-                console.log('📋 ParentDashboard: Новая заявка через WebSocket, перезагружаем данные...');
                 loadWorkshopRequests();
             } else {
-                console.log('🔌 ParentDashboard: Неизвестный тип сообщения:', message.type);
+                // Нет обработки для других типов сообщений
             }
         }
     );
 
-    // Функция для правильного склонения слова "записался"
-    const getParticipantsText = (count: number): string => {
+    // WebSocket для автоматических обновлений мастер-классов
+    const { isConnected: masterClassesWsConnected } = useMasterClassesWebSocket({
+        userId: user?.id,
+        enabled: true,
+        onMasterClassUpdate: useCallback(() => {
+            console.log('🔄 WebSocket: обновляем мастер-классы...');
+            // Принудительно обновляем мастер-классы
+            fetchMasterClasses({ forceRefresh: true });
+
+            // Также обновляем счета и регистрации
+            if (user?.id) {
+                // Инвалидируем кэш счетов
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent', user.id] });
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent'] });
+
+                // Перезагружаем регистрации
+                getUserRegistrations(user.id)
+                    .then(registrations => {
+                        setUserRegistrations(registrations);
+                    })
+                    .catch(error => {
+                        console.error('❌ Ошибка загрузки регистраций:', error);
+                    });
+            }
+        }, [user?.id, fetchMasterClasses, queryClient, getUserRegistrations])
+    });
+
+    // Функция для правильного склонения слова "записался" (мемоизирована)
+    const getParticipantsText = useCallback((count: number): string => {
         if (count === 0) return 'записались';
         if (count === 1) return 'записался';
         if (count >= 2 && count <= 4) return 'записались';
         return 'записалось';
-    };
+    }, []);
 
-    // Загружаем мастер-классы
+    // Загружаем мастер-классы (оптимизировано)
     useEffect(() => {
-        console.log('🔄 useEffect: Загружаем мастер-классы, refreshTrigger:', refreshTrigger);
-        if (user?.id && !masterClasses.length) {
+        if (user?.id) {
             // Загружаем все мастер-классы, а не только для конкретного пользователя
-            console.log('🔄 useEffect: Запрашиваем мастер-классы для пользователя:', user.id);
             fetchMasterClasses();
         }
-    }, [user?.id, fetchMasterClasses, refreshTrigger, masterClasses.length]);
+    }, [user?.id, fetchMasterClasses]);
 
     // Загружаем регистрации пользователя
     useEffect(() => {
-        console.log('🔄 useEffect: Загружаем регистрации пользователя, refreshTrigger:', refreshTrigger);
-        if (user?.id && userRegistrations.length === 0) {
+        if (user?.id) {
             getUserRegistrations(user.id)
                 .then(registrations => {
-                    console.log('✅ useEffect: Получены регистрации:', registrations);
-                    console.log('🔍 useEffect: Детали регистраций:', {
-                        count: registrations.length,
-                        registrations: registrations.map(reg => ({
-                            id: reg.id,
-                            workshopId: reg.workshopId,
-                            userId: reg.userId,
-                            status: reg.status,
-                            totalPrice: reg.totalPrice
-                        }))
-                    });
                     setUserRegistrations(registrations);
                 })
                 .catch(error => {
-                    console.error('❌ useEffect: Ошибка загрузки регистраций:', error);
+                    console.error('❌ Ошибка загрузки регистраций:', error);
                 });
         }
-    }, [user?.id, getUserRegistrations, refreshTrigger, userRegistrations.length]);
+    }, [user?.id, getUserRegistrations]);
 
     // Получаем детей родителя из API
     useEffect(() => {
-        console.log('🔄 useEffect: Загружаем детей родителя, refreshTrigger:', refreshTrigger);
-        if (user?.id && children.length === 0) {
+        if (user?.id) {
             const fetchChildren = async () => {
                 try {
-                    console.log('🔄 useEffect: Запрашиваем детей для родителя:', user.id);
                     const childrenData = await getChildrenByParentId(user.id);
 
                     // Преобразуем данные в нужный формат с использованием реального возраста
-                    const formattedChildren: ChildData[] = childrenData.map(child => {
+                    const formattedChildren: ChildData[] = (childrenData || []).map(child => {
                         // Используем реальный возраст из базы данных, если он есть
                         let age = child.age || 7; // По умолчанию 7 лет
                         if (!child.age && child.class) {
@@ -236,38 +284,24 @@ const ParentDashboard = () => {
                         };
                     });
 
-                    console.log('✅ useEffect: Дети успешно загружены:', formattedChildren);
                     setChildren(formattedChildren);
                 } catch (error) {
-                    console.error('❌ useEffect: Ошибка при загрузке детей:', error);
+                    console.error('❌ Ошибка при загрузке детей:', error);
                     setChildren([]);
                 }
             };
 
             fetchChildren();
         }
-    }, [user?.id, getChildrenByParentId, children.length]); // Добавляем children.length в зависимости
-
-    // Загружаем заявки на проведение мастер-классов при монтировании
-    useEffect(() => {
-        console.log('🔄 useEffect: Загружаем заявки, user?.id:', user?.id);
-        if (user?.id) {
-            loadWorkshopRequests();
-        } else {
-            console.log('⚠️ useEffect: user?.id отсутствует, заявки не загружаются');
-        }
-    }, [user?.id]);
+    }, [user?.id, getChildrenByParentId]);
 
     // Функция загрузки заявок на проведение мастер-классов
-    const loadWorkshopRequests = async () => {
-        console.log('🔄 loadWorkshopRequests: Начинаем загрузку заявок, user?.id:', user?.id);
+    const loadWorkshopRequests = useCallback(async () => {
         if (!user?.id) {
-            console.log('⚠️ loadWorkshopRequests: user?.id отсутствует, выход из функции');
             return;
         }
 
         try {
-            console.log('🔄 ParentDashboard: Загружаем заявки на проведение мастер-классов...');
 
             // Загружаем заявки родителя через специальный эндпоинт
             const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/workshop-requests/parent/${user.id}`, {
@@ -281,17 +315,14 @@ const ParentDashboard = () => {
                 const data = await response.json();
                 if (data.success && data.data) {
                     setWorkshopRequests(data.data);
-                    console.log('✅ ParentDashboard: Заявки загружены:', data.data);
                 } else if (Array.isArray(data)) {
                     setWorkshopRequests(data);
-                    console.log('✅ ParentDashboard: Заявки загружены (массив):', data);
                 }
             } else if (response.status === 403) {
-                console.warn('⚠️ ParentDashboard: Нет доступа к заявкам (403), возможно нужны права администратора');
                 // Устанавливаем пустой массив заявок
                 setWorkshopRequests([]);
             } else {
-                console.error('❌ ParentDashboard: Ошибка загрузки заявок:', response.status, response.statusText);
+                // Обработка других статусов ответа
             }
 
             // Загружаем статистику заявок родителя через специальный эндпоинт
@@ -306,10 +337,8 @@ const ParentDashboard = () => {
                 const statsData = await statsResponse.json();
                 if (statsData.success && statsData.data) {
                     setWorkshopRequestsStats(statsData.data);
-                    console.log('✅ ParentDashboard: Статистика заявок загружена:', statsData.data);
                 }
             } else if (statsResponse.status === 403) {
-                console.warn('⚠️ ParentDashboard: Нет доступа к статистике заявок (403), устанавливаем нулевые значения');
                 // Устанавливаем нулевую статистику
                 setWorkshopRequestsStats({
                     total: 0,
@@ -318,14 +347,20 @@ const ParentDashboard = () => {
                     rejected: 0
                 });
             } else {
-                console.error('❌ ParentDashboard: Ошибка загрузки статистики заявок:', statsResponse.status, statsResponse.statusText);
+                // Обработка других статусов ответа
             }
         } catch (error) {
-            console.error('❌ ParentDashboard: Ошибка при загрузке заявок:', error);
+            console.error('❌ Ошибка при загрузке заявок:', error);
         }
 
-        console.log('✅ loadWorkshopRequests: Загрузка завершена, workshopRequests:', workshopRequests.length, 'workshopRequestsStats:', workshopRequestsStats);
-    };
+    }, [user?.id]);
+
+    // Загружаем заявки на проведение мастер-классов при монтировании
+    useEffect(() => {
+        if (user?.id) {
+            loadWorkshopRequests();
+        }
+    }, [user?.id, loadWorkshopRequests]);
 
     // Обработчик изменения школы для формы добавления ребенка
     const handleSchoolChange = (schoolId: string) => {
@@ -336,7 +371,7 @@ const ParentDashboard = () => {
     };
 
     // Обработчик добавления нового ребенка
-    const handleAddChild = async () => {
+    const handleAddChild = useCallback(async () => {
         if (!user?.id) return;
 
         try {
@@ -366,7 +401,7 @@ const ParentDashboard = () => {
 
             // Перезагружаем список детей после создания
             const updatedChildren = await getChildrenByParentId(user.id);
-            const formattedChildren: ChildData[] = updatedChildren.map(child => {
+            const formattedChildren: ChildData[] = (updatedChildren || []).map(child => {
                 // Используем реальный возраст из базы данных, если он есть
                 let age = child.age || 7; // По умолчанию 7 лет
                 if (!child.age && child.class) {
@@ -413,16 +448,16 @@ const ParentDashboard = () => {
                 variant: "destructive",
             });
         }
-    };
+    }, [user?.id, newChild, createUser, getChildrenByParentId, toast]);
 
-    // Функция для открытия модального окна редактирования ребенка
-    const handleEditChild = (child: ChildData) => {
+    // Функция для открытия модального окна редактирования ребенка (мемоизирована)
+    const handleEditChild = useCallback((child: ChildData) => {
         setEditingChild(child);
         setIsEditChildDialogOpen(true);
-    };
+    }, []);
 
-    // Функция для сохранения изменений ребенка
-    const handleSaveChildChanges = async () => {
+    // Функция для сохранения изменений ребенка (мемоизирована)
+    const handleSaveChildChanges = useCallback(async () => {
         if (!editingChild || !user?.id) return;
 
         try {
@@ -455,7 +490,7 @@ const ParentDashboard = () => {
 
             // Перезагружаем список детей после обновления
             const updatedChildren = await getChildrenByParentId(user.id);
-            const formattedChildren: ChildData[] = updatedChildren.map(child => {
+            const formattedChildren: ChildData[] = (updatedChildren || []).map(child => {
                 let age = child.age || 7;
                 if (!child.age && child.class) {
                     const classNumber = parseInt(child.class.match(/\d+/)?.[0] || '0');
@@ -489,14 +524,11 @@ const ParentDashboard = () => {
                 variant: "destructive",
             });
         }
-    };
+    }, [editingChild, user?.id, updateUser, getChildrenByParentId, toast]);
 
     // Мемоизируем тяжелые вычисления для предотвращения пересчетов
     const groupedWorkshops = useMemo(() => {
-        console.log('🔄 groupedWorkshops: Пересчитываем мастер-классы, refreshTrigger:', refreshTrigger);
-
         if (!masterClasses.length || !children.length) {
-            console.log('✅ groupedWorkshops: Нет данных для расчета');
             return { total: 0, workshops: [] };
         }
 
@@ -505,17 +537,6 @@ const ParentDashboard = () => {
         // Фильтруем мастер-классы по дате
         const availableEvents = masterClasses.filter(ev => ev.date >= today);
 
-        console.log('🔍 Фильтрация мастер-классов:', {
-            total: masterClasses.length,
-            availableToday: availableEvents.length,
-            today: today,
-            events: availableEvents.map(ev => ({
-                id: ev.id,
-                date: ev.date,
-                schoolId: ev.schoolId,
-                classGroup: ev.classGroup
-            }))
-        });
 
         // Создаем карту для группировки по классу (школа + класс)
         const classGroupMap = new Map<string, WorkshopCardData>();
@@ -602,56 +623,28 @@ const ParentDashboard = () => {
                 const classKey = `${event.schoolId}-${event.classGroup}`;
 
                 // Проверяем статус участия для всех детей
-                const childrenWithStatus = eligibleChildren.map(child => {
+                const childrenWithStatus = (eligibleChildren || []).map(child => {
                     // Сначала проверяем в регистрациях
                     const registration = userRegistrations.find(reg =>
                         reg.workshopId === event.id && reg.userId === child.id
                     );
 
-                    // Затем проверяем в счетах - ищем по master_class_id
-                    // Для групповых регистраций создается один счет на родителя (participant_id = parentId)
-                    // Для индивидуальных регистраций может быть счет на ребенка (participant_id = child.id)
-                    // Ищем счета где master_class_id = event.id и participant_id = user.id (родитель) или child.id
-                    const availableInvoices = participantInvoices?.invoices?.filter(inv =>
-                        inv.master_class_id === event.id &&
-                        (inv.participant_id === user?.id || inv.participant_id === child.id)
-                    ) || [];
+                    // Проверяем в счетах - НЕ фильтруем по master_class_id, так как счет может быть для другого мастер-класса
+                    // Связь между счетом и ребенком определяется через участников мастер-класса
+                    const allInvoices = participantInvoices?.invoices || [];
 
-                    console.log(`🔍 Доступные счета для ребенка ${child.name} в мастер-классе ${event.id}:`, {
-                        childId: child.id,
-                        parentId: user?.id,
-                        availableInvoices: availableInvoices.map(inv => ({
-                            id: inv.id,
-                            master_class_id: inv.master_class_id,
-                            participant_id: inv.participant_id,
-                            status: inv.status,
-                            selected_styles: inv.selected_styles,
-                            selected_options: inv.selected_options
-                        })),
-                        allInvoices: participantInvoices?.invoices?.map(inv => ({
-                            id: inv.id,
-                            master_class_id: inv.master_class_id,
-                            participant_id: inv.participant_id,
-                            status: inv.status
-                        })) || []
+                    const invoice = allInvoices.find(inv => {
+                        const masterClass = masterClasses.find(mc => mc.id === event.id);
+                        if (masterClass && masterClass.participants) {
+                            // Проверяем, есть ли ребенок в участниках мастер-класса для этого счета
+                            const hasChild = masterClass.participants.some(participant =>
+                                participant.childId === child.id
+                            );
+                            return hasChild;
+                        }
+                        return false;
                     });
 
-                    // Берем счет для родителя (групповой) или для ребенка (индивидуальный)
-                    // Для групповых регистраций все дети используют один счет
-                    let invoice = availableInvoices.find(inv => inv.participant_id === user?.id);
-                    if (!invoice) {
-                        // Если нет группового счета, ищем индивидуальный для ребенка
-                        invoice = availableInvoices.find(inv => inv.participant_id === child.id);
-                    }
-
-                    // Если есть групповой счет, привязываем его ко всем детям
-                    if (invoice && invoice.participant_id === user?.id) {
-                        console.log(`🔍 Групповой счет для ребенка ${child.name}:`, {
-                            invoiceId: invoice.id,
-                            participant_id: invoice.participant_id,
-                            status: invoice.status
-                        });
-                    }
 
                     let status: 'none' | 'pending' | 'paid' | 'cancelled' = 'none';
                     if (registration) {
@@ -669,20 +662,6 @@ const ParentDashboard = () => {
                         }
                     }
 
-                    console.log(`🔍 Статус для ребенка ${child.name} в мастер-классе ${event.id}:`, {
-                        childId: child.id,
-                        registration: registration ? {
-                            id: registration.id,
-                            status: registration.status
-                        } : null,
-                        invoice: invoice ? {
-                            id: invoice.id,
-                            status: invoice.status,
-                            participant_id: invoice.participant_id
-                        } : null,
-                        finalStatus: status,
-                        masterClassParticipants: masterClasses.find(mc => mc.id === event.id)?.participants?.length || 0
-                    });
 
                     return {
                         childId: child.id,
@@ -699,59 +678,17 @@ const ParentDashboard = () => {
                 let invoiceStatus: 'pending' | 'paid' | 'cancelled' | undefined;
                 const childInvoices = childrenWithStatus.filter(c => c.invoice);
                 if (childInvoices.length > 0) {
-                    // Ищем групповой счет (для родителя) или любой детский счет
-                    const groupInvoice = participantInvoices?.invoices?.find(inv =>
-                        inv.master_class_id === event.id && inv.participant_id === user?.id
-                    );
+                    // Используем статус из найденных счетов детей
+                    const hasPaidInvoice = childInvoices.some(c => c.invoice?.status === 'paid');
+                    const hasPendingInvoice = childInvoices.some(c => c.invoice?.status === 'pending');
+                    const hasCancelledInvoice = childInvoices.some(c => c.invoice?.status === 'cancelled');
 
-                    if (groupInvoice) {
-                        // Если есть групповой счет, используем его статус
-                        invoiceStatus = groupInvoice.status;
-                        console.log(`🔍 Групповой счет для мастер-класса ${event.id}:`, {
-                            invoiceId: groupInvoice.id,
-                            status: groupInvoice.status,
-                            participant_id: groupInvoice.participant_id
-                        });
-                    } else {
-                        // Иначе определяем по детским счетам
-                        const hasPaidInvoice = childInvoices.some(c => c.invoice?.status === 'paid');
-                        const hasPendingInvoice = childInvoices.some(c => c.invoice?.status === 'pending');
-                        const hasCancelledInvoice = childInvoices.some(c => c.invoice?.status === 'cancelled');
-
-                        if (hasPaidInvoice) invoiceStatus = 'paid';
-                        else if (hasPendingInvoice) invoiceStatus = 'pending';
-                        else if (hasCancelledInvoice) invoiceStatus = 'cancelled';
-                    }
-
-                    console.log(`🔍 Статус счета для мастер-класса ${event.id}:`, {
-                        childInvoices: childInvoices.length,
-                        groupInvoice: groupInvoice ? { id: groupInvoice.id, status: groupInvoice.status } : null,
-                        invoiceStatus
-                    });
+                    if (hasPaidInvoice) invoiceStatus = 'paid';
+                    else if (hasPendingInvoice) invoiceStatus = 'pending';
+                    else if (hasCancelledInvoice) invoiceStatus = 'cancelled';
                 }
 
-                console.log(`✅ Мастер-класс ${event.id} подходит для класса ${event.classGroup}:`, {
-                    eligibleChildren: eligibleChildren.map(c => c.name),
-                    childrenWithStatus,
-                    invoiceStatus,
-                    userRegistrations: userRegistrations.filter(reg => reg.workshopId === event.id),
-                    participantInvoices: participantInvoices?.invoices?.filter(inv => inv.master_class_id === event.id)
-                });
 
-                // Отладочная информация для OrderDetailsModal
-                console.log(`🔍 OrderDetailsModal Debug - Мастер-класс ${event.id}:`, {
-                    childrenWithStatus: childrenWithStatus.map(child => ({
-                        childId: child.childId,
-                        childName: child.childName,
-                        status: child.status,
-                        invoice: child.invoice ? {
-                            id: child.invoice.id,
-                            status: child.invoice.status,
-                            selected_styles: child.invoice.selected_styles,
-                            selected_options: child.invoice.selected_options
-                        } : null
-                    }))
-                });
 
                 // Создаем или обновляем карточку для этого класса
                 if (classGroupMap.has(classKey)) {
@@ -759,7 +696,7 @@ const ParentDashboard = () => {
                     const existing = classGroupMap.get(classKey)!;
                     const oldInvoiceStatus = existing.invoiceStatus;
 
-                    existing.children = [...new Set([...existing.children, ...eligibleChildren.map(c => c.id)])];
+                    existing.children = [...new Set([...existing.children, ...(eligibleChildren || []).map(c => c.id)])];
 
                     // Обновляем статус счета (не понижая его)
                     existing.invoiceStatus = mergeInvoice(existing.invoiceStatus, invoiceStatus);
@@ -768,11 +705,6 @@ const ParentDashboard = () => {
                     existing.eligibleChildren = mergeEligibleChildren(existing.eligibleChildren, eligibleChildren);
                     existing.childrenWithStatus = mergeChildStatusLists(existing.childrenWithStatus, childrenWithStatus);
 
-                    console.log(`🔄 Обновлена существующая карточка для класса ${event.classGroup}:`, {
-                        oldInvoiceStatus,
-                        newInvoiceStatus: existing.invoiceStatus,
-                        childrenCount: existing.children.length
-                    });
                 } else {
                     // Создаем новую карточку для класса
                     const newCard = {
@@ -783,7 +715,7 @@ const ParentDashboard = () => {
                         classGroup: event.classGroup,
                         schoolName: event.schoolName || school?.name || 'Не указано',
                         city: event.city || school?.address?.split(',')[0]?.trim() || 'Не указан',
-                        children: eligibleChildren.map(c => c.id),
+                        children: (eligibleChildren || []).map(c => c.id),
                         invoiceId: undefined, // Может быть несколько счетов для разных детей
                         schoolId: event.schoolId,
                         serviceId: event.serviceId,
@@ -795,36 +727,15 @@ const ParentDashboard = () => {
 
                     classGroupMap.set(classKey, newCard);
 
-                    console.log(`🆕 Создана новая карточка для класса ${event.classGroup}:`, {
-                        invoiceStatus,
-                        childrenCount: newCard.children.length
-                    });
                 }
             } else {
-                console.log(`❌ Мастер-класс ${event.id} не подходит ни для одного ребенка`);
+                // Нет подходящих детей для этого мастер-класса
             }
         });
 
         // Преобразуем в массив для отображения
         const allWorkshops = Array.from(classGroupMap.values());
 
-        console.log('📋 Итоговый список мастер-классов по классам:', {
-            total: allWorkshops.length,
-            workshops: allWorkshops.map(w => ({
-                id: w.id,
-                childrenCount: w.children.length,
-                date: w.date,
-                schoolName: w.schoolName,
-                classGroup: w.classGroup,
-                invoiceStatus: w.invoiceStatus,
-                childrenWithStatus: w.childrenWithStatus.map(c => ({
-                    name: c.childName,
-                    status: c.status,
-                    hasInvoice: !!c.invoice,
-                    hasRegistration: !!c.registration
-                }))
-            }))
-        });
 
         // Сортируем по дате, времени и названию школы
         const sortedWorkshops = allWorkshops.sort((a, b) => {
@@ -840,20 +751,13 @@ const ParentDashboard = () => {
             return a.schoolName.localeCompare(b.schoolName);
         });
 
-        console.log('✅ groupedWorkshops: Мастер-классы рассчитаны:', {
-            total: sortedWorkshops.length,
-            refreshTrigger
-        });
 
         return { total: sortedWorkshops.length, workshops: sortedWorkshops };
-    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices, refreshTrigger]);
+    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices, user?.id]);
 
     // Мемоизируем прошедшие мастер-классы для вкладки "История"
     const pastWorkshops = useMemo(() => {
-        console.log('🔄 pastWorkshops: Пересчитываем прошедшие мастер-классы, refreshTrigger:', refreshTrigger);
-
         if (!masterClasses.length || !children.length) {
-            console.log('✅ pastWorkshops: Нет данных для расчета');
             return { total: 0, workshops: [] };
         }
 
@@ -862,17 +766,6 @@ const ParentDashboard = () => {
         // Фильтруем прошедшие мастер-классы
         const pastEvents = masterClasses.filter(ev => ev.date < today);
 
-        console.log('🔍 Фильтрация прошедших мастер-классов:', {
-            total: masterClasses.length,
-            pastEvents: pastEvents.length,
-            today: today,
-            events: pastEvents.map(ev => ({
-                id: ev.id,
-                date: ev.date,
-                schoolId: ev.schoolId,
-                classGroup: ev.classGroup
-            }))
-        });
 
         // Создаем карту для группировки по классу (школа + класс)
         const classGroupMap = new Map<string, WorkshopCardData>();
@@ -910,13 +803,13 @@ const ParentDashboard = () => {
                 const classKey = `${event.schoolId}-${event.classGroup}`;
 
                 // Проверяем статус участия для всех детей
-                const childrenWithStatus = eligibleChildren.map(child => {
+                const childrenWithStatus = (eligibleChildren || []).map(child => {
                     const registration = userRegistrations.find(reg =>
                         reg.workshopId === event.id && reg.userId === child.id
                     );
 
-                    const availableInvoices = participantInvoices?.invoices?.filter(inv => inv.master_class_id === event.id) || [];
-                    const invoice = availableInvoices.find(inv => {
+                    const allInvoices = participantInvoices?.invoices || [];
+                    const invoice = allInvoices.find(inv => {
                         const masterClass = masterClasses.find(mc => mc.id === event.id);
                         if (masterClass && masterClass.participants) {
                             const hasChild = masterClass.participants.some(participant =>
@@ -924,7 +817,7 @@ const ParentDashboard = () => {
                             );
                             return hasChild;
                         }
-                        return true;
+                        return false;
                     });
 
                     let status: 'none' | 'pending' | 'paid' | 'cancelled' = 'none';
@@ -986,13 +879,9 @@ const ParentDashboard = () => {
         const allPastWorkshops = Array.from(classGroupMap.values());
         const sortedPastWorkshops = allPastWorkshops.sort((a, b) => b.date.localeCompare(a.date));
 
-        console.log('✅ pastWorkshops: Прошедшие мастер-классы рассчитаны:', {
-            total: sortedPastWorkshops.length,
-            refreshTrigger
-        });
 
         return { total: sortedPastWorkshops.length, workshops: sortedPastWorkshops };
-    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices, refreshTrigger]);
+    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices]);
 
     const handleApproveOrder = (orderId: string) => {
         toast({
@@ -1009,39 +898,29 @@ const ParentDashboard = () => {
     };
 
     const handleWorkshopRegistration = (workshop: WorkshopCardData) => {
-        console.log('🔄 Dashboard: Открываем модальное окно регистрации для мастер-класса:', workshop.title);
         setSelectedWorkshop(workshop);
         setIsWorkshopRegistrationOpen(true);
     };
 
     // Обработчик успешной регистрации на мастер-класс
-    const handleWorkshopRegistrationSuccess = async () => {
-        console.log('🎯 Dashboard: handleWorkshopRegistrationSuccess ВЫЗВАН!');
-        console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Начинаем обновление данных после успешной регистрации...');
-        console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Текущие данные:', {
-            userRegistrations: userRegistrations.length,
-            children: children.length,
-            masterClasses: masterClasses.length,
-            refreshTrigger
-        });
-
+    const handleWorkshopRegistrationSuccess = useCallback(async () => {
         try {
-            // Принудительно обновляем все данные
+            console.log('🔄 Начинаем обновление данных после записи...');
+
             if (user?.id) {
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Перезагружаем регистрации пользователя...');
+                // 1. Принудительно обновляем мастер-классы
+                console.log('📋 Обновляем мастер-классы...');
+                await fetchMasterClasses({ forceRefresh: true });
 
-                // Перезагружаем регистрации пользователя
+                // 2. Перезагружаем регистрации пользователя
+                console.log('📝 Обновляем регистрации...');
                 const updatedRegistrations = await getUserRegistrations(user.id);
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Получены регистрации:', updatedRegistrations);
-
                 setUserRegistrations(updatedRegistrations);
-                console.log('✅ ОБНОВЛЕНИЕ DASHBOARD: Регистрации обновлены:', updatedRegistrations.length);
 
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Перезагружаем детей...');
-
-                // Перезагружаем детей (для обновления статистики)
+                // 3. Перезагружаем детей (для обновления статистики)
+                console.log('👶 Обновляем данные детей...');
                 const updatedChildren = await getChildrenByParentId(user.id);
-                const formattedChildren: ChildData[] = updatedChildren.map(child => {
+                const formattedChildren: ChildData[] = (updatedChildren || []).map(child => {
                     let age = child.age || 7;
                     if (!child.age && child.class) {
                         const classNumber = parseInt(child.class.match(/\d+/)?.[0] || '0');
@@ -1055,68 +934,36 @@ const ParentDashboard = () => {
                         schoolId: child.schoolId,
                         schoolName: child.schoolName,
                         classGroup: child.class,
-                        pendingOrders: 0, // TODO: Получить из API
-                        completedOrders: 0, // TODO: Получить из API
                     };
                 });
                 setChildren(formattedChildren);
-                console.log('✅ Дети обновлены:', formattedChildren.length);
-            }
 
-            console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Перезагружаем мастер-классы...');
-
-            // Перезагружаем мастер-классы
-            await fetchMasterClasses();
-            console.log('✅ ОБНОВЛЕНИЕ DASHBOARD: Мастер-классы обновлены');
-
-            // Принудительно обновляем счеты участников через React Query
-            if (user?.id) {
-                // Инвалидируем кэш для всех счетов участника
-                // Это заставит useParticipantInvoices перезагрузить данные
-                console.log('🔄 Инвалидируем кэш счетов участника');
-
-                // Инвалидируем кэш счетов
-                queryClient.invalidateQueries({ queryKey: ['invoices', 'participant', user.id] });
-
-                // Инвалидируем кэш мастер-классов
+                // 4. Принудительно инвалидируем кэш счетов
+                console.log('💰 Обновляем счета...');
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent', user.id] });
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent'] });
                 queryClient.invalidateQueries({ queryKey: ['masterClasses'] });
 
-                // Принудительно обновляем данные через refreshTrigger
-                // Это заставит все useMemo пересчитаться
+                // 5. Небольшая задержка для корректного обновления UI
+                setTimeout(() => {
+                    console.log('✅ Обновление данных завершено');
+                }, 500);
             }
 
             toast({
                 title: "Успешно! 🎉",
-                description: "Дети записаны на мастер-класс. Ожидаем оплату счета.",
+                description: "Дети записаны на мастер-класс. Данные обновлены.",
             });
-
-            // Принудительно обновляем UI через триггер
-            setRefreshTrigger(prev => {
-                const newValue = prev + 1;
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Триггер обновления UI изменен с', prev, 'на', newValue);
-                return newValue;
-            });
-
-            // Небольшая задержка для корректного обновления UI
-            setTimeout(() => {
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Принудительное обновление UI завершено');
-                console.log('🔄 ОБНОВЛЕНИЕ DASHBOARD: Финальные данные:', {
-                    userRegistrations: userRegistrations.length,
-                    children: children.length,
-                    masterClasses: masterClasses.length,
-                    refreshTrigger
-                });
-            }, 100);
 
         } catch (error) {
-            console.error('❌ ОБНОВЛЕНИЕ DASHBOARD: Ошибка при обновлении данных:', error);
+            console.error('❌ Ошибка при обновлении данных:', error);
             toast({
                 title: "Внимание",
                 description: "Запись прошла успешно, но не удалось обновить данные. Обновите страницу.",
                 variant: "destructive",
             });
         }
-    };
+    }, [user?.id, fetchMasterClasses, getUserRegistrations, getChildrenByParentId, queryClient, toast]);
 
     // Обработчик просмотра счетов
     const handleViewInvoices = (workshop: WorkshopCardData) => {
@@ -1129,7 +976,7 @@ const ParentDashboard = () => {
 
     // Обработчик просмотра деталей заказа
     const handleViewOrderDetails = (workshop: WorkshopCardData) => {
-        const childrenNames = workshop.childrenWithStatus.map(c => c.childName).join(', ');
+        const childrenNames = (workshop.childrenWithStatus || []).map(c => c.childName).join(', ');
         const statusText = workshop.invoiceStatus === 'paid' ? 'оплачен' :
             workshop.invoiceStatus === 'pending' ? 'ожидает оплаты' : 'отменен';
 
@@ -1158,20 +1005,12 @@ const ParentDashboard = () => {
     };
 
     const getChildrenNames = (childrenIds: string[]) => {
-        return childrenIds.map(id => children.find(c => c.id === id)?.name).filter(Boolean).join(', ');
+        return (childrenIds || []).map(id => (children || []).find(c => c.id === id)?.name).filter(Boolean).join(', ');
     };
 
     // Мемоизируем статистику детей
     const childrenStats = useMemo(() => {
-        console.log('🔄 getChildrenStats: Пересчитываем статистику:', {
-            children: children.length,
-            userRegistrations: userRegistrations.length,
-            participantInvoices: participantInvoices?.invoices?.length || 0,
-            refreshTrigger
-        });
-
         if (!children.length) {
-            console.log('✅ getChildrenStats: Нет детей для расчета статистики');
             return { pending: 0, completed: 0 };
         }
 
@@ -1191,9 +1030,8 @@ const ParentDashboard = () => {
         }
 
         const stats = { pending, completed };
-        console.log('✅ getChildrenStats: Статистика рассчитана:', stats);
         return stats;
-    }, [children, userRegistrations, participantInvoices?.invoices, refreshTrigger]);
+    }, [children, userRegistrations, participantInvoices?.invoices]);
 
     // Функция для расчета статистики заказов по каждому ребенку
     const getChildOrderStats = useMemo(() => {
@@ -1240,110 +1078,10 @@ const ParentDashboard = () => {
             });
         }
 
-        console.log('✅ getChildOrderStats: Статистика по детям рассчитана:',
-            Array.from(childStats.entries()).map(([childId, stats]) => ({
-                childId,
-                childName: children.find(c => c.id === childId)?.name,
-                ...stats
-            }))
-        );
 
         return childStats;
     }, [children, userRegistrations, participantInvoices?.invoices]);
 
-    // Отладочная информация (только при изменении основных данных)
-    useEffect(() => {
-        console.log('📊 ОТЛАДКА: Загружены данные, refreshTrigger:', refreshTrigger, {
-            masterClasses: masterClasses.length,
-            schools: schools.length,
-            services: services.length,
-            children: children.length,
-            userRegistrations: userRegistrations.length,
-            participantInvoices: participantInvoices?.invoices?.length || 0
-        });
-
-        // Отладочная информация для мастер-классов
-        if (masterClasses.length > 0) {
-            console.log('🎨 ОТЛАДКА: Доступные мастер-классы:', masterClasses.map(mc => ({
-                id: mc.id,
-                date: mc.date,
-                schoolId: mc.schoolId,
-                classGroup: mc.classGroup,
-                schoolName: mc.schoolName,
-                city: mc.city
-            })));
-        }
-
-        // Отладочная информация для детей
-        if (children.length > 0) {
-            console.log('👶 ОТЛАДКА: Дети родителя:', children.map(child => ({
-                id: child.id,
-                name: child.name,
-                schoolId: child.schoolId,
-                classGroup: child.classGroup,
-                schoolName: child.schoolName
-            })));
-        }
-
-        // Отладочная информация для школ
-        if (schools.length > 0) {
-            console.log('🏫 ОТЛАДКА: Доступные школы:', schools.map(school => ({
-                id: school.id,
-                name: school.name,
-                address: school.address,
-                classes: school.classes
-            })));
-        }
-
-        // Отладочная информация для регистраций
-        if (userRegistrations.length > 0) {
-            console.log('📝 ОТЛАДКА: Регистрации пользователя:', userRegistrations.map(reg => ({
-                id: reg.id,
-                workshopId: reg.workshopId,
-                userId: reg.userId,
-                status: reg.status,
-                totalPrice: reg.totalPrice
-            })));
-        }
-
-        // Отладочная информация для статистики заказов по детям
-        if (children.length > 0) {
-            console.log('📊 ОТЛАДКА: Статистика заказов по детям:',
-                Array.from(getChildOrderStats.entries()).map(([childId, stats]) => ({
-                    childId,
-                    childName: children.find(c => c.id === childId)?.name,
-                    ...stats
-                }))
-            );
-        }
-
-        // Отладочная информация для счетов
-        if (participantInvoices?.invoices && participantInvoices.invoices.length > 0) {
-            console.log('💰 ОТЛАДКА: Счета участника:', participantInvoices.invoices.map(inv => ({
-                id: inv.id,
-                master_class_id: inv.master_class_id,
-                participant_id: inv.participant_id,
-                status: inv.status,
-                amount: inv.amount
-            })));
-        }
-
-        // Отладочная информация для сопоставления данных
-        if (children.length > 0 && participantInvoices?.invoices) {
-            console.log('🔗 ОТЛАДКА: Сопоставление детей и счетов:', children.map(child => {
-                const childInvoices = participantInvoices.invoices.filter(inv => inv.participant_id === child.id);
-                return {
-                    childId: child.id,
-                    childName: child.name,
-                    invoices: childInvoices.map(inv => ({
-                        id: inv.id,
-                        master_class_id: inv.master_class_id,
-                        status: inv.status
-                    }))
-                };
-            }));
-        }
-    }, [masterClasses.length, schools.length, services.length, children.length, masterClasses, children, refreshTrigger]);
 
     return (
         <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
@@ -1366,68 +1104,216 @@ const ParentDashboard = () => {
                     </p>
                 </div>
 
-                {/* Статистика */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 sm:mb-8">
-                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-orange-300 hover:shadow-xl transition-all duration-300 shadow-lg">
-                        <CardContent className="p-3 text-center">
-                            <div className="flex items-center justify-center mb-1">
-                                <Baby className="w-5 h-5 text-orange-700 mr-2" />
-                                <div className="text-xl font-bold text-orange-700">{children.length}</div>
+                {/* Статистика - компактная в одну строку */}
+                <div className="flex flex-wrap gap-2 mb-4 sm:mb-6 justify-center">
+                    <Card
+                        className="bg-white/90 backdrop-blur-sm border-2 border-orange-300 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg cursor-pointer flex-1 min-w-[120px]"
+                        onClick={() => setActiveTab('children')}
+                    >
+                        <CardContent className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                <Baby className="w-4 h-4 text-orange-700" />
+                                <div className="text-lg font-bold text-orange-700">{children.length}</div>
+                                <div className="text-xs font-medium text-gray-700">Детей</div>
                             </div>
-                            <div className="text-xs font-medium text-gray-700">Детей</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-purple-300 hover:shadow-xl transition-all duration-300 shadow-lg">
-                        <CardContent className="p-3 text-center">
-                            <div className="flex items-center justify-center mb-1">
-                                <AlertCircle className="w-5 h-5 text-purple-700 mr-2" />
-                                <div className="text-xl font-bold text-purple-700">
-                                    {childrenStats.pending}
-                                </div>
+                    <Card
+                        className="bg-white/90 backdrop-blur-sm border-2 border-purple-300 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg cursor-pointer flex-1 min-w-[120px]"
+                        onClick={() => setActiveTab(childrenStats.pending > 0 ? 'workshops' : 'children')}
+                    >
+                        <CardContent className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                <AlertCircle className="w-4 h-4 text-purple-700" />
+                                <div className="text-lg font-bold text-purple-700">{childrenStats.pending}</div>
+                                <div className="text-xs font-medium text-gray-700">Ожидают</div>
                             </div>
-                            <div className="text-xs font-medium text-gray-700">Ожидают подтверждения</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-blue-300 hover:shadow-xl transition-all duration-300 shadow-lg">
-                        <CardContent className="p-3 text-center">
-                            <div className="flex items-center justify-center mb-1">
-                                <CheckCircle className="w-5 h-5 text-blue-700 mr-2" />
-                                <div className="text-xl font-bold text-blue-700">
-                                    {childrenStats.completed}
-                                </div>
+                    <Card
+                        className="bg-white/90 backdrop-blur-sm border-2 border-blue-300 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg cursor-pointer flex-1 min-w-[120px]"
+                        onClick={() => setActiveTab('history')}
+                    >
+                        <CardContent className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                <CheckCircle className="w-4 h-4 text-blue-700" />
+                                <div className="text-lg font-bold text-blue-700">{childrenStats.completed}</div>
+                                <div className="text-xs font-medium text-gray-700">Завершено</div>
                             </div>
-                            <div className="text-xs font-medium text-gray-700">Завершенных заказов</div>
                         </CardContent>
                     </Card>
-                    <Card className="bg-white/90 backdrop-blur-sm border-2 border-green-300 hover:shadow-xl transition-all duration-300 shadow-lg">
-                        <CardContent className="p-3 text-center">
-                            <div className="flex items-center justify-center mb-1">
-                                <Star className="w-5 h-5 text-green-700 mr-2" />
-                                <div className="text-xl font-bold text-green-700">
-                                    {groupedWorkshops.total}
-                                </div>
+                    <Card
+                        className="bg-white/90 backdrop-blur-sm border-2 border-green-300 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg cursor-pointer flex-1 min-w-[120px]"
+                        onClick={() => setActiveTab('workshops')}
+                    >
+                        <CardContent className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                <Star className="w-4 h-4 text-green-700" />
+                                <div className="text-lg font-bold text-green-700">{groupedWorkshops.total}</div>
+                                <div className="text-xs font-medium text-gray-700">Мастер-классов</div>
                             </div>
-                            <div className="text-xs font-medium text-gray-700">Доступных мастер-классов</div>
                         </CardContent>
                     </Card>
                 </div>
 
+                {/* Блок бонусов */}
+                <BonusBlock />
+
+                {/* Мотивационный текст */}
+                <div className="text-center mb-6 sm:mb-8">
+                    <div className="bg-white/90 backdrop-blur-sm border-2 border-yellow-300 rounded-lg p-4 shadow-lg max-w-2xl mx-auto">
+                        <div className="text-2xl mb-2">🎨✨</div>
+                        <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">
+                            Готовы создать шедевр? 🚀
+                        </h3>
+                        <p className="text-sm sm:text-base text-gray-700 leading-relaxed">
+                            Запишите своего ребенка на увлекательный мастер-класс по созданию восковых ручек!
+                            <br />
+                            <span className="font-semibold text-green-700">Тогда переходите на вкладку "Мастер-классы"</span> ⏰
+                        </p>
+                    </div>
+                </div>
+
                 {/* Основной контент */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-3 bg-white/90 backdrop-blur-sm border-2 border-gray-200 shadow-lg">
-                        <TabsTrigger value="children" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
-                            <Baby className="w-4 h-4 mr-2" />
+                    <TabsList className="grid w-full grid-cols-4 bg-white/90 backdrop-blur-sm border-2 border-gray-200 shadow-lg p-2 gap-1 h-auto">
+                        <TabsTrigger value="about" className="data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
+                            О нас
+                        </TabsTrigger>
+                        <TabsTrigger value="children" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
                             Мои дети
                         </TabsTrigger>
-                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
-                            <Palette className="w-4 h-4 mr-2" />
+                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
                             Мастер-классы
                         </TabsTrigger>
-                        <TabsTrigger value="history" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200">
-                            <CheckCircle className="w-4 h-4 mr-2" />
+                        <TabsTrigger value="history" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
                             История
                         </TabsTrigger>
                     </TabsList>
+
+                    <TabsContent value="about" className="space-y-4">
+                        <div className="space-y-4">
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center space-x-2">
+                                <Info className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+                                <span>О нашей студии</span>
+                            </h2>
+
+                            {/* Краткая информация о студии */}
+                            <Card className="bg-white/90 backdrop-blur-sm border-2 border-green-300 shadow-lg">
+                                <CardContent className="p-4 sm:p-6">
+                                    <div className="text-center space-y-4">
+                                        <div className="text-4xl mb-4">✨</div>
+                                        <h3 className="text-lg sm:text-xl font-bold text-gray-800">
+                                            {aboutContent?.title || 'Восковые Ручки'}
+                                        </h3>
+                                        <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+                                            {aboutContent?.description || 'Создай свою уникальную 3D копию руки в восковом исполнении!'}
+                                        </p>
+                                        <p className="text-sm text-gray-500">
+                                            Более подробно с информацией о студии и стоимостью услуг можно ознакомиться на страничке "О нас"
+                                        </p>
+                                        <Button
+                                            onClick={() => window.location.href = '/about'}
+                                            className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+                                        >
+                                            <Info className="w-4 h-4 mr-2" />
+                                            Подробнее о нас
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Медиа контент */}
+                            {aboutMedia && aboutMedia.length > 0 && (
+                                <Card className="bg-white/90 backdrop-blur-sm border-2 border-green-300 shadow-lg">
+                                    <CardHeader>
+                                        <CardTitle className="flex items-center gap-2 text-gray-800">
+                                            <Sparkles className="w-5 h-5 text-green-600" />
+                                            Наши работы
+                                        </CardTitle>
+                                        <CardDescription className="text-gray-600">
+                                            Примеры наших мастер-классов и работ
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+                                            {(aboutMedia || []).slice(0, 8).map((media, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="relative bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200"
+                                                >
+                                                    {media.type === 'image' ? (
+                                                        <div className="aspect-square">
+                                                            <img
+                                                                src={getMediaUrl(media.file_path)}
+                                                                alt={media.title || `Работа ${index + 1}`}
+                                                                className="w-full h-full object-cover"
+                                                                loading="lazy"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="aspect-square relative">
+                                                            <video
+                                                                src={getMediaUrl(media.file_path)}
+                                                                className="w-full h-full object-cover cursor-pointer"
+                                                                preload="metadata"
+                                                                muted
+                                                                onClick={() => window.open(getMediaUrl(media.file_path), '_blank')}
+                                                                onLoadedData={(e) => {
+                                                                    const video = e.target as HTMLVideoElement;
+                                                                    video.currentTime = 1; // Устанавливаем на 1 секунду для показа кадра
+                                                                }}
+                                                                onError={(e) => {
+                                                                    const target = e.target as HTMLVideoElement;
+                                                                    target.style.display = 'none';
+                                                                    target.parentElement!.innerHTML = `
+                                                                        <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                                                                            <div class="text-center">
+                                                                                <svg class="w-8 h-8 text-gray-400 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                                    <path d="M8 5v10l8-5-8-5z"/>
+                                                                                </svg>
+                                                                                <span class="text-xs text-gray-500 font-medium">Видео</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    `;
+                                                                }}
+                                                            />
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <div className="w-8 h-8 bg-black/50 rounded-full flex items-center justify-center">
+                                                                    <Play className="w-4 h-4 text-white ml-0.5" />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {(media.title || media.description) && (
+                                                        <div className="p-2 bg-white">
+                                                            {media.title && (
+                                                                <h4 className="text-xs font-medium text-gray-800 mb-1 line-clamp-1">
+                                                                    {media.title}
+                                                                </h4>
+                                                            )}
+                                                            {media.description && (
+                                                                <p className="text-xs text-gray-600 line-clamp-2">
+                                                                    {media.description}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {aboutMedia.length > 8 && (
+                                            <div className="text-center mt-4">
+                                                <p className="text-sm text-gray-500">
+                                                    И еще {aboutMedia.length - 8} работ в полной галерее
+                                                </p>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            )}
+                        </div>
+                    </TabsContent>
 
                     <TabsContent value="children" className="space-y-4">
                         {children.length === 0 ? (
@@ -1448,7 +1334,7 @@ const ParentDashboard = () => {
                         ) : (
                             <>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {children.map((child) => (
+                                    {(children || []).map((child) => (
                                         <Card key={child.id} className="hover:shadow-xl transition-all duration-300 bg-white/90 backdrop-blur-sm border-2 border-orange-300 shadow-lg">
                                             <CardHeader className="p-4 sm:p-6">
                                                 <CardTitle className="text-xl sm:text-2xl text-orange-700 flex items-center justify-between">
@@ -1535,7 +1421,7 @@ const ParentDashboard = () => {
                                                             <SelectValue placeholder="Выберите школу или сад" />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            {schools.map((school) => (
+                                                            {(schools || []).map((school) => (
                                                                 <SelectItem key={school.id} value={school.id}>
                                                                     <div>
                                                                         <div className="font-medium">{school.name}</div>
@@ -1559,7 +1445,7 @@ const ParentDashboard = () => {
                                                                 <SelectValue placeholder="Выберите класс или группу" />
                                                             </SelectTrigger>
                                                             <SelectContent>
-                                                                {availableClasses.map((className) => (
+                                                                {(availableClasses || []).map((className) => (
                                                                     <SelectItem key={className} value={className}>
                                                                         {className}
                                                                     </SelectItem>
@@ -1634,17 +1520,14 @@ const ParentDashboard = () => {
 
                         ) : (
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between mb-4">
+                                <div className="mb-4">
                                     <h2 className="text-2xl font-bold text-gray-800">
                                         Доступные мастер-классы
                                     </h2>
-                                    <Badge variant="secondary" className="text-sm">
-                                        {groupedWorkshops.total} найдено
-                                    </Badge>
                                 </div>
 
-                                {groupedWorkshops.workshops.map((workshop) => {
-                                    const workshopChildren = children.filter(c => workshop.children.includes(c.id));
+                                {(groupedWorkshops?.workshops || []).map((workshop) => {
+                                    const workshopChildren = (children || []).filter(c => workshop.children.includes(c.id));
                                     const childrenNames = workshopChildren.map(c => c.name).join(', ');
 
                                     return (
@@ -1760,119 +1643,6 @@ const ParentDashboard = () => {
                             </div>
                         )}
 
-                        {/* Секция с заявками на проведение мастер-классов */}
-                        <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-                            <CardHeader className="pb-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                        <h3 className="text-lg font-semibold text-blue-800">
-                                            Заявки на проведение мастер-классов
-                                        </h3>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                        <span className="text-sm text-blue-600">
-                                            {wsConnected ? 'Автообновление' : 'Ручное обновление'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                {workshopRequests.length > 0 ? (
-                                    <>
-                                        {workshopRequests.map((request) => (
-                                            <div key={request.id} className="bg-white/60 rounded-lg p-4 border border-blue-200">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <MapPin className="w-4 h-4 text-blue-600" />
-                                                        <span className="font-medium text-blue-800">{request.school_name}</span>
-                                                    </div>
-                                                    <Badge
-                                                        className={`${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                                                            request.status === 'approved' ? 'bg-green-100 text-green-800 border-green-200' :
-                                                                'bg-red-100 text-red-800 border-red-200'
-                                                            } border`}
-                                                    >
-                                                        {request.status === 'pending' ? '⏳ Ожидает рассмотрения' :
-                                                            request.status === 'approved' ? '✅ Одобрено' :
-                                                                '❌ Отклонено'}
-                                                    </Badge>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                                                    <div className="flex items-center gap-2">
-                                                        <GraduationCap className="w-4 h-4 text-gray-500" />
-                                                        <span className="text-gray-700">Класс: {request.class_group}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Calendar className="w-4 h-4 text-gray-500" />
-                                                        <span className="text-gray-700">
-                                                            Желаемая дата: {new Date(request.desired_date).toLocaleDateString('ru-RU')}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {request.notes && (
-                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                                                        <div className="text-sm font-medium text-gray-700 mb-1">Ваши примечания:</div>
-                                                        <div className="text-sm text-gray-600">{request.notes}</div>
-                                                    </div>
-                                                )}
-                                                {request.admin_notes && (
-                                                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                                                        <div className="text-sm font-medium text-blue-700 mb-1">Ответ администратора:</div>
-                                                        <div className="text-sm text-blue-600">{request.admin_notes}</div>
-                                                    </div>
-                                                )}
-                                                <div className="mt-3 text-xs text-gray-500 border-t pt-2">
-                                                    Создано: {new Date(request.created_at).toLocaleString('ru-RU')}
-                                                    {request.updated_at !== request.created_at &&
-                                                        ` • Обновлено: ${new Date(request.updated_at).toLocaleString('ru-RU')}`
-                                                    }
-                                                </div>
-                                            </div>
-                                        ))}
-
-                                        {/* Статистика заявок */}
-                                        <div className="mt-4 pt-4 border-t border-blue-200">
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-blue-600">{workshopRequestsStats.total}</div>
-                                                    <div className="text-xs text-blue-600">Всего заявок</div>
-                                                </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-yellow-600">{workshopRequestsStats.pending}</div>
-                                                    <div className="text-xs text-yellow-600">Ожидают</div>
-                                                </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-green-600">{workshopRequestsStats.approved}</div>
-                                                    <div className="text-xs text-green-600">Одобрено</div>
-                                                </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-red-600">{workshopRequestsStats.rejected}</div>
-                                                    <div className="text-xs text-red-600">Отклонено</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="text-center py-8">
-                                        <div className="text-4xl mb-4">📝</div>
-                                        <div className="text-lg font-semibold text-gray-600 mb-2">
-                                            У вас пока нет заявок
-                                        </div>
-                                        <p className="text-gray-500 mb-4">
-                                            Хотите провести мастер-класс в классе вашего ребенка? Подайте заявку!
-                                        </p>
-                                        <Button
-                                            onClick={() => setIsWorkshopRequestOpen(true)}
-                                            className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
-                                        >
-                                            📝 Подать заявку на проведение
-                                        </Button>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
                     </TabsContent>
 
                     <TabsContent value="history" className="space-y-4">
@@ -1906,8 +1676,8 @@ const ParentDashboard = () => {
                                         </Badge>
                                     </div>
 
-                                    {pastWorkshops.workshops.map((workshop) => {
-                                        const workshopChildren = children.filter(c => workshop.children.includes(c.id));
+                                    {(pastWorkshops?.workshops || []).map((workshop) => {
+                                        const workshopChildren = (children || []).filter(c => workshop.children.includes(c.id));
                                         const childrenNames = workshopChildren.map(c => c.name).join(', ');
 
                                         return (
@@ -1977,7 +1747,7 @@ const ParentDashboard = () => {
                                                         <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                                                             <div className="text-sm font-medium text-gray-700 mb-2">Статус участия детей:</div>
                                                             <div className="space-y-1">
-                                                                {workshop.childrenWithStatus.map((child) => (
+                                                                {(workshop.childrenWithStatus || []).map((child) => (
                                                                     <div key={child.childId} className="flex items-center justify-between text-sm">
                                                                         <span className="text-gray-600">{child.childName}</span>
                                                                         <Badge
@@ -2046,6 +1816,7 @@ const ParentDashboard = () => {
                                                                                 }]}
                                                                                 masterClassName={workshop.title}
                                                                                 eventDate={workshop.date}
+                                                                                isPaymentDisabled={true}
                                                                                 eventTime={workshop.time}
                                                                                 onPaymentSuccess={() => {
                                                                                     toast({
@@ -2054,7 +1825,7 @@ const ParentDashboard = () => {
                                                                                     });
                                                                                     // Обновляем данные
                                                                                     queryClient.invalidateQueries({ queryKey: ['workshopParticipation'] });
-                                                                                    queryClient.invalidateQueries({ queryKey: ['participantInvoices'] });
+                                                                                    queryClient.invalidateQueries({ queryKey: ['invoices', 'parent'] });
                                                                                 }}
                                                                                 onPaymentError={(error) => {
                                                                                     console.error('Ошибка оплаты:', error);
@@ -2146,7 +1917,134 @@ const ParentDashboard = () => {
                             )}
                         </div>
                     </TabsContent>
+
+
                 </Tabs>
+
+                {/* Секция с заявками на проведение мастер-классов - всегда видна */}
+                <div className="mt-6">
+                    <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                        <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    <h3 className="text-lg font-semibold text-blue-800">
+                                        Заявки на проведение мастер-классов
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                    <span className="text-sm text-blue-600">
+                                        {wsConnected ? 'Автообновление' : 'Ручное обновление'}
+                                    </span>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {workshopRequests.length > 0 ? (
+                                <>
+                                    {(workshopRequests || []).map((request) => (
+                                        <div key={request.id} className="bg-white/60 rounded-lg p-4 border border-blue-200">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="w-4 h-4 text-blue-600" />
+                                                    <span className="font-medium text-blue-800">{request.school_name}</span>
+                                                </div>
+                                                <Badge
+                                                    className={`${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                                        request.status === 'approved' ? 'bg-green-100 text-green-800 border-green-200' :
+                                                            'bg-red-100 text-red-800 border-red-200'
+                                                        } border`}
+                                                >
+                                                    {request.status === 'pending' ? '⏳ Ожидает рассмотрения' :
+                                                        request.status === 'approved' ? '✅ Одобрено' :
+                                                            '❌ Отклонено'}
+                                                </Badge>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    <GraduationCap className="w-4 h-4 text-gray-500" />
+                                                    <span className="text-gray-700">Класс: {request.class_group}</span>
+                                                </div>
+                                                {request.city && (
+                                                    <div className="flex items-center gap-2">
+                                                        <MapPin className="w-4 h-4 text-gray-500" />
+                                                        <span className="text-gray-700">Город: {request.city}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {request.is_other_school && (
+                                                <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                                    <div className="text-sm font-medium text-orange-700 mb-1">Дополнительная школа:</div>
+                                                    <div className="text-sm text-orange-600">
+                                                        <div><strong>Название:</strong> {request.other_school_name}</div>
+                                                        <div><strong>Адрес:</strong> {request.other_school_address}</div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {request.notes && (
+                                                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                                    <div className="text-sm font-medium text-gray-700 mb-1">Ваши примечания:</div>
+                                                    <div className="text-sm text-gray-600">{request.notes}</div>
+                                                </div>
+                                            )}
+                                            {request.admin_notes && (
+                                                <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                                                    <div className="text-sm font-medium text-blue-700 mb-1">Ответ администратора:</div>
+                                                    <div className="text-sm text-blue-600">{request.admin_notes}</div>
+                                                </div>
+                                            )}
+                                            <div className="mt-3 text-xs text-gray-500 border-t pt-2">
+                                                Создано: {new Date(request.created_at).toLocaleString('ru-RU')}
+                                                {request.updated_at !== request.created_at &&
+                                                    ` • Обновлено: ${new Date(request.updated_at).toLocaleString('ru-RU')}`
+                                                }
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* Статистика заявок */}
+                                    <div className="mt-4 pt-4 border-t border-blue-200">
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            <div className="text-center">
+                                                <div className="text-lg font-bold text-blue-600">{workshopRequestsStats.total}</div>
+                                                <div className="text-xs text-blue-600">Всего заявок</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-lg font-bold text-yellow-600">{workshopRequestsStats.pending}</div>
+                                                <div className="text-xs text-yellow-600">Ожидают</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-lg font-bold text-green-600">{workshopRequestsStats.approved}</div>
+                                                <div className="text-xs text-green-600">Одобрено</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-lg font-bold text-red-600">{workshopRequestsStats.rejected}</div>
+                                                <div className="text-xs text-red-600">Отклонено</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center py-8">
+                                    <div className="text-4xl mb-4">📝</div>
+                                    <div className="text-lg font-semibold text-gray-600 mb-2">
+                                        У вас пока нет заявок
+                                    </div>
+                                    <p className="text-gray-500 mb-4">
+                                        Хотите провести мастер-класс в классе вашего ребенка? Подайте заявку!
+                                    </p>
+                                    <Button
+                                        onClick={() => setIsWorkshopRequestOpen(true)}
+                                        className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+                                    >
+                                        📝 Подать заявку на проведение
+                                    </Button>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
 
             {/* Модальное окно записи на мастер-класс или просмотра деталей заказа */}
@@ -2171,7 +2069,6 @@ const ParentDashboard = () => {
             )}
             {/* Отладочная информация */}
             {(() => {
-                console.log('🔄 Dashboard: Рендерим MultiChildWorkshopModal с onRegistrationSuccess:', !!handleWorkshopRegistrationSuccess);
                 return null;
             })()}
 
@@ -2281,7 +2178,7 @@ const ParentDashboard = () => {
                                         <SelectValue placeholder="Выберите школу или сад" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {schools.map((school) => (
+                                        {(schools || []).map((school) => (
                                             <SelectItem key={school.id} value={school.id}>
                                                 <div>
                                                     <div className="font-medium">{school.name}</div>
@@ -2309,7 +2206,7 @@ const ParentDashboard = () => {
                                     <SelectContent>
                                         {(() => {
                                             const school = schools.find(s => s.id === editingChild.schoolId);
-                                            return school?.classes.map((className) => (
+                                            return (school?.classes || []).map((className) => (
                                                 <SelectItem key={className} value={className}>
                                                     {className}
                                                 </SelectItem>
@@ -2344,7 +2241,6 @@ const ParentDashboard = () => {
         </div>
     );
 
-    console.log('🔄 ParentDashboard: Рендер завершен, refreshTrigger:', refreshTrigger);
 };
 
 export default ParentDashboard; 

@@ -50,7 +50,7 @@ export const useChat = (userId?: string) => {
         retry: 1, // Пробуем только 1 раз при ошибке
         retryDelay: 5000, // Задержка перед повтором
         retryOnMount: false, // Не повторяем при монтировании
-        staleTime: 5 * 60 * 1000, // Данные считаются свежими 5 минут
+        staleTime: 10 * 60 * 1000, // Данные считаются свежими 10 минут
     });
 
     // Автоматически выбираем первый чат при загрузке
@@ -82,7 +82,7 @@ export const useChat = (userId?: string) => {
         retry: 1,
         retryDelay: 5000,
         retryOnMount: false,
-        staleTime: 2 * 60 * 1000, // Данные считаются свежими 2 минуты
+        staleTime: 5 * 60 * 1000, // Данные считаются свежими 5 минут
         gcTime: 5 * 60 * 1000, // Кэш хранится 5 минут
     });
 
@@ -392,15 +392,22 @@ export const useChat = (userId?: string) => {
 };
 
 // Хук для администраторов
-export const useAdminChat = (externalSelectedChat?: Chat | null) => {
+export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusFilter?: string) => {
     const { toast } = useToast();
     const { user } = useAuth();
     const { playMessageSound } = useNotificationSound();
     const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
-    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [statusFilter, setStatusFilter] = useState<string>(externalStatusFilter || 'all');
 
     // Используем внешний selectedChat если он передан, иначе внутренний
     const currentSelectedChat = externalSelectedChat || selectedChat;
+
+    // Синхронизируем внешний statusFilter с внутренним состоянием
+    useEffect(() => {
+        if (externalStatusFilter !== undefined) {
+            setStatusFilter(externalStatusFilter);
+        }
+    }, [externalStatusFilter]);
 
     // Получение всех чатов
     const {
@@ -438,7 +445,7 @@ export const useAdminChat = (externalSelectedChat?: Chat | null) => {
         refetchInterval: false, // Отключаем автоматическое обновление
         retry: 1, // Пробуем только 1 раз при ошибке
         retryDelay: 5000, // Задержка перед повтором
-        staleTime: 2 * 60 * 1000, // Данные считаются свежими 2 минуты
+        staleTime: 5 * 60 * 1000, // Данные считаются свежими 5 минут
     });
 
     // Автоматическая загрузка чатов при монтировании

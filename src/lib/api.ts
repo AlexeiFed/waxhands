@@ -17,7 +17,16 @@ import {
     CreateGroupRegistrationRequest,
     Invoice,
     InvoiceFilters,
-    CreateInvoiceRequest
+    CreateInvoiceRequest,
+    Offer,
+    CreateOfferRequest,
+    UpdateOfferRequest,
+    OfferFilters,
+    ContactData,
+    PrivacyPolicy,
+    CreatePrivacyPolicyRequest,
+    UpdatePrivacyPolicyRequest,
+    PrivacyPolicyFilters
 } from '../types';
 import { MasterClassEvent } from '../types/services';
 
@@ -43,11 +52,16 @@ const apiRequest = async <T>(
 ): Promise<ApiResponse<T>> => {
     const token = getAuthToken();
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        // Оптимизированное кэширование для разных типов данных
+        'Cache-Control': options.method === 'GET' ? 'public, max-age=300' : 'no-cache', // 5 минут для GET запросов
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': options.method === 'GET' ? new Date(Date.now() + 300000).toUTCString() : '0' // 5 минут для GET
     };
+
+    // Не устанавливаем Content-Type для FormData - браузер установит его автоматически
+    if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -147,10 +161,10 @@ export const authAPI = {
 
         if (response.success && response.data) {
             setAuthToken(response.data.token);
-            
+
             // Логируем успешную регистрацию
             console.log('✅ Registration successful, token saved');
-            
+
             return response.data;
         }
 
@@ -789,7 +803,7 @@ export const masterClassEventsAPI = {
                 const schools = schoolsResponse.success ? schoolsResponse.data?.schools || [] : [];
                 const services = servicesResponse.success ? servicesResponse.data?.services || [] : [];
 
-                const mapped = response.data.masterClasses.map(ev => {
+                const mapped = (response.data.masterClasses || []).map(ev => {
                     const school = schools.find(s => s.id === ev.school_id);
                     const service = services.find(s => s.id === ev.service_id);
 
@@ -1080,6 +1094,24 @@ export const workshopRegistrationsAPI = {
 
         throw new Error('Failed to delete workshop registration');
     },
+
+    // Удалить участника с мастер-класса
+    removeParticipant: async (workshopId: string, participantId: string): Promise<{ success: boolean; message?: string }> => {
+        const response = await apiRequest('/workshop-registrations/remove-participant', {
+            method: 'POST',
+            body: JSON.stringify({
+                workshopId,
+                participantId
+            }),
+        });
+
+        // apiRequest уже разворачивает ответ
+        if (response && typeof response === 'object') {
+            return response;
+        }
+
+        throw new Error('Failed to remove participant from workshop');
+    }
 };
 
 const invoicesAPI = {
@@ -1159,6 +1191,54 @@ const invoicesAPI = {
         return data.data;
     },
 
+    // Обновление счета (стили, опции, сумма)
+    updateInvoice: async (id: string, updateData: {
+        selected_styles: Array<{ id: string; name: string; price: number }>;
+        selected_options: Array<{ id: string; name: string; price: number }>;
+        amount: number;
+    }): Promise<Invoice> => {
+        const response = await fetch(`${API_BASE_URL}/invoices/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось обновить счет');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось обновить счет');
+        }
+
+        return data.data;
+    },
+
+    // Удаление счета
+    deleteInvoice: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_BASE_URL}/invoices/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось удалить счет');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось удалить счет');
+        }
+    },
+
     // Синхронизация всех счетов с участниками мастер-класса
     syncAllInvoicesWithParticipants: async (): Promise<{ total: number; synced: number; errors: number }> => {
         const response = await fetch(`${API_BASE_URL}/invoices/sync-participants`, {
@@ -1203,6 +1283,325 @@ const invoicesAPI = {
     }
 };
 
+const offersAPI = {
+    // Получение текущей активной оферты
+    getCurrentOffer: async (): Promise<Offer> => {
+        const response = await fetch(`${API_BASE_URL}/offers/current`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить оферту');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось загрузить оферту');
+        }
+
+        return data.data;
+    },
+
+    // Получение всех оферт (только для админа)
+    getOffers: async (filters: OfferFilters = {}): Promise<Offer[]> => {
+        const searchParams = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, value.toString());
+            }
+        });
+
+        const response = await fetch(`${API_BASE_URL}/offers?${searchParams.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить оферты');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось загрузить оферты');
+        }
+
+        return data.data;
+    },
+
+    // Создание новой оферты (только для админа)
+    createOffer: async (offerData: CreateOfferRequest): Promise<Offer> => {
+        const response = await fetch(`${API_BASE_URL}/offers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(offerData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось создать оферту');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось создать оферту');
+        }
+
+        return data.data;
+    },
+
+    // Обновление оферты (только для админа)
+    updateOffer: async (id: string, updateData: UpdateOfferRequest): Promise<Offer> => {
+        const response = await fetch(`${API_BASE_URL}/offers/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось обновить оферту');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось обновить оферту');
+        }
+
+        return data.data;
+    },
+
+    // Активация оферты (только для админа)
+    activateOffer: async (id: string): Promise<Offer> => {
+        const response = await fetch(`${API_BASE_URL}/offers/${id}/activate`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось активировать оферту');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось активировать оферту');
+        }
+
+        return data.data;
+    },
+
+    // Удаление оферты (только для админа)
+    deleteOffer: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_BASE_URL}/offers/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось удалить оферту');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось удалить оферту');
+        }
+    },
+
+    // Скачивание PDF текущей оферты
+    downloadCurrentPdf: async (): Promise<Blob> => {
+        const response = await fetch(`${API_BASE_URL}/offers/current/pdf`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось скачать PDF оферты');
+        }
+
+        return response.blob();
+    },
+
+    // Скачивание PDF оферты по ID (только для админа)
+    downloadPdf: async (id: string): Promise<Blob> => {
+        const response = await fetch(`${API_BASE_URL}/offers/${id}/pdf`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось скачать PDF оферты');
+        }
+
+        return response.blob();
+    }
+};
+
+// API методы для контактов
+const contactsAPI = {
+    // Получение контактных данных
+    getContacts: async (): Promise<ContactData> => {
+        const response = await apiRequest<ContactData>('/contacts');
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось получить контактные данные');
+    },
+
+    // Обновление контактных данных (только для админа)
+    updateContacts: async (contactData: Partial<ContactData>): Promise<ContactData> => {
+        const response = await apiRequest<ContactData>('/contacts', {
+            method: 'PUT',
+            body: JSON.stringify(contactData),
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось обновить контактные данные');
+    }
+};
+
+// API для политики конфиденциальности
+const privacyPolicyAPI = {
+    // Получение всех политик конфиденциальности
+    getAllPolicies: async (): Promise<PrivacyPolicy[]> => {
+        const response = await apiRequest<PrivacyPolicy[]>('/privacy-policy');
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось получить политики конфиденциальности');
+    },
+
+    // Получение активной политики конфиденциальности
+    getCurrentPolicy: async (): Promise<PrivacyPolicy> => {
+        const response = await apiRequest<PrivacyPolicy>('/privacy-policy/current');
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось получить текущую политику конфиденциальности');
+    },
+
+    // Получение политики конфиденциальности по ID
+    getPolicyById: async (id: string): Promise<PrivacyPolicy> => {
+        const response = await apiRequest<PrivacyPolicy>(`/privacy-policy/${id}`);
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось получить политику конфиденциальности');
+    },
+
+    // Создание новой политики конфиденциальности
+    createPolicy: async (policyData: CreatePrivacyPolicyRequest): Promise<PrivacyPolicy> => {
+        const response = await apiRequest<PrivacyPolicy>('/privacy-policy', {
+            method: 'POST',
+            body: JSON.stringify(policyData),
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось создать политику конфиденциальности');
+    },
+
+    // Обновление политики конфиденциальности
+    updatePolicy: async (id: string, policyData: UpdatePrivacyPolicyRequest): Promise<PrivacyPolicy> => {
+        const response = await apiRequest<PrivacyPolicy>(`/privacy-policy/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(policyData),
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось обновить политику конфиденциальности');
+    },
+
+    // Активация политики конфиденциальности
+    activatePolicy: async (id: string): Promise<PrivacyPolicy> => {
+        const response = await apiRequest<PrivacyPolicy>(`/privacy-policy/${id}/activate`, {
+            method: 'PATCH',
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось активировать политику конфиденциальности');
+    },
+
+    // Удаление политики конфиденциальности
+    deletePolicy: async (id: string): Promise<void> => {
+        const response = await apiRequest<void>(`/privacy-policy/${id}`, {
+            method: 'DELETE',
+        });
+
+        if (!response.success) {
+            throw new Error(response.error || 'Не удалось удалить политику конфиденциальности');
+        }
+    },
+
+    // Скачивание PDF текущей политики конфиденциальности
+    downloadCurrentPdf: async (): Promise<Blob> => {
+        const token = getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/privacy-policy/current/pdf`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось скачать PDF политики конфиденциальности');
+        }
+
+        return response.blob();
+    },
+
+    // Скачивание PDF конкретной политики конфиденциальности
+    downloadPolicyPdf: async (id: string): Promise<Blob> => {
+        const token = getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/privacy-policy/${id}/pdf`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось скачать PDF политики конфиденциальности');
+        }
+
+        return response.blob();
+    }
+};
+
 // Экспорт всех API методов
 export const api = {
     auth: authAPI,
@@ -1213,6 +1612,9 @@ export const api = {
     masterClassEvents: masterClassEventsAPI,
     workshopRegistrations: workshopRegistrationsAPI,
     invoices: invoicesAPI,
+    offers: offersAPI,
+    privacyPolicy: privacyPolicyAPI,
+    contacts: contactsAPI,
 
     // HTTP методы для прямых запросов
     get: async <T>(endpoint: string): Promise<ApiResponse<T>> => {
@@ -1220,6 +1622,13 @@ export const api = {
     },
 
     post: async <T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> => {
+        // Если data это FormData, не используем JSON.stringify
+        if (data instanceof FormData) {
+            return apiRequest<T>(endpoint, {
+                method: 'POST',
+                body: data
+            });
+        }
         return apiRequest<T>(endpoint, {
             method: 'POST',
             body: JSON.stringify(data)

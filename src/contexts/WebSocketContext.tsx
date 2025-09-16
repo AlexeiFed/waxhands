@@ -35,69 +35,90 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-        setIsConnecting(true);
-        const ws = new WebSocket(WS_BASE_URL);
-
-        ws.onopen = () => {
-            console.log('🔌 WebSocket соединение установлено');
-            setIsConnected(true);
-            setIsConnecting(false);
-            reconnectAttemptsRef.current = 0;
-
-            // Отправляем приветственное сообщение
-            ws.send(JSON.stringify({ type: 'ping' }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                // Обрабатываем системные сообщения
-                if (data.type === 'pong') {
-                    return;
-                }
-
-                // Уведомляем подписчиков
-                if (data.channel && subscribersRef.current.has(data.channel)) {
-                    subscribersRef.current.get(data.channel)?.forEach(callback => {
-                        callback(data);
-                    });
-                }
-
-                // Broadcast всем подписчикам если канал не указан
-                if (!data.channel) {
-                    subscribersRef.current.forEach((callbacks) => {
-                        callbacks.forEach(callback => callback(data));
-                    });
-                }
-            } catch (error) {
-                console.error('❌ Ошибка обработки WebSocket сообщения:', error);
+        try {
+            setIsConnecting(true);
+            // Добавляем проверку на доступность WebSocket
+            if (typeof WebSocket === 'undefined') {
+                console.warn('⚠️ WebSocket не поддерживается в этом браузере');
+                setIsConnecting(false);
+                return;
             }
-        };
 
-        ws.onclose = (event) => {
-            console.log('🔌 WebSocket соединение закрыто:', event.code);
+            // Проверяем валидность URL
+            if (!WS_BASE_URL) {
+                console.error('❌ WebSocket URL не определен');
+                setIsConnecting(false);
+                return;
+            }
+
+            console.log('🔌 Подключение к WebSocket:', WS_BASE_URL);
+            const ws = new WebSocket(WS_BASE_URL);
+
+            ws.onopen = () => {
+                console.log('🔌 WebSocket соединение установлено');
+                setIsConnected(true);
+                setIsConnecting(false);
+                reconnectAttemptsRef.current = 0;
+
+                // Отправляем приветственное сообщение
+                ws.send(JSON.stringify({ type: 'ping' }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    // Обрабатываем системные сообщения
+                    if (data.type === 'pong') {
+                        return;
+                    }
+
+                    // Уведомляем подписчиков
+                    if (data.channel && subscribersRef.current.has(data.channel)) {
+                        subscribersRef.current.get(data.channel)?.forEach(callback => {
+                            callback(data);
+                        });
+                    }
+
+                    // Broadcast всем подписчикам если канал не указан
+                    if (!data.channel) {
+                        subscribersRef.current.forEach((callbacks) => {
+                            callbacks.forEach(callback => callback(data));
+                        });
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка обработки WebSocket сообщения:', error);
+                }
+            };
+
+            ws.onclose = (event) => {
+                console.log('🔌 WebSocket соединение закрыто:', event.code);
+                setIsConnected(false);
+                setIsConnecting(false);
+
+                // Автоматическое переподключение
+                if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+                    console.log(`🔄 Попытка переподключения ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts} через ${delay}ms`);
+
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        reconnectAttemptsRef.current++;
+                        connect();
+                    }, delay);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket ошибка:', error);
+                setIsConnecting(false);
+            };
+
+            wsRef.current = ws;
+        } catch (error) {
+            console.error('❌ Ошибка создания WebSocket соединения:', error);
+            setIsConnecting(false);
             setIsConnected(false);
-            setIsConnecting(false);
-
-            // Автоматическое переподключение
-            if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-                const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
-                console.log(`🔄 Попытка переподключения ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts} через ${delay}ms`);
-
-                reconnectTimeoutRef.current = setTimeout(() => {
-                    reconnectAttemptsRef.current++;
-                    connect();
-                }, delay);
-            }
-        };
-
-        ws.onerror = (error) => {
-            console.error('❌ WebSocket ошибка:', error);
-            setIsConnecting(false);
-        };
-
-        wsRef.current = ws;
+        }
     }, []);
 
     const disconnect = useCallback(() => {
@@ -176,11 +197,33 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     }, []);
 
     useEffect(() => {
-        connect();
+        try {
+            // Проверяем доступность WebSocket API
+            if (typeof WebSocket === 'undefined') {
+                console.warn('⚠️ WebSocket не поддерживается в этом браузере');
+                return;
+            }
 
-        return () => {
-            disconnect();
-        };
+            // Задержка подключения для избежания ошибок при инициализации
+            const timeoutId = setTimeout(() => {
+                try {
+                    connect();
+                } catch (error) {
+                    console.error('❌ Ошибка подключения WebSocket:', error);
+                }
+            }, 1000);
+
+            return () => {
+                clearTimeout(timeoutId);
+                try {
+                    disconnect();
+                } catch (error) {
+                    console.error('❌ Ошибка отключения WebSocket:', error);
+                }
+            };
+        } catch (error) {
+            console.error('❌ Ошибка инициализации WebSocket:', error);
+        }
     }, [connect, disconnect]);
 
     const value: WebSocketContextType = {
@@ -202,7 +245,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
 export const useWebSocketContext = () => {
     const context = useContext(WebSocketContext);
     if (!context) {
-        throw new Error('useWebSocketContext должен использоваться внутри WebSocketProvider');
+        // Более информативная ошибка для отладки
+        console.error('❌ useWebSocketContext hook called outside of WebSocketProvider');
+        console.error('❌ Component stack:', new Error().stack);
+        throw new Error('useWebSocketContext должен использоваться внутри WebSocketProvider. Check that your component is wrapped in <WebSocketProvider>');
     }
     return context;
 };

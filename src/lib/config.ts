@@ -14,7 +14,7 @@ export const API_BASE_URL = isProduction
 
 // WebSocket URL в зависимости от окружения
 export const WS_BASE_URL = isProduction
-    ? import.meta.env.VITE_WS_URL || 'wss://waxhands.ru/ws'
+    ? import.meta.env.VITE_WS_URL || 'wss://waxhands.ru:3002/ws'
     : 'ws://localhost:3002';
 
 // Функция для получения полного URL файла

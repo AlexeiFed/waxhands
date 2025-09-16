@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { AnimatedStars } from '@/components/ui/animated-stars';
 import { PhotoGalleryModal } from '@/components/ui/photo-gallery-modal';
 import { VideoPlayerModal } from '@/components/ui/video-player-modal';
@@ -41,8 +42,54 @@ import {
     Camera,
     Gift,
     Lock,
-    CreditCard
+    CreditCard,
+    FileText
 } from 'lucide-react';
+
+// Компонент для выбора количества
+interface QuantitySelectorProps {
+    value: number;
+    onChange: (value: number) => void;
+    min?: number;
+    max?: number;
+    disabled?: boolean;
+    size?: 'sm' | 'md';
+}
+
+const QuantitySelector = ({
+    value,
+    onChange,
+    min = 1,
+    max = 10,
+    disabled = false,
+    size = 'sm'
+}: QuantitySelectorProps) => {
+    const isSmall = size === 'sm';
+
+    return (
+        <div className="flex items-center space-x-1">
+            <Button
+                size={isSmall ? "sm" : "default"}
+                variant="outline"
+                onClick={() => onChange(Math.max(min, value - 1))}
+                disabled={disabled || value <= min}
+                className={`${isSmall ? 'h-6 w-6 p-0' : 'h-8 w-8 p-0'} text-xs font-bold`}
+            >
+                -
+            </Button>
+            <span className={`${isSmall ? 'w-6 text-xs' : 'w-8 text-sm'} text-center font-medium`}>{value}</span>
+            <Button
+                size={isSmall ? "sm" : "default"}
+                variant="outline"
+                onClick={() => onChange(Math.min(max, value + 1))}
+                disabled={disabled || value >= max}
+                className={`${isSmall ? 'h-6 w-6 p-0' : 'h-8 w-8 p-0'} text-xs font-bold`}
+            >
+                +
+            </Button>
+        </div>
+    );
+};
 
 interface WorkshopCardData {
     id: string;
@@ -105,24 +152,22 @@ interface ChildRegistration {
     childId: string;
     childName: string;
     childAge: number;
-    selectedStyles: string[];
-    selectedOptions: string[];
+    selectedStyles: Array<{
+        styleId: string;
+        quantity: number;
+        price: number;
+    }>;
+    selectedOptions: Array<{
+        optionId: string;
+        quantity: number;
+        price: number;
+    }>;
     totalAmount: number;
     isCompleted: boolean;
+    notes?: string; // Примечания к заказу
 }
 
-// Взаимоисключающие группы стилей
-const EXCLUSIVE_STYLE_GROUPS = [
-    ['Обычная ручка', 'Световая ручка'],
-    ['Двойные ручки', 'Двойные световые ручки']
-];
-
-// Группы взаимоисключающих опций
-const EXCLUSIVE_OPTION_GROUPS = [
-    ['Лакировка', 'Лакировка с блестками'],
-    ['Надпись', 'Надпись световая'],
-    ['Наклейка', 'Наклейка объемная']
-];
+// Убрана группировка - теперь можно выбирать все стили и опции
 
 // Возрастные ограничения для стилей
 const AGE_RESTRICTIONS = {
@@ -193,6 +238,67 @@ export default function MultiChildWorkshopModal({
         }
     }, [children]);
 
+    // Проверка и фильтрация уже записанных детей
+    useEffect(() => {
+        const checkExistingRegistrations = async () => {
+            if (!workshop || !children || children.length === 0) return;
+
+            try {
+                console.log('🔍 Проверяем существующие регистрации при инициализации...');
+                const existingRegistrations = await api.workshopRegistrations.getRegistrations(workshop.id);
+                const existingUserIds = existingRegistrations.map(reg => reg.userId);
+
+                const alreadyRegistered = children.filter(child =>
+                    existingUserIds.includes(child.id)
+                );
+
+                if (alreadyRegistered.length > 0) {
+                    const names = alreadyRegistered.map(child => child.name).join(', ');
+                    toast({
+                        title: "Внимание",
+                        description: `Следующие дети уже записаны на этот мастер-класс: ${names}. Они будут исключены из формы записи.`,
+                        variant: "default",
+                        duration: 8000,
+                    });
+
+                    // Фильтруем детей, исключая уже записанных
+                    const availableChildren = children.filter(child =>
+                        !existingUserIds.includes(child.id)
+                    );
+
+                    if (availableChildren.length === 0) {
+                        toast({
+                            title: "Все дети уже записаны",
+                            description: "Все ваши дети уже записаны на этот мастер-класс. Закройте это окно.",
+                            variant: "destructive",
+                            duration: 10000,
+                        });
+                        // Закрываем модальное окно
+                        setTimeout(() => onOpenChange(false), 2000);
+                        return;
+                    }
+
+                    // Обновляем список детей только доступными
+                    const registrations = availableChildren.map(child => ({
+                        childId: child.id,
+                        childName: child.name,
+                        childAge: child.age,
+                        selectedStyles: [],
+                        selectedOptions: [],
+                        totalAmount: 0,
+                        isCompleted: false
+                    }));
+                    setChildRegistrations(registrations);
+                }
+            } catch (error) {
+                console.warn('⚠️ Не удалось проверить существующие регистрации при инициализации:', error);
+                // Продолжаем с исходным списком детей
+            }
+        };
+
+        checkExistingRegistrations();
+    }, [workshop, children, onOpenChange, toast]);
+
     // Поиск сервиса по названию мастер-класса
     useEffect(() => {
         if (workshop && services) {
@@ -204,15 +310,28 @@ export default function MultiChildWorkshopModal({
     const getCurrentChild = () => childRegistrations[currentStep];
     const getCurrentChildTotal = () => getCurrentChild()?.totalAmount || 0;
 
-    // Проверка взаимоисключающих стилей
-    const isStyleExclusive = (styleName: string, selectedStyles: string[]) => {
-        const group = EXCLUSIVE_STYLE_GROUPS.find(g => g.includes(styleName));
-        if (!group) return false;
-
-        return group.some(otherStyle =>
-            otherStyle !== styleName && selectedStyles.includes(otherStyle)
-        );
+    // Вспомогательные функции для работы с количеством
+    const getStyleQuantity = (styleId: string) => {
+        const currentChild = getCurrentChild();
+        const styleSelection = currentChild?.selectedStyles.find(s => s.styleId === styleId);
+        return styleSelection?.quantity || 0;
     };
+
+    const getOptionQuantity = (optionId: string) => {
+        const currentChild = getCurrentChild();
+        const optionSelection = currentChild?.selectedOptions.find(o => o.optionId === optionId);
+        return optionSelection?.quantity || 0;
+    };
+
+    const isStyleSelected = (styleId: string) => {
+        return getStyleQuantity(styleId) > 0;
+    };
+
+    const isOptionSelected = (optionId: string) => {
+        return getOptionQuantity(optionId) > 0;
+    };
+
+    // Убрана проверка взаимоисключающих стилей - теперь можно выбирать все
 
     // Проверка возрастных ограничений
     const isStyleAgeRestricted = (styleName: string, childAge: number) => {
@@ -222,13 +341,13 @@ export default function MultiChildWorkshopModal({
         return childAge >= restriction.min && childAge <= restriction.max;
     };
 
-    // Проверка блокировки стиля
-    const isStyleBlocked = (styleName: string, childAge: number, selectedStyles: string[]) => {
-        return isStyleExclusive(styleName, selectedStyles) || !isStyleAgeRestricted(styleName, childAge);
+    // Проверка блокировки стиля (только возрастные ограничения)
+    const isStyleBlocked = (styleName: string, childAge: number, selectedStyles: Array<{ styleId: string; quantity: number; price: number }>) => {
+        return !isStyleAgeRestricted(styleName, childAge);
     };
 
     // Получение доступных стилей для ребенка
-    const getAvailableStyles = (childAge: number, selectedStyles: string[]) => {
+    const getAvailableStyles = (childAge: number, selectedStyles: Array<{ styleId: string; quantity: number; price: number }>) => {
         if (!currentService) return [];
 
         return currentService.styles.filter(style => {
@@ -238,7 +357,7 @@ export default function MultiChildWorkshopModal({
     };
 
     // Получение заблокированных стилей для ребенка
-    const getBlockedStyles = (childAge: number, selectedStyles: string[]) => {
+    const getBlockedStyles = (childAge: number, selectedStyles: Array<{ styleId: string; quantity: number; price: number }>) => {
         if (!currentService) return [];
 
         return currentService.styles.filter(style => {
@@ -276,7 +395,7 @@ export default function MultiChildWorkshopModal({
 
         try {
             // Используем getFileUrl для правильного формирования URL
-            let absoluteUrl = getFileUrl(url);
+            const absoluteUrl = getFileUrl(url);
 
             // Проверяем что URL валидный
             const urlObj = new URL(absoluteUrl);
@@ -411,42 +530,42 @@ export default function MultiChildWorkshopModal({
         }
     };
 
-    // Переключение стиля
-    const handleStyleToggle = (styleId: string, isChecked: boolean) => {
+    // Изменение количества стиля
+    const handleStyleQuantityChange = (styleId: string, quantity: number) => {
         const currentChild = getCurrentChild();
         if (!currentChild) return;
 
         setChildRegistrations(prev => prev.map(reg => {
             if (reg.childId === currentChild.childId) {
                 let newStyles = [...reg.selectedStyles];
+                const style = currentService?.styles.find(s => s.id === styleId);
 
-                if (isChecked) {
-                    // Удаляем взаимоисключающие стили
-                    const style = currentService?.styles.find(s => s.id === styleId);
-                    if (style) {
-                        const group = EXCLUSIVE_STYLE_GROUPS.find(g => g.includes(style.name));
-                        if (group) {
-                            newStyles = newStyles.filter(s => {
-                                const styleObj = currentService?.styles.find(ss => ss.id === s);
-                                return !styleObj || !group.includes(styleObj.name);
-                            });
-                        }
-                    }
-                    newStyles.push(styleId);
+                if (!style) return reg;
+
+                if (quantity === 0) {
+                    // Удаляем стиль если количество 0
+                    newStyles = newStyles.filter(s => s.styleId !== styleId);
                 } else {
-                    newStyles = newStyles.filter(id => id !== styleId);
+                    // Добавляем или обновляем стиль (группировка убрана)
+                    const existingIndex = newStyles.findIndex(s => s.styleId === styleId);
+                    if (existingIndex >= 0) {
+                        newStyles[existingIndex] = {
+                            styleId,
+                            quantity,
+                            price: style.price
+                        };
+                    } else {
+                        newStyles.push({
+                            styleId,
+                            quantity,
+                            price: style.price
+                        });
+                    }
                 }
 
                 // Пересчитываем стоимость
-                const stylesCost = newStyles.reduce((sum, id) => {
-                    const style = currentService?.styles.find(s => s.id === id);
-                    return sum + (style?.price || 0);
-                }, 0);
-
-                const optionsCost = reg.selectedOptions.reduce((sum, id) => {
-                    const option = currentService?.options.find(o => o.id === id);
-                    return sum + (option?.price || 0);
-                }, 0);
+                const stylesCost = newStyles.reduce((sum, s) => sum + (s.price * s.quantity), 0);
+                const optionsCost = reg.selectedOptions.reduce((sum, o) => sum + (o.price * o.quantity), 0);
 
                 return {
                     ...reg,
@@ -458,8 +577,8 @@ export default function MultiChildWorkshopModal({
         }));
     };
 
-    // Переключение опции
-    const handleOptionToggle = (optionId: string, isChecked: boolean) => {
+    // Изменение количества опции
+    const handleOptionQuantityChange = (optionId: string, quantity: number) => {
         const currentChild = getCurrentChild();
         if (!currentChild) return;
 
@@ -470,58 +589,30 @@ export default function MultiChildWorkshopModal({
             if (reg.childId === currentChild.childId) {
                 let newOptions = [...reg.selectedOptions];
 
-                // Проверяем взаимоисключающие группы опций
-                for (const group of EXCLUSIVE_OPTION_GROUPS) {
-                    if (group.includes(option.name)) {
-                        // Находим все опции из этой группы
-                        const groupOptionIds = currentService?.options
-                            .filter(o => group.includes(o.name))
-                            .map(o => o.id) || [];
-
-                        // Убираем все опции из этой группы
-                        newOptions = newOptions.filter(id => !groupOptionIds.includes(id));
-
-                        // Если текущая опция выбирается, добавляем её
-                        if (isChecked) {
-                            newOptions.push(optionId);
-                        }
-
-                        // Пересчитываем стоимость
-                        const stylesCost = reg.selectedStyles.reduce((sum, id) => {
-                            const style = currentService?.styles.find(s => s.id === id);
-                            return sum + (style?.price || 0);
-                        }, 0);
-
-                        const optionsCost = newOptions.reduce((sum, id) => {
-                            const opt = currentService?.options.find(o => o.id === id);
-                            return sum + (opt?.price || 0);
-                        }, 0);
-
-                        return {
-                            ...reg,
-                            selectedOptions: newOptions,
-                            totalAmount: stylesCost + optionsCost
+                if (quantity === 0) {
+                    // Удаляем опцию если количество 0
+                    newOptions = newOptions.filter(o => o.optionId !== optionId);
+                } else {
+                    // Добавляем или обновляем опцию (группировка убрана)
+                    const existingIndex = newOptions.findIndex(o => o.optionId === optionId);
+                    if (existingIndex >= 0) {
+                        newOptions[existingIndex] = {
+                            optionId,
+                            quantity,
+                            price: option.price
                         };
+                    } else {
+                        newOptions.push({
+                            optionId,
+                            quantity,
+                            price: option.price
+                        });
                     }
                 }
 
-                // Для обычных опций (не взаимоисключающих)
-                if (isChecked) {
-                    newOptions.push(optionId);
-                } else {
-                    newOptions = newOptions.filter(id => id !== optionId);
-                }
-
                 // Пересчитываем стоимость
-                const stylesCost = reg.selectedStyles.reduce((sum, id) => {
-                    const style = currentService?.styles.find(s => s.id === id);
-                    return sum + (style?.price || 0);
-                }, 0);
-
-                const optionsCost = newOptions.reduce((sum, id) => {
-                    const opt = currentService?.options.find(o => o.id === id);
-                    return sum + (opt?.price || 0);
-                }, 0);
+                const stylesCost = reg.selectedStyles.reduce((sum, s) => sum + (s.price * s.quantity), 0);
+                const optionsCost = newOptions.reduce((sum, o) => sum + (o.price * o.quantity), 0);
 
                 return {
                     ...reg,
@@ -539,10 +630,11 @@ export default function MultiChildWorkshopModal({
         if (!currentChild) return;
 
         // Проверяем, что выбран хотя бы один стиль
-        if (currentChild.selectedStyles.length === 0) {
+        const hasSelectedStyles = currentChild.selectedStyles.some(s => s.quantity > 0);
+        if (!hasSelectedStyles) {
             toast({
                 title: "Ошибка",
-                description: `Выберите хотя бы один стиль для ${currentChild.childName}`,
+                description: `Выберите хотя бы один вариант ручки для ${currentChild.childName}`,
                 variant: "destructive"
             });
             return;
@@ -583,53 +675,54 @@ export default function MultiChildWorkshopModal({
 
         for (const reg of childRegistrations) {
             // Проверяем что у каждого ребенка выбран хотя бы один стиль
-            if (reg.selectedStyles.length === 0) {
-                errors.push(`${reg.childName}: не выбран ни один стиль`);
+            const hasSelectedStyles = reg.selectedStyles.some(s => s.quantity > 0);
+            if (!hasSelectedStyles) {
+                errors.push(`${reg.childName}: не выбран ни один вариант ручки`);
                 continue;
             }
 
             // Проверяем валидность выбранных стилей
-            for (const styleId of reg.selectedStyles) {
-                const style = currentService.styles.find(s => s.id === styleId);
-                if (!style) {
-                    errors.push(`${reg.childName}: недопустимый стиль (ID: ${styleId})`);
+            for (const styleSelection of reg.selectedStyles) {
+                if (styleSelection.quantity > 0) {
+                    const style = currentService.styles.find(s => s.id === styleSelection.styleId);
+                    if (!style) {
+                        errors.push(`${reg.childName}: недопустимый вариант ручки (ID: ${styleSelection.styleId})`);
+                    }
+                    if (styleSelection.quantity < 1 || styleSelection.quantity > 5) {
+                        errors.push(`${reg.childName}: недопустимое количество для стиля (${styleSelection.quantity})`);
+                    }
                 }
             }
 
             // Проверяем валидность выбранных опций
-            for (const optionId of reg.selectedOptions) {
-                const option = currentService.options.find(o => o.id === optionId);
-                if (!option) {
-                    errors.push(`${reg.childName}: недопустимая опция (ID: ${optionId})`);
+            for (const optionSelection of reg.selectedOptions) {
+                if (optionSelection.quantity > 0) {
+                    const option = currentService.options.find(o => o.id === optionSelection.optionId);
+                    if (!option) {
+                        errors.push(`${reg.childName}: недопустимая дополнительная услуга (ID: ${optionSelection.optionId})`);
+                    }
+                    if (optionSelection.quantity < 1 || optionSelection.quantity > 3) {
+                        errors.push(`${reg.childName}: недопустимое количество для опции (${optionSelection.quantity})`);
+                    }
                 }
             }
 
             // Проверяем совместимость стилей и опций
-            const selectedStyleNames = (reg.selectedStyles || []).map(id => {
-                const style = currentService.styles.find(s => s.id === id);
-                return style?.name;
-            }).filter(Boolean);
+            const selectedStyleNames = (reg.selectedStyles || [])
+                .filter(s => s.quantity > 0)
+                .map(s => {
+                    const style = currentService.styles.find(st => st.id === s.styleId);
+                    return style?.name;
+                }).filter(Boolean);
 
-            const selectedOptionNames = (reg.selectedOptions || []).map(id => {
-                const option = currentService.options.find(o => o.id === id);
-                return option?.name;
-            }).filter(Boolean);
+            const selectedOptionNames = (reg.selectedOptions || [])
+                .filter(o => o.quantity > 0)
+                .map(o => {
+                    const option = currentService.options.find(op => op.id === o.optionId);
+                    return option?.name;
+                }).filter(Boolean);
 
-            // Проверяем взаимоисключающие стили
-            for (const group of EXCLUSIVE_STYLE_GROUPS) {
-                const selectedFromGroup = selectedStyleNames.filter(name => group.includes(name));
-                if (selectedFromGroup.length > 1) {
-                    errors.push(`${reg.childName}: выбраны взаимоисключающие стили: ${selectedFromGroup.join(', ')}`);
-                }
-            }
-
-            // Проверяем взаимоисключающие опции
-            for (const group of EXCLUSIVE_OPTION_GROUPS) {
-                const selectedFromGroup = selectedOptionNames.filter(name => group.includes(name));
-                if (selectedFromGroup.length > 1) {
-                    errors.push(`${reg.childName}: выбраны взаимоисключающие опции: ${selectedFromGroup.join(', ')}`);
-                }
-            }
+            // Убрана проверка взаимоисключающих стилей и опций - теперь можно выбирать все
 
             // Проверяем возрастные ограничения
             for (const styleName of selectedStyleNames) {
@@ -639,14 +732,12 @@ export default function MultiChildWorkshopModal({
             }
 
             // Проверяем соответствие стоимости
-            const calculatedStylesCost = (reg.selectedStyles || []).reduce((sum, id) => {
-                const style = currentService.styles.find(s => s.id === id);
-                return sum + (style?.price || 0);
+            const calculatedStylesCost = (reg.selectedStyles || []).reduce((sum, s) => {
+                return sum + (s.price * s.quantity);
             }, 0);
 
-            const calculatedOptionsCost = (reg.selectedOptions || []).reduce((sum, id) => {
-                const option = currentService.options.find(o => o.id === id);
-                return sum + (option?.price || 0);
+            const calculatedOptionsCost = (reg.selectedOptions || []).reduce((sum, o) => {
+                return sum + (o.price * o.quantity);
             }, 0);
 
             const calculatedTotal = calculatedStylesCost + calculatedOptionsCost;
@@ -713,7 +804,13 @@ export default function MultiChildWorkshopModal({
 
             if (alreadyRegistered.length > 0) {
                 const names = alreadyRegistered.map(reg => reg.childName).join(', ');
-                throw new Error(`Следующие дети уже записаны на этот мастер-класс: ${names}`);
+                toast({
+                    title: "Ошибка записи",
+                    description: `Следующие дети уже записаны на этот мастер-класс: ${names}. Пожалуйста, выберите других детей или закройте это окно.`,
+                    variant: "destructive",
+                    duration: 10000,
+                });
+                return; // Прерываем выполнение
             }
 
             console.log('✅ Проверка существующих регистраций пройдена');
@@ -744,13 +841,24 @@ export default function MultiChildWorkshopModal({
             const groupRegistrationData = {
                 workshopId: workshop.id,
                 parentId: user.id,
-                children: childRegistrations.map(reg => ({
-                    childId: reg.childId,
-                    childName: reg.childName,
-                    style: reg.selectedStyles.join(', '),
-                    options: reg.selectedOptions,
-                    totalPrice: reg.totalAmount
-                }))
+                children: childRegistrations.map(reg => {
+                    // Преобразуем новую структуру в старый формат для API
+                    const styles = reg.selectedStyles.flatMap(s =>
+                        Array(s.quantity).fill(s.styleId)
+                    );
+                    const options = reg.selectedOptions.flatMap(o =>
+                        Array(o.quantity).fill(o.optionId)
+                    );
+
+                    return {
+                        childId: reg.childId,
+                        childName: reg.childName,
+                        style: styles.join(', '),
+                        options: options,
+                        totalPrice: reg.totalAmount,
+                        notes: reg.notes || '' // Добавляем примечания
+                    };
+                })
             };
 
             console.log('📤 Отправляем данные групповой регистрации:', groupRegistrationData);
@@ -812,12 +920,23 @@ export default function MultiChildWorkshopModal({
 
             // Детализированное сообщение об ошибке
             const errorMessage = error.message || 'Неизвестная ошибка';
-            toast({
-                title: "Ошибка записи",
-                description: `Не удалось записать детей на мастер-класс: ${errorMessage}`,
-                variant: "destructive",
-                duration: 8000,
-            });
+
+            // Специальная обработка для дублирующихся регистраций
+            if (errorMessage.includes('already registered')) {
+                toast({
+                    title: "Ребенок уже записан",
+                    description: "Один или несколько детей уже записаны на этот мастер-класс. Пожалуйста, обновите страницу и попробуйте снова.",
+                    variant: "destructive",
+                    duration: 10000,
+                });
+            } else {
+                toast({
+                    title: "Ошибка записи",
+                    description: `Не удалось записать детей на мастер-класс: ${errorMessage}`,
+                    variant: "destructive",
+                    duration: 8000,
+                });
+            }
         } finally {
             console.log('🏁 MODAL: Завершение процесса отправки заявок');
             setIsSubmitting(false);
@@ -852,20 +971,23 @@ export default function MultiChildWorkshopModal({
         console.log('🎉 MODAL: Рендерим успешное состояние');
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="max-w-2xl p-6">
+                <DialogContent className="max-w-2xl p-6 bg-gradient-wax-hands border-0 shadow-2xl mx-auto">
+                    {/* Анимированные звездочки */}
+                    <AnimatedStars count={15} className="opacity-40" />
+
                     <div className="text-center mb-6">
                         <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                        <DialogTitle className="text-xl font-bold text-green-600 mb-2">
+                        <DialogTitle className="text-xl font-bold text-white mb-2 drop-shadow-lg">
                             Запись завершена!
                         </DialogTitle>
-                        <DialogDescription className="text-gray-600">
+                        <DialogDescription className="text-white/90 drop-shadow-md">
                             Все дети успешно записаны на мастер-класс "{workshop.title}"
                         </DialogDescription>
                     </div>
 
                     {/* Секция оплаты */}
                     {showPaymentSection && createdInvoices.length > 0 && (
-                        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 mb-6 border border-blue-200">
+                        <div className="bg-white/90 backdrop-blur-sm rounded-lg p-4 sm:p-6 mb-6 border border-white/20 shadow-lg max-w-full overflow-hidden">
                             <div className="flex items-center space-x-2 mb-4">
                                 <CreditCard className="w-6 h-6 text-blue-600" />
                                 <h3 className="text-lg font-semibold text-gray-800">
@@ -875,17 +997,17 @@ export default function MultiChildWorkshopModal({
 
                             <div className="space-y-4">
                                 {createdInvoices.map((invoice) => (
-                                    <div key={invoice.id} className="bg-white rounded-lg p-4 border border-gray-200">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <div>
-                                                <p className="font-medium text-gray-900">
+                                    <div key={invoice.id} className="bg-white rounded-lg p-3 sm:p-4 border border-gray-200 w-full max-w-full overflow-hidden">
+                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-gray-900 truncate">
                                                     Счет №{invoice.id.slice(-8)}
                                                 </p>
-                                                <p className="text-sm text-gray-600">
+                                                <p className="text-sm text-gray-600 truncate">
                                                     {invoice.participant_name} - {new Date(invoice.workshop_date || '').toLocaleDateString('ru-RU')}
                                                 </p>
                                             </div>
-                                            <div className="text-right">
+                                            <div className="text-left sm:text-right flex-shrink-0">
                                                 <p className="text-lg font-bold text-green-600">
                                                     {invoice.amount} ₽
                                                 </p>
@@ -896,40 +1018,43 @@ export default function MultiChildWorkshopModal({
                                         </div>
 
                                         {invoice.status === 'pending' && (
-                                            <YandexPaymentButton
-                                                invoiceId={invoice.id}
-                                                amount={invoice.amount}
-                                                description={`Участие в мастер-классе "${workshop.title}" для ${invoice.participant_name}`}
-                                                children={[{
-                                                    id: invoice.participant_id || '',
-                                                    name: invoice.participant_name || '',
-                                                    selectedServices: ['Мастер-класс'],
-                                                    totalAmount: invoice.amount
-                                                }]}
-                                                masterClassName={workshop.title}
-                                                eventDate={workshop.date}
-                                                eventTime={workshop.time}
-                                                onPaymentSuccess={() => {
-                                                    toast({
-                                                        title: "Оплата успешна! 🎉",
-                                                        description: "Статус счета обновлен. Спасибо за оплату!",
-                                                    });
-                                                    // Обновляем статус счета локально
-                                                    setCreatedInvoices(prev =>
-                                                        prev.map(inv =>
-                                                            inv.id === invoice.id
-                                                                ? { ...inv, status: 'paid' as const }
-                                                                : inv
-                                                        )
-                                                    );
-                                                }}
-                                                onPaymentError={(error) => {
-                                                    console.error('Ошибка оплаты:', error);
-                                                }}
-                                                className="w-full"
-                                                variant="default"
-                                                size="lg"
-                                            />
+                                            <div className="w-full max-w-full overflow-hidden">
+                                                <YandexPaymentButton
+                                                    invoiceId={invoice.id}
+                                                    amount={invoice.amount}
+                                                    description={`Участие в мастер-классе "${workshop.title}" для ${invoice.participant_name}`}
+                                                    children={[{
+                                                        id: invoice.participant_id || '',
+                                                        name: invoice.participant_name || '',
+                                                        selectedServices: ['Мастер-класс'],
+                                                        totalAmount: invoice.amount
+                                                    }]}
+                                                    masterClassName={workshop.title}
+                                                    eventDate={workshop.date}
+                                                    eventTime={workshop.time}
+                                                    isPaymentDisabled={true}
+                                                    onPaymentSuccess={() => {
+                                                        toast({
+                                                            title: "Оплата успешна! 🎉",
+                                                            description: "Статус счета обновлен. Спасибо за оплату!",
+                                                        });
+                                                        // Обновляем статус счета локально
+                                                        setCreatedInvoices(prev =>
+                                                            prev.map(inv =>
+                                                                inv.id === invoice.id
+                                                                    ? { ...inv, status: 'paid' as const }
+                                                                    : inv
+                                                            )
+                                                        );
+                                                    }}
+                                                    onPaymentError={(error) => {
+                                                        console.error('Ошибка оплаты:', error);
+                                                    }}
+                                                    className="w-full max-w-full"
+                                                    variant="default"
+                                                    size="lg"
+                                                />
+                                            </div>
                                         )}
 
                                         {invoice.status === 'paid' && (
@@ -977,7 +1102,7 @@ export default function MultiChildWorkshopModal({
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className={`w-[98vw] max-w-[98vw] sm:w-[95vw] sm:max-w-[95vw] md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50 border-0 shadow-2xl ${isSmallScreen ? 'p-1 px-4 scrollbar-hide' : 'p-2 sm:p-4 md:p-6'} animate-in fade-in-0 zoom-in-95 duration-300`}>
+                <DialogContent className={`w-[98vw] max-w-[98vw] sm:w-[95vw] sm:max-w-[95vw] md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto bg-gradient-wax-hands border-0 shadow-2xl mx-auto ${isSmallScreen ? 'p-1 px-4 pt-8 pb-8 scrollbar-hide' : 'p-2 sm:p-4 md:p-6 pt-12 pb-12'} animate-in fade-in-0 zoom-in-95 duration-300`}>
 
 
                     {/* Анимированные звездочки */}
@@ -999,8 +1124,8 @@ export default function MultiChildWorkshopModal({
                         </div>
                         <DialogDescription className={`${isSmallScreen ? 'text-xs' : 'text-base sm:text-lg'} text-gray-600 max-w-2xl mx-auto`}>
                             {isViewMode ?
-                                (isSmallScreen ? 'Просмотр выбранных стилей и опций' : 'Просмотр выбранных стилей, опций и общей стоимости заказа') :
-                                (isSmallScreen ? 'Заполните форму для каждого ребенка' : 'Пошагово заполните форму для каждого ребенка. Сначала выберите стили и опции для первого ребенка, затем переходите к следующему.')
+                                (isSmallScreen ? 'Просмотр выбранных вариантов ручек и дополнительных услуг' : 'Просмотр выбранных вариантов ручек, дополнительных услуг и общей стоимости заказа') :
+                                (isSmallScreen ? 'Заполните форму для каждого ребенка' : 'Пошагово заполните форму для каждого ребенка. Сначала выберите варианты ручек и дополнительные услуги для первого ребенка, затем переходите к следующему.')
                             }
                         </DialogDescription>
                     </div>
@@ -1055,7 +1180,7 @@ export default function MultiChildWorkshopModal({
                                                 Детали заказа
                                             </CardTitle>
                                             <CardDescription className={`text-green-600 ${isSmallScreen ? 'text-sm' : 'text-base sm:text-lg'}`}>
-                                                Выбранные стили, опции и стоимость для каждого ребенка
+                                                Выбранные варианты ручек, дополнительные услуги и стоимость для каждого ребенка
                                             </CardDescription>
                                         </div>
                                     </div>
@@ -1134,7 +1259,7 @@ export default function MultiChildWorkshopModal({
                                                 {/* Выбранные стили */}
                                                 {(selectedStyles || []).length > 0 && (
                                                     <div className="mb-3">
-                                                        <div className="text-sm font-medium text-gray-700 mb-2">Выбранные стили:</div>
+                                                        <div className="text-sm font-medium text-gray-700 mb-2">Выбранные варианты ручек:</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(selectedStyles || []).map((style, styleIndex) => (
                                                                 <Badge key={styleIndex} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
@@ -1148,7 +1273,7 @@ export default function MultiChildWorkshopModal({
                                                 {/* Выбранные опции */}
                                                 {(selectedOptions || []).length > 0 && (
                                                     <div className="mb-3">
-                                                        <div className="text-sm font-medium text-gray-700 mb-2">Дополнительные опции:</div>
+                                                        <div className="text-sm font-medium text-gray-700 mb-2">Дополнительные услуги:</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(selectedOptions || []).map((option, optionIndex) => (
                                                                 <Badge key={optionIndex} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
@@ -1225,10 +1350,10 @@ export default function MultiChildWorkshopModal({
                                         </div>
                                         <div className="flex-1">
                                             <CardTitle className={`${isSmallScreen ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'} font-bold text-gray-800`}>
-                                                Выберите вариант руки
+                                                Выберите вариант ручки
                                             </CardTitle>
                                             <CardDescription className={`text-gray-600 ${isSmallScreen ? 'text-sm' : 'text-base sm:text-lg'}`}>
-                                                Выберите вариант руки для {getCurrentChild()?.childName}
+                                                Выберите вариант ручки для {getCurrentChild()?.childName}
                                             </CardDescription>
                                         </div>
                                     </div>
@@ -1254,7 +1379,8 @@ export default function MultiChildWorkshopModal({
                                     {/* Стили */}
                                     <div className={`grid ${isSmallScreen ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'} gap-2 sm:gap-4`}>
                                         {currentService?.styles.map((style) => {
-                                            const isSelected = getCurrentChild()?.selectedStyles.includes(style.id);
+                                            const isSelected = isStyleSelected(style.id);
+                                            const quantity = getStyleQuantity(style.id);
                                             const isBlocked = isStyleBlocked(style.name, getCurrentChild()?.childAge || 0, getCurrentChild()?.selectedStyles || []);
                                             const isAgeRestricted = !isStyleAgeRestricted(style.name, getCurrentChild()?.childAge || 0);
 
@@ -1276,7 +1402,7 @@ export default function MultiChildWorkshopModal({
                                                             ? 'border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100 cursor-not-allowed opacity-60'
                                                             : 'border-gray-200 bg-gradient-to-br from-white to-gray-50 hover:border-purple-300 hover:shadow-md hover:shadow-purple-100'
                                                         }`}
-                                                    onClick={() => !isBlocked && handleStyleToggle(style.id, !isSelected)}
+                                                    onClick={() => !isBlocked && handleStyleQuantityChange(style.id, isSelected ? 0 : 1)}
                                                 >
                                                     {/* Бейдж для возрастных ограничений */}
                                                     {isAgeRestricted && (
@@ -1327,13 +1453,38 @@ export default function MultiChildWorkshopModal({
                                                             />
                                                         </div>
 
-                                                        {/* Цена */}
-                                                        <div className={`font-bold text-purple-600 ${isSmallScreen ? 'text-lg' : 'text-xl'} bg-purple-50 px-3 py-2 rounded-lg inline-block`}>
-                                                            {style.price} ₽
+                                                        {/* Цена и количество */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className={`font-bold text-purple-600 ${isSmallScreen ? 'text-lg' : 'text-xl'} bg-purple-50 px-3 py-2 rounded-lg`}>
+                                                                {isSelected ? (
+                                                                    <>
+                                                                        {style.price * quantity} ₽
+                                                                        {quantity > 1 && (
+                                                                            <span className="text-sm text-gray-500 ml-1">
+                                                                                ({style.price} ₽ × {quantity})
+                                                                            </span>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    `${style.price} ₽`
+                                                                )}
+                                                            </div>
+                                                            {isSelected && (
+                                                                <div onClick={(e) => e.stopPropagation()}>
+                                                                    <QuantitySelector
+                                                                        value={quantity}
+                                                                        onChange={(newQuantity) => handleStyleQuantityChange(style.id, newQuantity)}
+                                                                        min={1}
+                                                                        max={5}
+                                                                        disabled={isBlocked}
+                                                                        size="sm"
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         {/* Медиа контент */}
-                                                        <div className={`flex items-center ${isSmallScreen ? 'space-x-2' : 'space-x-3'} pt-2`}>
+                                                        <div className={`flex items-center ${isSmallScreen ? 'space-x-2' : 'space-x-3'} pt-2`} onClick={(e) => e.stopPropagation()}>
                                                             {style.images && style.images.length > 0 && (
                                                                 <Button
                                                                     type="button"
@@ -1400,8 +1551,9 @@ export default function MultiChildWorkshopModal({
                                     {/* Опции */}
                                     <div className={`grid ${isSmallScreen ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'} gap-2 sm:gap-4`}>
                                         {currentService?.options.map((option) => {
-                                            const isSelected = getCurrentChild()?.selectedOptions.includes(option.id);
-                                            const isExclusive = EXCLUSIVE_OPTION_GROUPS.some(group => group.includes(option.name));
+                                            const isSelected = isOptionSelected(option.id);
+                                            const quantity = getOptionQuantity(option.id);
+                                            // Убрана проверка взаимоисключающих опций
 
                                             // Отладочная информация для аватаров
                                             const avatarUrl = getFileUrl(option.avatar || '');
@@ -1419,7 +1571,7 @@ export default function MultiChildWorkshopModal({
                                                         ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg shadow-blue-200'
                                                         : 'border-gray-200 bg-gradient-to-br from-white to-gray-50 hover:border-blue-300 hover:shadow-md hover:shadow-blue-100'
                                                         }`}
-                                                    onClick={() => handleOptionToggle(option.id, !isSelected)}
+                                                    onClick={() => handleOptionQuantityChange(option.id, isSelected ? 0 : 1)}
                                                 >
 
 
@@ -1461,13 +1613,37 @@ export default function MultiChildWorkshopModal({
                                                             />
                                                         </div>
 
-                                                        {/* Цена */}
-                                                        <div className={`font-bold text-blue-600 ${isSmallScreen ? 'text-lg' : 'text-xl'} bg-blue-50 px-3 py-2 rounded-lg inline-block`}>
-                                                            {option.price} ₽
+                                                        {/* Цена и количество */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className={`font-bold text-blue-600 ${isSmallScreen ? 'text-lg' : 'text-xl'} bg-blue-50 px-3 py-2 rounded-lg`}>
+                                                                {isSelected ? (
+                                                                    <>
+                                                                        {option.price * quantity} ₽
+                                                                        {quantity > 1 && (
+                                                                            <span className="text-sm text-gray-500 ml-1">
+                                                                                ({option.price} ₽ × {quantity})
+                                                                            </span>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    `${option.price} ₽`
+                                                                )}
+                                                            </div>
+                                                            {isSelected && (
+                                                                <div onClick={(e) => e.stopPropagation()}>
+                                                                    <QuantitySelector
+                                                                        value={quantity}
+                                                                        onChange={(newQuantity) => handleOptionQuantityChange(option.id, newQuantity)}
+                                                                        min={1}
+                                                                        max={3}
+                                                                        size="sm"
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         {/* Медиа контент */}
-                                                        <div className={`flex items-center ${isSmallScreen ? 'space-x-2' : 'space-x-3'} pt-2`}>
+                                                        <div className={`flex items-center ${isSmallScreen ? 'space-x-2' : 'space-x-3'} pt-2`} onClick={(e) => e.stopPropagation()}>
                                                             {option.images && option.images.length > 0 && (
                                                                 <Button
                                                                     type="button"
@@ -1546,16 +1722,16 @@ export default function MultiChildWorkshopModal({
                                             </div>
                                             <div className={`space-y-1 ${isSmallScreen ? 'text-xs' : 'text-sm'} text-gray-600`}>
                                                 <div>
-                                                    <span className="font-medium">Стили:</span> {(reg.selectedStyles || []).length > 0 ? (reg.selectedStyles || []).map(styleId => {
-                                                        const style = currentService?.styles.find(s => s.id === styleId);
-                                                        return style?.name;
-                                                    }).join(', ') : 'Не выбрано'}
+                                                    <span className="font-medium">Варианты ручек:</span> {(reg.selectedStyles || []).length > 0 ? (reg.selectedStyles || []).map(styleSelection => {
+                                                        const style = currentService?.styles.find(s => s.id === styleSelection.styleId);
+                                                        return style ? `${style.name} × ${styleSelection.quantity}` : '';
+                                                    }).filter(Boolean).join(', ') : 'Не выбрано'}
                                                 </div>
                                                 <div>
-                                                    <span className="font-medium">Опции:</span> {(reg.selectedOptions || []).length > 0 ? (reg.selectedOptions || []).map(optionId => {
-                                                        const option = currentService?.options.find(o => o.id === optionId);
-                                                        return option?.name;
-                                                    }).join(', ') : 'Не выбрано'}
+                                                    <span className="font-medium">Дополнительные услуги:</span> {(reg.selectedOptions || []).length > 0 ? (reg.selectedOptions || []).map(optionSelection => {
+                                                        const option = currentService?.options.find(o => o.id === optionSelection.optionId);
+                                                        return option ? `${option.name} × ${optionSelection.quantity}` : '';
+                                                    }).filter(Boolean).join(', ') : 'Не выбрано'}
                                                 </div>
                                                 <div className="font-medium text-green-600">
                                                     Стоимость: {reg.totalAmount} ₽
@@ -1568,6 +1744,42 @@ export default function MultiChildWorkshopModal({
                                         <div className={`${isSmallScreen ? 'text-base sm:text-lg' : 'text-base sm:text-lg'} font-bold text-green-700`}>
                                             Общая стоимость: {getTotalAmount()} ₽
                                         </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Поле примечаний */}
+                        {!isViewMode && currentStep === children.length && (
+                            <Card className={`bg-white/90 backdrop-blur-sm border-yellow-200 shadow-card ${isSmallScreen ? 'mb-3' : 'mb-4 sm:mb-6'}`}>
+                                <CardHeader className={`${isSmallScreen ? 'pb-2' : 'pb-3 sm:pb-4'}`}>
+                                    <div className={`flex items-center space-x-2 sm:space-x-3`}>
+                                        <div className={`bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full ${isSmallScreen ? 'p-1' : 'p-1.5 sm:p-2'}`}>
+                                            <FileText className={`${isSmallScreen ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-white`} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <CardTitle className={`${isSmallScreen ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'} font-bold text-gray-800`}>
+                                                Примечания к заказу
+                                            </CardTitle>
+                                            <CardDescription className={`text-gray-600 ${isSmallScreen ? 'text-sm sm:text-base' : 'text-base sm:text-lg'}`}>
+                                                Опишите, как вы хотите украсить ручку или добавьте особые пожелания
+                                            </CardDescription>
+                                        </div>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className={`${isSmallScreen ? 'space-y-2' : 'space-y-3 sm:space-y-4'}`}>
+                                    <Textarea
+                                        placeholder="Например: Добавить блестки золотого цвета, сделать надпись 'Моя первая ручка', украсить наклейками с животными..."
+                                        value={childRegistrations[0]?.notes || ''}
+                                        onChange={(e) => {
+                                            const notes = e.target.value;
+                                            setChildRegistrations(prev => prev.map(reg => ({ ...reg, notes })));
+                                        }}
+                                        className="min-h-[100px] resize-none"
+                                        maxLength={500}
+                                    />
+                                    <div className="text-xs text-gray-500 text-right">
+                                        {childRegistrations[0]?.notes?.length || 0}/500 символов
                                     </div>
                                 </CardContent>
                             </Card>
@@ -1597,7 +1809,7 @@ export default function MultiChildWorkshopModal({
                                 {currentStep < children.length && (
                                     <Button
                                         onClick={handleNextStep}
-                                        disabled={!getCurrentChild()?.selectedStyles?.length}
+                                        disabled={!getCurrentChild()?.selectedStyles?.some(s => s.quantity > 0)}
                                         className={`${isSmallScreen ? 'flex-1 text-sm h-10' : 'flex-1 sm:flex-none'} bg-orange-600 hover:bg-orange-700`}
                                     >
                                         {currentStep === children.length - 1 ? (isSmallScreen ? 'Завершить' : 'Завершить запись') : (isSmallScreen ? 'Далее' : 'Следующий ребенок')}

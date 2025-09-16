@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Schools API</title>
+</head>
+
+<body>
+    <h1>Test Schools API</h1>
+    <button onclick="testCities()">Test Cities</button>
+    <button onclick="testSchoolsByCity()">Test Schools by City</button>
+    <div id="output"></div>
+
+    <script>
+        async function testCities() {
+            try {
+                const response = await fetch('https://waxhands.ru/api/schools/cities');
+                const data = await response.json();
+                document.getElementById('output').innerHTML = '<h2>Cities:</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('output').innerHTML = '<h2>Error:</h2><pre>' + error.message + '</pre>';
+            }
+        }
+
+        async function testSchoolsByCity() {
+            try {
+                const response = await fetch('https://waxhands.ru/api/schools/by-city/Бикин');
+                const data = await response.json();
+                document.getElementById('output').innerHTML = '<h2>Schools by City (Бикин):</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('output').innerHTML = '<h2>Error:</h2><pre>' + error.message + '</pre>';
+            }
+        }
+    </script>
+</body>
+
+</html>

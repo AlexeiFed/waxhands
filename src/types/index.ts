@@ -172,6 +172,7 @@ export interface WorkshopRegistration {
     options: string[];
     totalPrice: number;
     status: 'pending' | 'confirmed' | 'cancelled';
+    notes?: string; // Примечания к заказу
     createdAt: string;
     updatedAt: string;
 }
@@ -248,6 +249,7 @@ export interface CreateInvoiceRequest {
         name: string;
         price: number;
     }>;
+    notes?: string;
 }
 
 // Новый тип для группового счета
@@ -306,21 +308,31 @@ export interface WorkshopRequest {
     parent_id: string;
     school_name: string;
     class_group: string;
-    desired_date: string;
+    desired_date?: string; // Сделаем опциональным
     notes?: string;
     status: 'pending' | 'approved' | 'rejected';
     created_at: string;
     updated_at: string;
     admin_notes?: string;
     admin_id?: string;
+    // Новые поля
+    city?: string;
+    is_other_school?: boolean;
+    other_school_name?: string;
+    other_school_address?: string;
 }
 
 export interface CreateWorkshopRequestData {
     parent_id: string;
     school_name: string;
     class_group: string;
-    desired_date: string;
+    desired_date?: string; // Сделаем опциональным
     notes?: string;
+    // Новые поля
+    city?: string;
+    is_other_school?: boolean;
+    other_school_name?: string;
+    other_school_address?: string;
 }
 
 export interface UpdateWorkshopRequestData {
@@ -334,4 +346,78 @@ export interface WorkshopRequestWithParent extends WorkshopRequest {
     parent_phone?: string;
     parent_email: string;
     admin_name?: string;
+}
+
+// Типы для оферт
+export interface Offer {
+    id: string;
+    title: string;
+    content: string;
+    version: string;
+    is_active: boolean;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateOfferRequest {
+    title: string;
+    content: string;
+    version: string;
+}
+
+export interface UpdateOfferRequest {
+    title?: string;
+    content?: string;
+    version?: string;
+}
+
+export interface OfferFilters {
+    is_active?: boolean;
+    version?: string;
+    created_by?: string;
+}
+
+// Типы для контактов
+export interface ContactData {
+    id: string;
+    company_name: string;
+    legal_status: string;
+    inn: string;
+    phone: string;
+    email: string;
+    address?: string;
+    website?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+// Типы для политики конфиденциальности
+export interface PrivacyPolicy {
+    id: string;
+    title: string;
+    content: string;
+    version: string;
+    is_active: boolean;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreatePrivacyPolicyRequest {
+    title: string;
+    content: string;
+    version: string;
+}
+
+export interface UpdatePrivacyPolicyRequest {
+    title?: string;
+    content?: string;
+    version?: string;
+}
+
+export interface PrivacyPolicyFilters {
+    is_active?: boolean;
+    version?: string;
+    created_by?: string;
 } 

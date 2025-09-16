@@ -72,7 +72,7 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
         console.log('Request body:', JSON.stringify(req.body, null, 2));
         console.log('Request headers:', req.headers);
 
-        const { workshopId, userId, style, options, totalPrice }: CreateWorkshopRegistrationRequest = req.body;
+        const { workshopId, userId, style, options, totalPrice, notes }: CreateWorkshopRegistrationRequest & { notes?: string } = req.body;
 
         console.log('Создание записи на мастер-класс:', { workshopId, userId, style, options, totalPrice });
 
@@ -139,10 +139,10 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
         console.log('Создаем запись в workshop_registrations...');
         const result = await pool.query(`
             INSERT INTO workshop_registrations (
-                workshop_id, user_id, style, options, total_price, status
-            ) VALUES ($1, $2, $3, $4, $5, 'pending')
+                workshop_id, user_id, style, options, total_price, status, notes
+            ) VALUES ($1, $2, $3, $4, $5, 'pending', $6)
             RETURNING *
-        `, [workshopId, userId, style, JSON.stringify(options), totalPrice]);
+        `, [workshopId, userId, style, JSON.stringify(options), totalPrice, notes || '']);
         console.log('Запись в workshop_registrations создана:', result.rows[0]);
 
         // Получаем информацию о пользователе для добавления в participants
@@ -226,7 +226,7 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
                     hasReceived: false,
                     paymentMethod: undefined,
                     paymentDate: undefined,
-                    notes: `Детская регистрация. ID: ${result.rows[0].id}. Участник: ${userId}`
+                    notes: notes || `Детская регистрация. ID: ${result.rows[0].id}. Участник: ${userId}`
                 };
 
                 console.log('🔍 Добавляем участника:', JSON.stringify(participant));
@@ -347,6 +347,7 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
                 style: string;
                 options: string[];
                 totalPrice: number;
+                notes?: string; // Добавляем поддержку примечаний
             }>;
         } = req.body;
 
@@ -416,7 +417,8 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
             const extractCityFromAddress = (address: string): string => {
                 if (!address) return 'Не указан';
                 const city = address.split(',')[0]?.trim();
-                return city || 'Не указан';
+                // Ограничиваем длину города до 100 символов для базы данных
+                return city ? city.substring(0, 100) : 'Не указан';
             };
 
             const city = extractCityFromAddress(workshop.address);
@@ -523,23 +525,30 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
                 parentName
             });
 
+            // Собираем все примечания от детей
+            const allNotes = children
+                .map(child => child.notes)
+                .filter(note => note && note.trim())
+                .join('; ');
+
             const invoiceResult = await client.query(`
                 INSERT INTO invoices (
                     master_class_id, workshop_date, city, school_name, class_group,
-                    participant_name, participant_id, amount, selected_styles, selected_options
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    participant_name, participant_id, amount, selected_styles, selected_options, notes
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING *
             `, [
                 workshopId,
                 workshop.date || new Date().toISOString().split('T')[0], // Используем workshop.date или текущую дату
-                city, // Используем извлеченный город из адреса школы
-                workshop.school_name || 'Не указано',
-                workshop.class_group || 'Не указан',
-                `${parentName} (${children.length} детей)`,
+                city || 'Не указан', // Используем извлеченный город из адреса школы
+                (workshop.school_name || 'Не указано').substring(0, 255),
+                (workshop.class_group || 'Не указан').substring(0, 100),
+                `${parentName} (${children.length} детей)`.substring(0, 255),
                 parentId,
                 totalAmount,
                 JSON.stringify(selectedStyles),
-                JSON.stringify(selectedOptions)
+                JSON.stringify(selectedOptions),
+                allNotes || null
             ]);
 
             const invoice = invoiceResult.rows[0];
@@ -551,10 +560,10 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
             for (const child of children) {
                 const registrationResult = await client.query(`
                     INSERT INTO workshop_registrations (
-                        workshop_id, user_id, style, options, total_price, status
-                    ) VALUES ($1, $2, $3, $4, $5, 'pending')
+                        workshop_id, user_id, style, options, total_price, status, notes
+                    ) VALUES ($1, $2, $3, $4, $5, 'pending', $6)
                     RETURNING *
-                `, [workshopId, child.childId, child.style, JSON.stringify(child.options || []), child.totalPrice]);
+                `, [workshopId, child.childId, child.style, JSON.stringify(child.options || []), child.totalPrice, child.notes || '']);
 
                 registrations.push(registrationResult.rows[0]);
                 console.log(`Создана регистрация для ${child.childName} (childId: ${child.childId}):`, registrationResult.rows[0]);
@@ -601,7 +610,7 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
                     hasReceived: false,
                     paymentMethod: undefined,
                     paymentDate: undefined,
-                    notes: `Групповая регистрация. Счет: ${invoice.id}. Родитель: ${parentId}`
+                    notes: child.notes || undefined
                 };
             });
 
@@ -859,70 +868,160 @@ export const checkRegistration = async (req: Request, res: Response): Promise<vo
 
 // Удалить участника из мастер-класса
 export const removeParticipant = async (req: Request, res: Response) => {
+    const client = await pool.connect();
+
     try {
-        const { workshopId, userId } = req.body;
+        await client.query('BEGIN');
 
-        console.log('Удаление участника из мастер-класса:', { workshopId, userId });
+        const { workshopId, participantId } = req.body;
 
-        // Получаем информацию о записи участника
-        const registrationResult = await pool.query(
-            'SELECT * FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
-            [workshopId, userId]
+        console.log('🗑️ Удаление участника из мастер-класса:', { workshopId, participantId });
+        console.log('🔍 Request body:', req.body);
+        console.log('🔍 Request headers:', req.headers);
+
+        // Получаем информацию о мастер-классе и участнике
+        const masterClassResult = await client.query(
+            'SELECT participants, statistics FROM master_class_events WHERE id = $1',
+            [workshopId]
         );
 
-        if (registrationResult.rows.length === 0) {
+        if (masterClassResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Мастер-класс не найден' });
+        }
+
+        const masterClass = masterClassResult.rows[0];
+        const participants = masterClass.participants || [];
+        const statistics = masterClass.statistics || {};
+
+        // Находим участника по ID (поддерживаем разные форматы ID)
+        let participantIndex = participants.findIndex((p: Record<string, unknown>) => p.id === participantId);
+
+        // Если не найден по точному ID, пробуем найти по childId
+        if (participantIndex === -1) {
+            participantIndex = participants.findIndex((p: Record<string, unknown>) => p.childId === participantId);
+        }
+
+        // Если все еще не найден, пробуем найти по parentId
+        if (participantIndex === -1) {
+            participantIndex = participants.findIndex((p: Record<string, unknown>) => p.parentId === participantId);
+        }
+
+        if (participantIndex === -1) {
+            await client.query('ROLLBACK');
+            console.log('❌ Участник не найден:', { participantId, participants: participants.map((p: Record<string, unknown>) => ({ id: p.id, childId: p.childId, parentId: p.parentId })) });
             return res.status(404).json({ error: 'Участник не найден в мастер-классе' });
         }
 
-        const registration = registrationResult.rows[0];
+        const participant = participants[participantIndex];
+        console.log('🔍 Найден участник для удаления:', participant);
 
-        // Удаляем запись из workshop_registrations
-        await pool.query(
-            'DELETE FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
-            [workshopId, userId]
+        // Удаляем связанный счет, если он существует
+        if (participant.notes && participant.notes.includes('Счет:')) {
+            const invoiceIdMatch = participant.notes.match(/Счет:\s*(\d+)/);
+            if (invoiceIdMatch) {
+                const invoiceId = invoiceIdMatch[1];
+                console.log('🗑️ Удаляем связанный счет:', invoiceId);
+
+                await client.query(
+                    'DELETE FROM invoices WHERE id = $1',
+                    [invoiceId]
+                );
+                console.log('✅ Счет удален');
+            }
+        }
+
+        // Удаляем запись из workshop_registrations, если она существует
+        const registrationResult = await client.query(
+            'SELECT id FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+            [workshopId, participant.childId]
         );
 
-        console.log('Запись из workshop_registrations удалена');
+        if (registrationResult.rows.length > 0) {
+            await client.query(
+                'DELETE FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+                [workshopId, participant.childId]
+            );
+            console.log('✅ Запись из workshop_registrations удалена');
+        }
 
-        // Удаляем участника из поля participants в master_class_events
-        await pool.query(`
+        // Удаляем участника из массива participants (используем найденный индекс)
+        const updatedParticipants = participants.filter((_: Record<string, unknown>, index: number) => index !== participantIndex);
+
+        await client.query(`
             UPDATE master_class_events 
-            SET participants = participants - jsonb_path_query_array(participants, '$[*] ? (@.childId == $1)'),
+            SET participants = $1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
-        `, [userId, workshopId]);
+        `, [JSON.stringify(updatedParticipants), workshopId]);
 
-        console.log('Участник удален из participants');
+        console.log('✅ Участник удален из participants');
 
-        // Обновляем статистику в master_class_events
-        await pool.query(`
+        // Обновляем статистику
+        const currentStats = statistics;
+        const newStats = {
+            ...currentStats,
+            totalParticipants: Math.max((currentStats.totalParticipants || 0) - 1, 0),
+            totalAmount: Math.max((currentStats.totalAmount || 0) - (participant.totalAmount || 0), 0),
+            unpaidAmount: Math.max((currentStats.unpaidAmount || 0) - (participant.isPaid ? 0 : (participant.totalAmount || 0)), 0),
+            paidAmount: Math.max((currentStats.paidAmount || 0) - (participant.isPaid ? (participant.totalAmount || 0) : 0), 0)
+        };
+
+        // Обновляем статистику по стилям
+        if (participant.selectedStyles && Array.isArray(participant.selectedStyles)) {
+            const currentStylesStats = currentStats.stylesStats || {};
+            participant.selectedStyles.forEach((styleId: string) => {
+                if (currentStylesStats[styleId]) {
+                    currentStylesStats[styleId] = Math.max(currentStylesStats[styleId] - 1, 0);
+                    if (currentStylesStats[styleId] === 0) {
+                        delete currentStylesStats[styleId];
+                    }
+                }
+            });
+            newStats.stylesStats = currentStylesStats;
+        }
+
+        // Обновляем статистику по опциям
+        if (participant.selectedOptions && Array.isArray(participant.selectedOptions)) {
+            const currentOptionsStats = currentStats.optionsStats || {};
+            participant.selectedOptions.forEach((optionId: string) => {
+                if (currentOptionsStats[optionId]) {
+                    currentOptionsStats[optionId] = Math.max(currentOptionsStats[optionId] - 1, 0);
+                    if (currentOptionsStats[optionId] === 0) {
+                        delete currentOptionsStats[optionId];
+                    }
+                }
+            });
+            newStats.optionsStats = currentOptionsStats;
+        }
+
+        // Сохраняем обновленную статистику
+        await client.query(`
             UPDATE master_class_events 
-            SET statistics = jsonb_set(
-                jsonb_set(
-                    jsonb_set(
-                        COALESCE(statistics, '{}'::jsonb),
-                        '{totalParticipants}',
-                        to_jsonb(GREATEST(COALESCE((statistics->>'totalParticipants')::int, 0) - 1, 0))
-                    ),
-                    '{totalAmount}',
-                    to_jsonb(GREATEST(COALESCE((statistics->>'totalAmount')::int, 0) - $1, 0))
-                ),
-                '{unpaidAmount}',
-                to_jsonb(GREATEST(COALESCE((statistics->>'unpaidAmount')::int, 0) - $1, 0))
-            ),
-            updated_at = CURRENT_TIMESTAMP
+            SET statistics = $1,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
-        `, [registration.total_price, workshopId]);
+        `, [JSON.stringify(newStats), workshopId]);
 
-        console.log('Статистика обновлена после удаления участника');
+        console.log('✅ Статистика обновлена:', newStats);
+
+        await client.query('COMMIT');
 
         return res.json({
             success: true,
-            message: 'Участник успешно удален из мастер-класса'
+            message: 'Участник успешно удален из мастер-класса',
+            deletedParticipant: participant,
+            updatedStatistics: newStats
         });
 
     } catch (error) {
-        console.error('Ошибка при удалении участника:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        await client.query('ROLLBACK');
+        console.error('❌ Ошибка при удалении участника:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    } finally {
+        client.release();
     }
 };

@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,9 @@ import { useWorkshopRequests } from '@/hooks/use-workshop-requests';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSchools } from '@/hooks/use-schools';
-import { Calendar, MapPin, GraduationCap, FileText, AlertCircle } from 'lucide-react';
+import { useCities } from '@/hooks/use-cities';
+import { School } from '@/types';
+import { MapPin, GraduationCap, FileText, AlertCircle, Plus } from 'lucide-react';
 
 interface WorkshopRequestModalProps {
     isOpen: boolean;
@@ -27,28 +29,97 @@ interface WorkshopRequestModalProps {
 export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCreated }: WorkshopRequestModalProps) {
     const { user } = useAuth();
     const { schools } = useSchools();
+    const { cities, getSchoolsByCity } = useCities();
     const { createRequest, loading } = useWorkshopRequests();
     const { toast } = useToast();
 
     const [formData, setFormData] = useState({
         school_name: '',
         class_group: '',
-        desired_date: '',
-        notes: ''
+        notes: '',
+        // Новые поля для "другой" школы
+        is_other_school: false,
+        other_school_name: '',
+        other_school_address: ''
     });
 
+    const [selectedCity, setSelectedCity] = useState<string>('');
     const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
     const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+    const [citySchools, setCitySchools] = useState<School[]>([]);
+
+    // Отладочный useEffect для отслеживания изменений citySchools
+    useEffect(() => {
+        console.log('🔍 WorkshopRequestModal: citySchools изменился:', citySchools);
+        console.log('🔍 WorkshopRequestModal: citySchools.length:', citySchools.length);
+    }, [citySchools]);
+
+    // Обработчик изменения города
+    const handleCityChange = async (city: string) => {
+        console.log('🔍 WorkshopRequestModal: handleCityChange вызван с городом:', city);
+        setSelectedCity(city);
+        setSelectedSchoolId('');
+        setFormData(prev => ({
+            ...prev,
+            school_name: '',
+            class_group: '',
+            is_other_school: false,
+            other_school_name: '',
+            other_school_address: ''
+        }));
+        setAvailableClasses([]);
+
+        if (city) {
+            try {
+                console.log('🔍 WorkshopRequestModal: Загружаем школы для города:', city);
+                console.log('🔍 WorkshopRequestModal: getSchoolsByCity функция:', getSchoolsByCity);
+                const schools = await getSchoolsByCity(city);
+                console.log('🔍 WorkshopRequestModal: Получены школы:', schools);
+                console.log('🔍 WorkshopRequestModal: Тип schools:', typeof schools);
+                console.log('🔍 WorkshopRequestModal: schools.length:', schools?.length);
+                setCitySchools(schools);
+                console.log('🔍 WorkshopRequestModal: citySchools установлен:', schools);
+            } catch (error) {
+                console.error('🔍 WorkshopRequestModal: Ошибка загрузки школ по городу:', error);
+                toast({
+                    title: "Ошибка",
+                    description: "Не удалось загрузить школы для выбранного города",
+                    variant: "destructive",
+                });
+            }
+        } else {
+            console.log('🔍 WorkshopRequestModal: Город не выбран, очищаем citySchools');
+            setCitySchools([]);
+        }
+    };
 
     // Обработчик изменения школы
     const handleSchoolChange = (schoolId: string) => {
-        setSelectedSchoolId(schoolId);
-        setFormData(prev => ({ ...prev, school_name: '', class_group: '' }));
+        if (schoolId === 'other') {
+            setSelectedSchoolId('other');
+            setFormData(prev => ({
+                ...prev,
+                is_other_school: true,
+                school_name: '',
+                class_group: ''
+            }));
+            setAvailableClasses([]);
+        } else {
+            setSelectedSchoolId(schoolId);
+            setFormData(prev => ({
+                ...prev,
+                is_other_school: false,
+                other_school_name: '',
+                other_school_address: '',
+                school_name: '',
+                class_group: ''
+            }));
 
-        const school = schools.find(s => s.id === schoolId);
-        if (school) {
-            setAvailableClasses(school.classes);
-            setFormData(prev => ({ ...prev, school_name: school.name }));
+            const school = citySchools.find(s => s.id === schoolId);
+            if (school) {
+                setAvailableClasses(school.classes || []);
+                setFormData(prev => ({ ...prev, school_name: school.name }));
+            }
         }
     };
 
@@ -71,31 +142,67 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
         }
 
         // Валидация
-        if (!formData.school_name || !formData.class_group || !formData.desired_date) {
+        if (!selectedCity) {
             toast({
                 title: "Ошибка",
-                description: "Заполните все обязательные поля",
+                description: "Выберите город",
                 variant: "destructive",
             });
             return;
         }
 
-        try {
-            console.log('🔍 WorkshopRequestModal.handleSubmit: Отправляем заявку:', {
-                parent_id: user.id,
-                school_name: formData.school_name,
-                class_group: formData.class_group,
-                desired_date: formData.desired_date,
-                notes: formData.notes || undefined
-            });
+        if (!formData.is_other_school) {
+            if (!selectedSchoolId || selectedSchoolId === 'other') {
+                toast({
+                    title: "Ошибка",
+                    description: "Выберите школу или выберите 'Другая'",
+                    variant: "destructive",
+                });
+                return;
+            }
+            if (!formData.class_group) {
+                toast({
+                    title: "Ошибка",
+                    description: "Выберите класс/группу",
+                    variant: "destructive",
+                });
+                return;
+            }
+        } else {
+            if (!formData.other_school_name || !formData.other_school_address) {
+                toast({
+                    title: "Ошибка",
+                    description: "Заполните название и адрес школы",
+                    variant: "destructive",
+                });
+                return;
+            }
+            if (!formData.class_group) {
+                toast({
+                    title: "Ошибка",
+                    description: "Введите класс/группу",
+                    variant: "destructive",
+                });
+                return;
+            }
+        }
 
-            const result = await createRequest({
+        try {
+            const requestData = {
                 parent_id: user.id,
-                school_name: formData.school_name,
+                school_name: formData.is_other_school ? formData.other_school_name : formData.school_name,
                 class_group: formData.class_group,
-                desired_date: formData.desired_date,
-                notes: formData.notes || undefined
-            });
+                notes: formData.notes || undefined,
+                // Новые поля
+                city: selectedCity,
+                is_other_school: formData.is_other_school,
+                other_school_name: formData.is_other_school ? formData.other_school_name : undefined,
+                other_school_address: formData.is_other_school ? formData.other_school_address : undefined
+            };
+
+            console.log('🔍 WorkshopRequestModal.handleSubmit: Отправляем заявку:', requestData);
+
+            const result = await createRequest(requestData);
 
             console.log('📋 WorkshopRequestModal.handleSubmit: Результат создания заявки:', result);
             console.log('🔍 WorkshopRequestModal.handleSubmit: Проверяем result?.success:', result?.success);
@@ -113,11 +220,15 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 setFormData({
                     school_name: '',
                     class_group: '',
-                    desired_date: '',
-                    notes: ''
+                    notes: '',
+                    is_other_school: false,
+                    other_school_name: '',
+                    other_school_address: ''
                 });
+                setSelectedCity('');
                 setSelectedSchoolId('');
                 setAvailableClasses([]);
+                setCitySchools([]);
 
                 // Закрываем модальное окно
                 onOpenChange(false);
@@ -136,11 +247,15 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 setFormData({
                     school_name: '',
                     class_group: '',
-                    desired_date: '',
-                    notes: ''
+                    notes: '',
+                    is_other_school: false,
+                    other_school_name: '',
+                    other_school_address: ''
                 });
+                setSelectedCity('');
                 setSelectedSchoolId('');
                 setAvailableClasses([]);
+                setCitySchools([]);
 
                 // Закрываем модальное окно
                 onOpenChange(false);
@@ -165,8 +280,6 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
         }
     };
 
-    // Получаем минимальную дату (сегодня)
-    const today = new Date().toISOString().split('T')[0];
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -182,18 +295,38 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-5 py-2">
+                    {/* Город */}
+                    <div className="space-y-2">
+                        <Label htmlFor="city" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <MapPin className="w-4 h-4" />
+                            Город *
+                        </Label>
+                        <Select onValueChange={handleCityChange} value={selectedCity}>
+                            <SelectTrigger className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20">
+                                <SelectValue placeholder="Выберите город" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {cities.map((city) => (
+                                    <SelectItem key={city} value={city}>
+                                        {city}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
                     {/* Школа */}
                     <div className="space-y-2">
                         <Label htmlFor="school" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                            <MapPin className="w-4 h-4" />
+                            <GraduationCap className="w-4 h-4" />
                             Школа/сад *
                         </Label>
-                        <Select onValueChange={handleSchoolChange} value={selectedSchoolId}>
-                            <SelectTrigger className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20">
+                        <Select onValueChange={handleSchoolChange} value={selectedSchoolId} disabled={!selectedCity}>
+                            <SelectTrigger className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20 disabled:opacity-50">
                                 <SelectValue placeholder="Выберите школу или сад" />
                             </SelectTrigger>
                             <SelectContent>
-                                {schools.map((school) => (
+                                {citySchools.map((school) => (
                                     <SelectItem key={school.id} value={school.id}>
                                         <div>
                                             <div className="font-medium">{school.name}</div>
@@ -201,14 +334,53 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                                         </div>
                                     </SelectItem>
                                 ))}
+                                <SelectItem value="other">
+                                    <div className="flex items-center gap-2">
+                                        <Plus className="w-4 h-4" />
+                                        <span className="font-medium text-orange-600">Другая</span>
+                                    </div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
-                        {!selectedSchoolId && (
-                            <p className="text-sm text-gray-500">
-                                Если не нашли свою школу, напишите в поддержку
-                            </p>
+                        {!selectedCity && (
+                            <p className="text-sm text-gray-500">Сначала выберите город</p>
+                        )}
+                        {selectedCity && citySchools.length === 0 && (
+                            <p className="text-sm text-gray-500">Загружаем школы...</p>
                         )}
                     </div>
+
+                    {/* Поля для "другой" школы */}
+                    {formData.is_other_school && (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="other_school_name" className="text-sm font-semibold text-gray-700">
+                                    Название школы/сада *
+                                </Label>
+                                <Input
+                                    id="other_school_name"
+                                    type="text"
+                                    placeholder="Введите название школы или сада"
+                                    value={formData.other_school_name}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, other_school_name: e.target.value }))}
+                                    className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="other_school_address" className="text-sm font-semibold text-gray-700">
+                                    Адрес школы/сада *
+                                </Label>
+                                <Input
+                                    id="other_school_address"
+                                    type="text"
+                                    placeholder="Введите адрес школы или сада"
+                                    value={formData.other_school_address}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, other_school_address: e.target.value }))}
+                                    className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20"
+                                />
+                            </div>
+                        </>
+                    )}
 
                     {/* Класс */}
                     <div className="space-y-2">
@@ -216,50 +388,41 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                             <GraduationCap className="w-4 h-4" />
                             Класс/группа *
                         </Label>
-                        <Select
-                            onValueChange={handleClassChange}
-                            value={formData.class_group}
-                            disabled={!selectedSchoolId}
-                        >
-                            <SelectTrigger className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20 disabled:opacity-50">
-                                <SelectValue placeholder="Выберите класс или группу" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {availableClasses.map((className) => (
-                                    <SelectItem key={className} value={className}>
-                                        {className}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        {formData.is_other_school ? (
+                            <Input
+                                id="class"
+                                type="text"
+                                placeholder="Введите класс или группу"
+                                value={formData.class_group}
+                                onChange={(e) => setFormData(prev => ({ ...prev, class_group: e.target.value }))}
+                                className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20"
+                            />
+                        ) : (
+                            <Select
+                                onValueChange={handleClassChange}
+                                value={formData.class_group}
+                                disabled={!selectedSchoolId || selectedSchoolId === 'other'}
+                            >
+                                <SelectTrigger className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20 disabled:opacity-50">
+                                    <SelectValue placeholder="Выберите класс или группу" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableClasses.map((className) => (
+                                        <SelectItem key={className} value={className}>
+                                            {className}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
                         {!selectedSchoolId && (
                             <p className="text-sm text-gray-500">Сначала выберите школу</p>
                         )}
-                        {selectedSchoolId && availableClasses.length === 0 && (
+                        {selectedSchoolId && selectedSchoolId !== 'other' && availableClasses.length === 0 && (
                             <p className="text-sm text-gray-500">
-                                Если не нашли свой класс, напишите в поддержку
+                                Если не нашли свой класс, выберите "Другая" и введите класс вручную
                             </p>
                         )}
-                    </div>
-
-                    {/* Желаемая дата */}
-                    <div className="space-y-2">
-                        <Label htmlFor="date" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            Желаемая дата *
-                        </Label>
-                        <Input
-                            id="date"
-                            type="date"
-                            min={today}
-                            value={formData.desired_date}
-                            onChange={(e) => setFormData(prev => ({ ...prev, desired_date: e.target.value }))}
-                            className="h-10 text-sm border-gray-200 focus:border-orange-400 focus:ring-orange-400/20"
-                            required
-                        />
-                        <p className="text-xs text-gray-500">
-                            Выберите дату не ранее сегодняшнего дня
-                        </p>
                     </div>
 
                     {/* Примечания */}
@@ -288,8 +451,8 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                                 <p className="font-medium mb-1">Важно знать:</p>
                                 <ul className="space-y-1 text-xs">
                                     <li>• Мы рассмотрим вашу заявку в течение 2-3 рабочих дней</li>
-                                    <li>• Свяжемся с вами для уточнения деталей</li>
-                                    <li>• Если не нашли свою школу или класс, напишите в поддержку</li>
+                                    <li>• Свяжемся с вами для уточнения деталей и согласования даты</li>
+                                    <li>• Если не нашли свою школу, выберите "Другая" и введите данные вручную</li>
                                 </ul>
                             </div>
                         </div>
@@ -307,7 +470,9 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                         </Button>
                         <Button
                             type="submit"
-                            disabled={loading || !formData.school_name || !formData.class_group || !formData.desired_date}
+                            disabled={loading || !selectedCity || !formData.class_group ||
+                                (!formData.is_other_school && !selectedSchoolId) ||
+                                (formData.is_other_school && (!formData.other_school_name || !formData.other_school_address))}
                             className="h-10 px-6 text-sm bg-gradient-to-r from-orange-500 to-purple-500 hover:from-orange-600 hover:to-purple-600 text-white font-medium disabled:opacity-50"
                         >
                             {loading ? 'Отправляем...' : 'Отправить заявку'}

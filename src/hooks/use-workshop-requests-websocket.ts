@@ -55,12 +55,10 @@ export const useWorkshopRequestsWebSocket = (
     const connect = useCallback(() => {
 
         if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
-            console.log('🔌 WorkshopRequests: WebSocket уже подключен или подключается, пропускаем');
             return;
         }
 
         if (wsState.isConnecting) {
-            console.log('🔌 WorkshopRequests: Уже идет подключение, пропускаем');
             return;
         }
 
@@ -69,12 +67,10 @@ export const useWorkshopRequestsWebSocket = (
         try {
             const wsUrl = `${WS_BASE_URL}?userId=${userId}&isAdmin=${isAdmin}`;
 
-            console.log('🔌 WorkshopRequests: Подключение к WebSocket:', wsUrl);
 
             wsRef.current = new WebSocket(wsUrl);
 
             wsRef.current.onopen = () => {
-                console.log('🔌 WorkshopRequests: WebSocket соединение установлено');
                 setWsState({
                     isConnected: true,
                     isConnecting: false,
@@ -101,7 +97,6 @@ export const useWorkshopRequestsWebSocket = (
             wsRef.current.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
-                    console.log('🔌 WorkshopRequests: Получено сообщение:', message);
 
                     if (message.type === 'pong') {
                         return;
@@ -117,7 +112,6 @@ export const useWorkshopRequestsWebSocket = (
             };
 
             wsRef.current.onclose = (event) => {
-                console.log('🔌 WorkshopRequests: WebSocket соединение закрыто:', event.code, event.reason);
                 setWsState(prev => ({ ...prev, isConnected: false, isConnecting: false }));
 
                 // Очищаем интервал ping
@@ -129,7 +123,6 @@ export const useWorkshopRequestsWebSocket = (
                 // Попытка переподключения только если не превышен лимит
                 if (connectionAttemptsRef.current < maxReconnectAttempts) {
                     connectionAttemptsRef.current += 1;
-                    console.log(`🔄 WorkshopRequests: Попытка переподключения ${connectionAttemptsRef.current}/${maxReconnectAttempts}`);
 
                     // Очищаем предыдущий таймаут
                     if (reconnectTimeoutRef.current) {
@@ -141,7 +134,6 @@ export const useWorkshopRequestsWebSocket = (
                         connect();
                     }, reconnectDelay);
                 } else {
-                    console.log('❌ WorkshopRequests: Превышен лимит попыток переподключения');
                     setWsState(prev => ({ ...prev, lastError: 'Connection failed after multiple attempts' }));
                 }
             };
@@ -159,7 +151,6 @@ export const useWorkshopRequestsWebSocket = (
 
     // Функция для отключения
     const disconnect = useCallback(() => {
-        console.log('🔌 WorkshopRequests: Отключение WebSocket');
 
         if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
@@ -199,12 +190,10 @@ export const useWorkshopRequestsWebSocket = (
     // Подключаемся при монтировании компонента
     useEffect(() => {
         if (userId) {
-            console.log('🔌 WorkshopRequests: useEffect: Подключаемся к WebSocket');
             connect();
         }
 
         return () => {
-            console.log('🔌 WorkshopRequests: useEffect cleanup: Отключаем WebSocket');
             disconnect();
         };
     }, [userId, connect, disconnect]);

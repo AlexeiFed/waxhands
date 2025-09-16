@@ -11,6 +11,7 @@ import {
     getInvoices,
     getInvoiceById,
     createInvoice,
+    updateInvoice,
     updateInvoiceStatus,
     getInvoicesByDate,
     deleteInvoice,
@@ -28,14 +29,25 @@ router.get('/:id', authenticateToken, getInvoiceById);
 // Получение статуса счета по ID (требует аутентификации)
 router.get('/:id/status', authenticateToken, getInvoiceById);
 
+// Обновление счета (стили, опции, сумма) (требует аутентификации)
+router.patch('/:id', authenticateToken, updateInvoice);
+
 // Обновление статуса счета (требует аутентификации)
 router.patch('/:id/status', authenticateToken, updateInvoiceStatus);
 
 // Получение счетов по дате (требует аутентификации)
 router.get('/date/:date', authenticateToken, getInvoicesByDate);
 
-// Удаление счета (требует аутентификации и прав администратора)
-router.delete('/:id', authenticateToken, authorizeAdmin, deleteInvoice);
+// Удаление счета (требует аутентификации, родители могут удалять только свои счета)
+router.delete('/:id', (req, res, next) => {
+    console.log('🔍 DELETE /invoices/:id route hit:', {
+        id: req.params.id,
+        method: req.method,
+        url: req.url,
+        headers: req.headers
+    });
+    next();
+}, authenticateToken, deleteInvoice);
 
 // Синхронизация всех счетов с участниками (требует аутентификации и прав администратора)
 router.post('/sync-participants', authenticateToken, authorizeAdmin, syncAllInvoicesWithParticipants);

@@ -19,6 +19,8 @@ interface ServiceCardProps {
     onAddOption?: (serviceId: string) => void;
     onViewStyle?: (style: ServiceStyle, serviceId: string) => void;
     onViewOption?: (option: ServiceOption, serviceId: string) => void;
+    onDeleteStyle?: (styleId: string, serviceId: string) => void;
+    onDeleteOption?: (optionId: string, serviceId: string) => void;
     onReorderStyles?: (serviceId: string, order: string[]) => void;
     onReorderOptions?: (serviceId: string, order: string[]) => void;
     onDelete?: (serviceId: string) => void;
@@ -31,6 +33,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     onAddOption,
     onViewStyle,
     onViewOption,
+    onDeleteStyle,
+    onDeleteOption,
     onReorderStyles,
     onReorderOptions,
     onDelete
@@ -214,14 +218,19 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                                             ▶
                                         </Button>
                                     </div>
-                                    {onViewStyle && (
+                                    {onDeleteStyle && (
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            className="p-0 h-auto w-auto"
-                                            onClick={() => onViewStyle(style, service.id)}
+                                            className="p-0 h-auto w-auto text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => {
+                                                if (window.confirm(`Вы уверены, что хотите удалить стиль "${style.name}"?`)) {
+                                                    onDeleteStyle(style.id, service.id);
+                                                }
+                                            }}
+                                            title="Удалить стиль"
                                         >
-                                            <Eye className="h-3 w-3" />
+                                            <Trash2 className="h-3 w-3" />
                                         </Button>
                                     )}
                                 </div>
@@ -362,14 +371,19 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                                             ▶
                                         </Button>
                                     </div>
-                                    {onViewOption && (
+                                    {onDeleteOption && (
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            className="p-0 h-auto w-auto"
-                                            onClick={() => onViewOption(option, service.id)}
+                                            className="p-0 h-auto w-auto text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => {
+                                                if (window.confirm(`Вы уверены, что хотите удалить опцию "${option.name}"?`)) {
+                                                    onDeleteOption(option.id, service.id);
+                                                }
+                                            }}
+                                            title="Удалить опцию"
                                         >
-                                            <Eye className="h-3 w-3" />
+                                            <Trash2 className="h-3 w-3" />
                                         </Button>
                                     )}
                                 </div>

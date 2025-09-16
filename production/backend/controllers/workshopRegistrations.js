@@ -143,9 +143,9 @@ export const createWorkshopRegistration = async (req, res) => {
                 // Ищем названия опций по ID
                 optionsNames = options
                     .map(optionId => {
-                    const foundOption = serviceOptions.find((o) => o.id === optionId);
-                    return foundOption?.name || optionId;
-                })
+                        const foundOption = serviceOptions.find((o) => o.id === optionId);
+                        return foundOption?.name || optionId;
+                    })
                     .filter(Boolean);
             }
         }
@@ -707,54 +707,161 @@ export const checkRegistration = async (req, res) => {
 };
 // Удалить участника из мастер-класса
 export const removeParticipant = async (req, res) => {
+    const client = await pool.connect();
+
     try {
-        const { workshopId, userId } = req.body;
-        console.log('Удаление участника из мастер-класса:', { workshopId, userId });
-        // Получаем информацию о записи участника
-        const registrationResult = await pool.query('SELECT * FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2', [workshopId, userId]);
-        if (registrationResult.rows.length === 0) {
+        await client.query('BEGIN');
+
+        const { workshopId, participantId } = req.body;
+
+        console.log('🗑️ Удаление участника из мастер-класса:', { workshopId, participantId });
+        console.log('🔍 Request body:', req.body);
+        console.log('🔍 Request headers:', req.headers);
+
+        // Получаем информацию о мастер-классе и участнике
+        const masterClassResult = await client.query(
+            'SELECT participants, statistics FROM master_class_events WHERE id = $1',
+            [workshopId]
+        );
+
+        if (masterClassResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Мастер-класс не найден' });
+        }
+
+        const masterClass = masterClassResult.rows[0];
+        const participants = masterClass.participants || [];
+        const statistics = masterClass.statistics || {};
+
+        // Находим участника по ID (поддерживаем разные форматы ID)
+        let participantIndex = participants.findIndex((p) => p.id === participantId);
+
+        // Если не найден по точному ID, пробуем найти по childId
+        if (participantIndex === -1) {
+            participantIndex = participants.findIndex((p) => p.childId === participantId);
+        }
+
+        // Если все еще не найден, пробуем найти по parentId
+        if (participantIndex === -1) {
+            participantIndex = participants.findIndex((p) => p.parentId === participantId);
+        }
+
+        if (participantIndex === -1) {
+            await client.query('ROLLBACK');
+            console.log('❌ Участник не найден:', { participantId, participants: participants.map(p => ({ id: p.id, childId: p.childId, parentId: p.parentId })) });
             return res.status(404).json({ error: 'Участник не найден в мастер-классе' });
         }
-        const registration = registrationResult.rows[0];
-        // Удаляем запись из workshop_registrations
-        await pool.query('DELETE FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2', [workshopId, userId]);
-        console.log('Запись из workshop_registrations удалена');
-        // Удаляем участника из поля participants в master_class_events
-        await pool.query(`
+
+        const participant = participants[participantIndex];
+        console.log('🔍 Найден участник для удаления:', participant);
+
+        // Удаляем связанный счет, если он существует
+        if (participant.notes && participant.notes.includes('Счет:')) {
+            const invoiceIdMatch = participant.notes.match(/Счет:\s*(\d+)/);
+            if (invoiceIdMatch) {
+                const invoiceId = invoiceIdMatch[1];
+                console.log('🗑️ Удаляем связанный счет:', invoiceId);
+
+                await client.query(
+                    'DELETE FROM invoices WHERE id = $1',
+                    [invoiceId]
+                );
+                console.log('✅ Счет удален');
+            }
+        }
+
+        // Удаляем запись из workshop_registrations, если она существует
+        const registrationResult = await client.query(
+            'SELECT id FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+            [workshopId, participant.childId]
+        );
+
+        if (registrationResult.rows.length > 0) {
+            await client.query(
+                'DELETE FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+                [workshopId, participant.childId]
+            );
+            console.log('✅ Запись из workshop_registrations удалена');
+        }
+
+        // Удаляем участника из массива participants (используем найденный индекс)
+        const updatedParticipants = participants.filter((_, index) => index !== participantIndex);
+
+        await client.query(`
             UPDATE master_class_events 
-            SET participants = participants - jsonb_path_query_array(participants, '$[*] ? (@.childId == $1)'),
+            SET participants = $1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
-        `, [userId, workshopId]);
-        console.log('Участник удален из participants');
-        // Обновляем статистику в master_class_events
-        await pool.query(`
+        `, [JSON.stringify(updatedParticipants), workshopId]);
+
+        console.log('✅ Участник удален из participants');
+
+        // Обновляем статистику
+        const currentStats = statistics;
+        const newStats = {
+            ...currentStats,
+            totalParticipants: Math.max((currentStats.totalParticipants || 0) - 1, 0),
+            totalAmount: Math.max((currentStats.totalAmount || 0) - (participant.totalAmount || 0), 0),
+            unpaidAmount: Math.max((currentStats.unpaidAmount || 0) - (participant.isPaid ? 0 : (participant.totalAmount || 0)), 0),
+            paidAmount: Math.max((currentStats.paidAmount || 0) - (participant.isPaid ? (participant.totalAmount || 0) : 0), 0)
+        };
+
+        // Обновляем статистику по стилям
+        if (participant.selectedStyles && Array.isArray(participant.selectedStyles)) {
+            const currentStylesStats = currentStats.stylesStats || {};
+            participant.selectedStyles.forEach((styleId) => {
+                if (currentStylesStats[styleId]) {
+                    currentStylesStats[styleId] = Math.max(currentStylesStats[styleId] - 1, 0);
+                    if (currentStylesStats[styleId] === 0) {
+                        delete currentStylesStats[styleId];
+                    }
+                }
+            });
+            newStats.stylesStats = currentStylesStats;
+        }
+
+        // Обновляем статистику по опциям
+        if (participant.selectedOptions && Array.isArray(participant.selectedOptions)) {
+            const currentOptionsStats = currentStats.optionsStats || {};
+            participant.selectedOptions.forEach((optionId) => {
+                if (currentOptionsStats[optionId]) {
+                    currentOptionsStats[optionId] = Math.max(currentOptionsStats[optionId] - 1, 0);
+                    if (currentOptionsStats[optionId] === 0) {
+                        delete currentOptionsStats[optionId];
+                    }
+                }
+            });
+            newStats.optionsStats = currentOptionsStats;
+        }
+
+        // Сохраняем обновленную статистику
+        await client.query(`
             UPDATE master_class_events 
-            SET statistics = jsonb_set(
-                jsonb_set(
-                    jsonb_set(
-                        COALESCE(statistics, '{}'::jsonb),
-                        '{totalParticipants}',
-                        to_jsonb(GREATEST(COALESCE((statistics->>'totalParticipants')::int, 0) - 1, 0))
-                    ),
-                    '{totalAmount}',
-                    to_jsonb(GREATEST(COALESCE((statistics->>'totalAmount')::int, 0) - $1, 0))
-                ),
-                '{unpaidAmount}',
-                to_jsonb(GREATEST(COALESCE((statistics->>'unpaidAmount')::int, 0) - $1, 0))
-            ),
-            updated_at = CURRENT_TIMESTAMP
+            SET statistics = $1,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
-        `, [registration.total_price, workshopId]);
-        console.log('Статистика обновлена после удаления участника');
+        `, [JSON.stringify(newStats), workshopId]);
+
+        console.log('✅ Статистика обновлена:', newStats);
+
+        await client.query('COMMIT');
+
         return res.json({
             success: true,
-            message: 'Участник успешно удален из мастер-класса'
+            message: 'Участник успешно удален из мастер-класса',
+            deletedParticipant: participant,
+            updatedStatistics: newStats
         });
-    }
-    catch (error) {
-        console.error('Ошибка при удалении участника:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('❌ Ошибка при удалении участника:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    } finally {
+        client.release();
     }
 };
 //# sourceMappingURL=workshopRegistrations.js.map

@@ -32,6 +32,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
                 setLoading(true);
 
+                // Проверяем наличие API
+                if (!api || !api.auth) {
+                    console.error('❌ API не инициализирован');
+                    setLoading(false);
+                    // Если API недоступен, показываем лендинг
+                    setIsAuthenticated(false);
+                    return;
+                }
+
                 // Проверяем наличие токена
                 if (api.auth.isAuthenticated()) {
                     try {
@@ -43,7 +52,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     } catch (profileError) {
                         console.error('Profile fetch failed, token may be invalid:', profileError);
                         // Если токен недействителен, очищаем его и состояние
-                        api.auth.logout();
+                        try {
+                            api.auth.logout();
+                        } catch (logoutError) {
+                            console.error('Logout failed:', logoutError);
+                        }
                         setUser(null);
                         setIsAuthenticated(false);
                     }
@@ -56,7 +69,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             } catch (error) {
                 console.error('Auth check failed:', error);
                 // Если токен недействителен, очищаем его и состояние
-                api.auth.logout();
+                try {
+                    if (api && api.auth) {
+                        api.auth.logout();
+                    }
+                } catch (logoutError) {
+                    console.error('Logout failed:', logoutError);
+                }
                 setUser(null);
                 setIsAuthenticated(false);
             } finally {
@@ -121,7 +140,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             setUser({ ...response.user, role: response.user.role as UserRole });
             setIsAuthenticated(true);
-            
+
             console.log('✅ Registration successful');
         } catch (error) {
             console.error('❌ Registration failed:', error);
@@ -132,7 +151,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     // Функция для получения сохраненных детей с fallback
-    const getRegisteredChildren = (): Array<{ id: string; name: string; [key: string]: unknown }> | null => {
+    const getRegisteredChildren = (): Array<{ id: string; name: string;[key: string]: unknown }> | null => {
         try {
             // Сначала пытаемся получить из localStorage
             const children = localStorage.getItem('registered_children');
@@ -162,6 +181,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         api.auth.logout();
         setUser(null);
         setIsAuthenticated(false);
+        // Принудительно очищаем кэш и перенаправляем на лендинг
+        window.location.href = '/landing';
     };
 
     // Функция обновления профиля
@@ -199,10 +220,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 export const useAuth = (): AuthContextType => {
     const context = useContext(AuthContext);
     if (context === undefined) {
-        throw new Error('useAuth must be used within an AuthProvider');
+        // Более информативная ошибка для отладки
+        console.error('❌ useAuth hook called outside of AuthProvider');
+        console.error('❌ Component stack:', new Error().stack);
+        throw new Error('useAuth must be used within an AuthProvider. Check that your component is wrapped in <AuthProvider>');
     }
     return context;
 };
-
-// Экспорт типов для использования в других компонентах
-export type { UserRole }; 

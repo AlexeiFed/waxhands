@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Card,
     CardContent,
@@ -57,9 +57,12 @@ interface MasterClassDetailsProps {
         executor_names?: string[];
     };
     service: Service;
+    onUpdateMasterClass?: (id: string, updates: Partial<MasterClassEvent>) => Promise<void>;
+    allMasterClasses?: MasterClassEvent[];
+    onRefreshMasterClasses?: () => Promise<void>;
 }
 
-export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterClass, service }) => {
+export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterClass, service, onUpdateMasterClass, allMasterClasses = [], onRefreshMasterClasses }) => {
     const [stats, setStats] = useState<MasterClassStatistics | null>(null);
     const [loading, setLoading] = useState(false);
     const [schoolData, setSchoolData] = useState<{ teacher?: string; teacherPhone?: string } | null>(null);
@@ -144,7 +147,7 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
         const allParticipants = participants.filter(p => !p.isPaid || p.isPaid); // Все участники
         const participantNames = allParticipants.map(p => `• ${p.childName}`).join('\n');
 
-        return `Учащиеся вашего класса №${masterClass.classGroup} в количестве ${allParticipants.length} человек участвуют в мастер-классе "${service.name}" ${masterClass.date} в ${masterClass.time}.
+        return `Учащиеся вашего класса №${masterClass.classGroup} в количестве ${allParticipants.length} человек участвуют в мастер-классе "${service.name}" ${editData.date} в ${editData.time}.
 
 Участники:
 ${participantNames}
@@ -162,7 +165,7 @@ ${participantNames}
         const paidNames = paidParticipants.map(p => `• ${p.childName}`).join('\n');
         const unpaidNames = unpaidParticipants.map(p => `• ${p.childName}`).join('\n');
 
-        let message = `Мастер-класс "${service.name}" ${masterClass.date} в ${masterClass.time}
+        let message = `Мастер-класс "${service.name}" ${editData.date} в ${editData.time}
 
 Класс: №${masterClass.classGroup}
 Общее количество участников: ${participants.length}
@@ -233,19 +236,7 @@ ${unpaidNames}
         setPreviewMessage('');
     };
 
-    useEffect(() => {
-        loadStats();
-        loadSchoolData();
-        loadExecutors(); // Загрузка исполнителей при монтировании
-        console.log('MasterClass data:', masterClass);
-        console.log('executor_names:', masterClass.executor_names);
-        console.log('executors_full:', masterClass.executors_full);
-        console.log('executors (IDs):', masterClass.executors);
-        console.log('school_data:', masterClass.school_data);
-        console.log('Participants:', participants);
-    }, [masterClass.id]);
-
-    const loadStats = async () => {
+    const loadStats = useCallback(async () => {
         setLoading(true);
         try {
             // Используем локальную статистику вместо API вызова
@@ -260,9 +251,9 @@ ${unpaidNames}
         } finally {
             setLoading(false);
         }
-    };
+    }, [masterClass.statistics]);
 
-    const loadSchoolData = async () => {
+    const loadSchoolData = useCallback(async () => {
         try {
             // Используем данные школы из masterClass, если они есть
             if (masterClass.school_data) {
@@ -277,10 +268,10 @@ ${unpaidNames}
         } catch (error) {
             console.error('Error loading school data:', error);
         }
-    };
+    }, [masterClass.school_data]);
 
     // Загрузка доступных исполнителей
-    const loadExecutors = async () => {
+    const loadExecutors = useCallback(async () => {
         setLoadingExecutors(true);
         try {
             // Используем реальных исполнителей из БД, если они есть и имеют правильную структуру
@@ -314,27 +305,156 @@ ${unpaidNames}
         } finally {
             setLoadingExecutors(false);
         }
-    };
+    }, [masterClass.executors_full]);
+
+    useEffect(() => {
+        loadStats();
+        loadSchoolData();
+        loadExecutors(); // Загрузка исполнителей при монтировании
+        console.log('MasterClass data:', masterClass);
+        console.log('executor_names:', masterClass.executor_names);
+        console.log('executors_full:', masterClass.executors_full);
+        console.log('executors (IDs):', masterClass.executors);
+        console.log('school_data:', masterClass.school_data);
+        console.log('Participants:', participants);
+    }, [masterClass.id, loadExecutors, loadSchoolData, loadStats, masterClass, participants]);
+
+    // Синхронизация editData с masterClass при изменении данных
+    useEffect(() => {
+        setEditData({
+            date: masterClass.date,
+            time: masterClass.time,
+            executors: masterClass.executors,
+            notes: masterClass.notes || ''
+        });
+    }, [masterClass.date, masterClass.time, masterClass.executors, masterClass.notes]);
 
     // Сохранение изменений
     const handleSaveChanges = async () => {
         try {
-            // Упрощаем сохранение изменений
             console.log('Saving changes:', editData);
 
-            // Обновляем локальное состояние
-            Object.assign(masterClass, {
-                date: editData.date,
-                time: editData.time,
-                executors: editData.executors,
-                notes: editData.notes
-            });
+            // Если изменилась дата, обновляем все мастер-классы этой школы в этот день
+            // Правильно извлекаем дату с учетом московского времени
+            const originalDate = new Date(masterClass.date);
+            // Конвертируем в московское время (UTC+3)
+            const moscowDate = new Date(originalDate.getTime() + (3 * 60 * 60 * 1000));
+            const originalDateOnly = moscowDate.toISOString().split('T')[0];
+
+            console.log('🔍 ПРОВЕРКА УСЛОВИЯ МАССОВОГО ОБНОВЛЕНИЯ:');
+            console.log('editData.date:', editData.date);
+            console.log('originalDateOnly:', originalDateOnly);
+            console.log('editData.date !== originalDateOnly:', editData.date !== originalDateOnly);
+            console.log('onUpdateMasterClass exists:', !!onUpdateMasterClass);
+
+            if (editData.date !== originalDateOnly && onUpdateMasterClass) {
+                const newDate = editData.date;
+
+                console.log('=== ОТЛАДКА МАССОВОГО ОБНОВЛЕНИЯ ===');
+                console.log('Текущий мастер-класс:', {
+                    id: masterClass.id,
+                    schoolId: masterClass.schoolId,
+                    date: masterClass.date,
+                    originalDateOnly
+                });
+                console.log('Новая дата:', newDate);
+                console.log('Всего мастер-классов в allMasterClasses:', allMasterClasses.length);
+
+                // Находим все мастер-классы той же школы в исходный день
+                console.log('🔍 Начинаем поиск мастер-классов для массового обновления...');
+                console.log('Ищем мастер-классы с schoolId:', masterClass.schoolId, 'и датой:', originalDateOnly);
+
+                // Сначала обновляем данные мастер-классов для получения актуальной информации
+                if (onRefreshMasterClasses) {
+                    console.log('🔄 Обновляем данные перед поиском...');
+                    await onRefreshMasterClasses();
+                }
+
+                const sameSchoolSameDayClasses = allMasterClasses.filter(mc => {
+                    // Правильно извлекаем дату с учетом московского времени
+                    const mcDate = new Date(mc.date);
+                    // Конвертируем в московское время (UTC+3)
+                    const mcMoscowDate = new Date(mcDate.getTime() + (3 * 60 * 60 * 1000));
+                    const mcDateOnly = mcMoscowDate.toISOString().split('T')[0];
+                    const isSameSchool = mc.schoolId === masterClass.schoolId;
+                    const isSameDate = mcDateOnly === originalDateOnly;
+                    const isNotCurrent = mc.id !== masterClass.id;
+
+                    return isSameSchool && isSameDate && isNotCurrent;
+                });
+
+                console.log(`Найдено ${sameSchoolSameDayClasses.length} мастер-классов той же школы в день ${originalDateOnly}`);
+
+                // Обновляем основной мастер-класс
+                console.log('Обновляем основной мастер-класс...');
+                await onUpdateMasterClass(masterClass.id, {
+                    date: editData.date,
+                    time: editData.time,
+                    executors: editData.executors,
+                    notes: editData.notes
+                });
+
+                // Обновляем все остальные мастер-классы той же школы в этот день
+                console.log('Начинаем массовое обновление...');
+                for (const mc of sameSchoolSameDayClasses) {
+                    console.log(`Обновляем мастер-класс ${mc.id} с даты ${mc.date} на дату ${newDate}`);
+                    try {
+                        await onUpdateMasterClass(mc.id, {
+                            date: newDate
+                        });
+                        console.log(`✅ Мастер-класс ${mc.id} успешно обновлен`);
+                    } catch (error) {
+                        console.error(`❌ Ошибка обновления мастер-класса ${mc.id}:`, error);
+                    }
+                }
+                console.log('=== КОНЕЦ МАССОВОГО ОБНОВЛЕНИЯ ===');
+
+                // Принудительно обновляем данные мастер-классов
+                if (onRefreshMasterClasses) {
+                    console.log('🔄 Обновляем данные мастер-классов...');
+                    await onRefreshMasterClasses();
+                }
+
+                // Обновляем локальное состояние editData для отображения
+                setEditData({
+                    ...editData,
+                    date: editData.date,
+                    time: editData.time,
+                    executors: editData.executors,
+                    notes: editData.notes
+                });
+
+                toast({
+                    title: "Успешно",
+                    description: `Изменения сохранены. Обновлено ${sameSchoolSameDayClasses.length + 1} мастер-классов`,
+                });
+            } else {
+                // Если дата не изменилась, обновляем только текущий мастер-класс
+                if (onUpdateMasterClass) {
+                    await onUpdateMasterClass(masterClass.id, {
+                        date: editData.date,
+                        time: editData.time,
+                        executors: editData.executors,
+                        notes: editData.notes
+                    });
+                }
+
+                // Обновляем локальное состояние editData для отображения
+                setEditData({
+                    ...editData,
+                    date: editData.date,
+                    time: editData.time,
+                    executors: editData.executors,
+                    notes: editData.notes
+                });
+
+                toast({
+                    title: "Успешно",
+                    description: "Изменения сохранены",
+                });
+            }
 
             setIsEditing(false);
-            toast({
-                title: "Успешно",
-                description: "Изменения сохранены",
-            });
         } catch (error) {
             console.error('Error saving changes:', error);
             toast({
@@ -445,6 +565,80 @@ ${unpaidNames}
         }
     };
 
+    // Функция удаления участника с мастер-класса
+    const handleRemoveParticipant = async (participantId: string) => {
+        const participant = participants.find(p => p.id === participantId);
+        if (!participant) return;
+
+        // Подтверждение удаления
+        const confirmed = window.confirm(
+            `Вы уверены, что хотите удалить участника "${participant.childName}" с мастер-класса?\n\n` +
+            `Это действие:\n` +
+            `• Удалит участника из мастер-класса\n` +
+            `• Удалит связанный счет\n` +
+            `• Обновит статистику по стилям и опциям\n` +
+            `• В будущем будет реализован возврат денежных средств (если была произведена оплата)`
+        );
+
+        if (!confirmed) return;
+
+        try {
+            // Реальный API вызов для удаления участника
+            const response = await api.workshopRegistrations.removeParticipant(masterClass.id, participantId);
+
+            // Обновляем локальное состояние
+            setParticipants(prev => prev.filter(p => p.id !== participantId));
+
+            // Обновляем статистику мастер-класса из ответа сервера
+            if ('updatedStatistics' in response && response.updatedStatistics) {
+                const updatedStats = response.updatedStatistics as MasterClassStatistics;
+                masterClass.statistics = updatedStats;
+                setStats(updatedStats);
+            } else {
+                // Fallback: обновляем статистику локально
+                const updatedStats = {
+                    ...masterClass.statistics,
+                    totalParticipants: Math.max(masterClass.statistics.totalParticipants - 1, 0),
+                    totalAmount: Math.max(masterClass.statistics.totalAmount - participant.totalAmount, 0),
+                    paidAmount: participant.isPaid
+                        ? Math.max(masterClass.statistics.paidAmount - participant.totalAmount, 0)
+                        : masterClass.statistics.paidAmount,
+                    unpaidAmount: !participant.isPaid
+                        ? Math.max(masterClass.statistics.unpaidAmount - participant.totalAmount, 0)
+                        : masterClass.statistics.unpaidAmount
+                };
+
+                masterClass.statistics = updatedStats;
+                setStats(updatedStats);
+            }
+
+            toast({
+                title: "Участник удален",
+                description: `Участник "${participant.childName}" удален с мастер-класса. Счет и статистика обновлены.`,
+                variant: "default",
+            });
+
+            console.log('🗑️ Удален участник:', {
+                participantId,
+                childName: participant.childName,
+                masterClassId: masterClass.id,
+                totalAmount: participant.totalAmount,
+                wasPaid: participant.isPaid,
+                selectedStyles: participant.selectedStyles,
+                selectedOptions: participant.selectedOptions,
+                updatedStatistics: ('updatedStatistics' in response && response.updatedStatistics) || 'fallback'
+            });
+
+        } catch (error) {
+            console.error('Error removing participant:', error);
+            toast({
+                title: "Ошибка",
+                description: `Не удалось удалить участника с мастер-класса: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+                variant: "destructive",
+            });
+        }
+    };
+
     const getStyleOptionNames = (styleIds: string[], optionIds: string[]) => {
         if (!service) {
             return {
@@ -511,7 +705,7 @@ ${unpaidNames}
                                         className="text-sm text-blue-600 bg-white border border-blue-200 rounded px-2 py-1 w-full"
                                     />
                                 ) : (
-                                    <p className="text-sm text-blue-600">{formatDate(masterClass.date)}</p>
+                                    <p className="text-sm text-blue-600">{formatDate(editData.date)}</p>
                                 )}
                             </div>
                         </div>
@@ -528,7 +722,7 @@ ${unpaidNames}
                                         className="text-sm text-green-600 bg-white border border-green-200 rounded px-2 py-1 w-full"
                                     />
                                 ) : (
-                                    <p className="text-sm text-green-600">{masterClass.time}</p>
+                                    <p className="text-sm text-green-600">{editData.time}</p>
                                 )}
                             </div>
                         </div>
@@ -920,6 +1114,7 @@ ${unpaidNames}
                                     <TableHead className="font-semibold">Сумма</TableHead>
                                     <TableHead className="font-semibold">Статус оплаты</TableHead>
                                     <TableHead className="font-semibold">Получил услугу</TableHead>
+                                    <TableHead className="font-semibold">Примечания</TableHead>
                                     <TableHead className="font-semibold">Действия</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -941,39 +1136,36 @@ ${unpaidNames}
                                             hasReceived: participant.hasReceived
                                         });
 
-                                        // Создаем функцию для проверки выбран ли стиль/опция
-                                        const isStyleSelected = (styleId: string) => {
-                                            const result = participant.selectedStyles?.some((selected: unknown) =>
-                                                typeof selected === 'string' ? selected === styleId : (selected as { id: string }).id === styleId
-                                            ) || false;
-
-                                            // Отладочная информация
-                                            if (participant.selectedStyles && participant.selectedStyles.length > 0) {
-                                                console.log(`🔍 isStyleSelected для ${participant.childName}, стиль ${styleId}:`, {
-                                                    selectedStyles: participant.selectedStyles,
-                                                    result,
-                                                    styleId
-                                                });
+                                        // Создаем функцию для подсчета количества выбранных стилей
+                                        const getStyleCount = (styleId: string) => {
+                                            if (!participant.selectedStyles || participant.selectedStyles.length === 0) {
+                                                return 0;
                                             }
 
-                                            return result;
+                                            return participant.selectedStyles.filter((selected: unknown) => {
+                                                if (typeof selected === 'string') {
+                                                    return selected === styleId;
+                                                } else if (selected && typeof selected === 'object' && 'id' in selected) {
+                                                    return (selected as { id: string }).id === styleId;
+                                                }
+                                                return false;
+                                            }).length;
                                         };
 
-                                        const isOptionSelected = (optionId: string) => {
-                                            const result = participant.selectedOptions?.some((selected: unknown) =>
-                                                typeof selected === 'string' ? selected === optionId : (selected as { id: string }).id === optionId
-                                            ) || false;
-
-                                            // Отладочная информация
-                                            if (participant.selectedOptions && participant.selectedOptions.length > 0) {
-                                                console.log(`🔍 isOptionSelected для ${participant.childName}, опция ${optionId}:`, {
-                                                    selectedOptions: participant.selectedOptions,
-                                                    result,
-                                                    optionId
-                                                });
+                                        // Создаем функцию для подсчета количества выбранных опций
+                                        const getOptionCount = (optionId: string) => {
+                                            if (!participant.selectedOptions || participant.selectedOptions.length === 0) {
+                                                return 0;
                                             }
 
-                                            return result;
+                                            return participant.selectedOptions.filter((selected: unknown) => {
+                                                if (typeof selected === 'string') {
+                                                    return selected === optionId;
+                                                } else if (selected && typeof selected === 'object' && 'id' in selected) {
+                                                    return (selected as { id: string }).id === optionId;
+                                                }
+                                                return false;
+                                            }).length;
                                         };
 
                                         return (
@@ -992,26 +1184,40 @@ ${unpaidNames}
                                                         )}
                                                     </div>
                                                 </TableCell>
-                                                {/* Динамические столбцы стилей с галочками */}
-                                                {service?.styles.map(style => (
-                                                    <TableCell key={style.id} className="text-center">
-                                                        {isStyleSelected(style.id) ? (
-                                                            <CheckCircle className="h-5 w-5 text-green-600 mx-auto" />
-                                                        ) : (
-                                                            <div className="h-5 w-5 mx-auto border-2 border-gray-300 rounded"></div>
-                                                        )}
-                                                    </TableCell>
-                                                ))}
-                                                {/* Динамические столбцы опций с галочками */}
-                                                {service?.options.map(option => (
-                                                    <TableCell key={option.id} className="text-center">
-                                                        {isOptionSelected(option.id) ? (
-                                                            <CheckCircle className="h-5 w-5 text-blue-600 mx-auto" />
-                                                        ) : (
-                                                            <div className="h-5 w-5 mx-auto border-2 border-gray-300 rounded"></div>
-                                                        )}
-                                                    </TableCell>
-                                                ))}
+                                                {/* Динамические столбцы стилей с количеством */}
+                                                {service?.styles.map(style => {
+                                                    const count = getStyleCount(style.id);
+                                                    return (
+                                                        <TableCell key={style.id} className="text-center">
+                                                            {count > 0 ? (
+                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-green-100 text-green-800 rounded-full font-semibold text-sm">
+                                                                    {count}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 text-gray-400 rounded-full font-semibold text-sm">
+                                                                    -
+                                                                </div>
+                                                            )}
+                                                        </TableCell>
+                                                    );
+                                                })}
+                                                {/* Динамические столбцы опций с количеством */}
+                                                {service?.options.map(option => {
+                                                    const count = getOptionCount(option.id);
+                                                    return (
+                                                        <TableCell key={option.id} className="text-center">
+                                                            {count > 0 ? (
+                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 rounded-full font-semibold text-sm">
+                                                                    {count}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 text-gray-400 rounded-full font-semibold text-sm">
+                                                                    -
+                                                                </div>
+                                                            )}
+                                                        </TableCell>
+                                                    );
+                                                })}
                                                 <TableCell className="font-semibold text-green-600">
                                                     {formatCurrency(participant.totalAmount)}
                                                 </TableCell>
@@ -1061,6 +1267,20 @@ ${unpaidNames}
                                                         </Badge>
                                                     </div>
                                                 </TableCell>
+                                                <TableCell className="max-w-[200px]">
+                                                    {participant.notes ? (
+                                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2">
+                                                            <div className="flex items-start space-x-2">
+                                                                <FileText className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                                                                <p className="text-sm text-yellow-800 break-words">
+                                                                    {participant.notes}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-sm">Нет примечаний</span>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell>
                                                     <div className="flex space-x-2">
                                                         <Button
@@ -1074,10 +1294,11 @@ ${unpaidNames}
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
-                                                            onClick={() => handleServiceReceivedChange(participant.id, !hasReceivedService)}
-                                                            className={hasReceivedService ? 'text-green-600 border-green-200' : 'text-blue-600 border-blue-200'}
+                                                            onClick={() => handleRemoveParticipant(participant.id)}
+                                                            className="text-red-600 border-red-200 hover:bg-red-50"
                                                         >
-                                                            {hasReceivedService ? 'Отменить получение' : 'Отметить получение'}
+                                                            <UserX className="w-4 h-4 mr-1" />
+                                                            Удалить
                                                         </Button>
                                                     </div>
                                                 </TableCell>
@@ -1087,7 +1308,7 @@ ${unpaidNames}
                                 ) : (
                                     // Заглушка для пустой таблицы
                                     <TableRow>
-                                        <TableCell colSpan={7} className="text-center py-8">
+                                        <TableCell colSpan={8} className="text-center py-8">
                                             <div className="flex flex-col items-center space-y-3">
                                                 <Users className="w-12 h-12 text-muted-foreground opacity-50" />
                                                 <div>

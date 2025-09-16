@@ -2,7 +2,7 @@
   "name": "Студия МК 'Восковые ручки'",
   "short_name": "Восковые ручки",
   "description": "Приложение для записи на мастер-классы по лепке из воска в студии",
-  "version": "2.0.3",
+  "version": "3.0.0",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#fef7e0",
@@ -22,61 +22,73 @@
   ],
   "icons": [
     {
-      "src": "/uploads/images/icon-72x72.png?v=2.0.3",
+      "src": "/icons/icon-72x72-white.png?v=3.0.0",
       "sizes": "72x72",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-96x96.png?v=2.0.3",
+      "src": "/icons/icon-96x96-white.png?v=3.0.0",
       "sizes": "96x96",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-128x128.png?v=2.0.3",
+      "src": "/icons/icon-128x128-white.png?v=3.0.0",
       "sizes": "128x128",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-144x144.png?v=2.0.3",
+      "src": "/icons/icon-144x144-white.png?v=3.0.0",
       "sizes": "144x144",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-152x152.png?v=2.0.3",
+      "src": "/icons/icon-152x152-white.png?v=3.0.0",
       "sizes": "152x152",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-180x180.png?v=2.0.3",
+      "src": "/icons/icon-180x180-white.png?v=3.0.0",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-192x192.png?v=2.0.3",
+      "src": "/icons/icon-192x192-white.png?v=3.0.0",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-384x384.png?v=2.0.3",
+      "src": "/icons/icon-192x192-maskable.png?v=3.0.0",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-384x384-white.png?v=3.0.0",
       "sizes": "384x384",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-512x512.png?v=2.0.3",
+      "src": "/icons/icon-512x512-white.png?v=3.0.0",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/uploads/images/icon-1024x1024.png?v=2.0.3",
+      "src": "/icons/icon-512x512-maskable.png?v=3.0.0",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-1024x1024-white.png?v=3.0.0",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
@@ -90,8 +102,9 @@
       "url": "/master-classes",
       "icons": [
         {
-          "src": "/icons/shortcut-96x96.png?v=2.0.2",
-          "sizes": "96x96"
+          "src": "/icons/icon-96x96-white.png?v=3.0.0",
+          "sizes": "96x96",
+          "type": "image/png"
         }
       ]
     },
@@ -102,8 +115,9 @@
       "url": "/profile",
       "icons": [
         {
-          "src": "/icons/shortcut-96x96.png?v=2.0.2",
-          "sizes": "96x96"
+          "src": "/icons/icon-96x96-white.png?v=3.0.0",
+          "sizes": "96x96",
+          "type": "image/png"
         }
       ]
     }
