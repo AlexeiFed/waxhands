@@ -18,9 +18,9 @@ import paymentCheckRoutes from './payment-check.js';
 import paymentPollerRoutes from './payment-poller.js';
 import offersRoutes from './offers.js';
 import offersPdfRoutes from './offers-pdf.js';
-import privacyPolicyRoutes from './privacy-policy.js';
 import contactsRoutes from './contacts.js';
 import bonusesRoutes from './bonuses.js';
+import robokassaRoutes from './robokassa.js';
 
 const router = Router();
 
@@ -44,9 +44,9 @@ router.use('/payment-check', paymentCheckRoutes);
 router.use('/payment-poller', paymentPollerRoutes);
 router.use('/offers', offersRoutes);
 router.use('/offers-pdf', offersPdfRoutes);
-router.use('/privacy-policy', privacyPolicyRoutes);
 router.use('/contacts', contactsRoutes);
 router.use('/bonuses', bonusesRoutes);
+router.use('/robokassa', robokassaRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

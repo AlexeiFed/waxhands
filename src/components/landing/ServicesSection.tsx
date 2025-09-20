@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Hand, MapPin, Users, Clock, Star, ArrowRight, FileImage, FileVideo, Play, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useServices } from '@/hooks/use-services';
 import { useNavigate } from 'react-router-dom';
+import { ExpandableText } from '@/components/ui/expandable-text';
 
 export const ServicesSection: React.FC = () => {
     const { services, loading: servicesLoading } = useServices();
@@ -65,7 +66,7 @@ export const ServicesSection: React.FC = () => {
     if (servicesLoading) {
         return (
             <section id="services" className="py-20">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
                         <p className="text-xl text-gray-700">Загружаем услуги...</p>
@@ -77,7 +78,7 @@ export const ServicesSection: React.FC = () => {
 
     return (
         <section id="services" className="py-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Заголовок секции */}
                 <div className="text-center mb-16">
                     <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
@@ -101,14 +102,22 @@ export const ServicesSection: React.FC = () => {
                                         <h3 className="text-3xl font-bold text-orange-800 mb-4 text-center">
                                             {service.name}
                                         </h3>
-                                        <p className="text-lg text-gray-700 px-6">
-                                            {service.shortDescription}
-                                        </p>
-                                        {service.fullDescription && (
-                                            <p className="text-lg text-gray-600 mt-4 px-6">
-                                                {service.fullDescription}
-                                            </p>
-                                        )}
+                                        <div className="px-6">
+                                            <ExpandableText
+                                                text={service.shortDescription}
+                                                maxLength={120}
+                                                className="text-lg text-gray-700"
+                                                buttonClassName="text-orange-600"
+                                            />
+                                            {service.fullDescription && (
+                                                <ExpandableText
+                                                    text={service.fullDescription}
+                                                    maxLength={150}
+                                                    className="text-lg text-gray-600 mt-4"
+                                                    buttonClassName="text-orange-600"
+                                                />
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Стили услуги */}
@@ -146,9 +155,12 @@ export const ServicesSection: React.FC = () => {
 
                                                             {/* Полное описание */}
                                                             {style.fullDescription && (
-                                                                <p className="text-gray-600 mb-4 text-sm leading-relaxed">
-                                                                    {style.fullDescription}
-                                                                </p>
+                                                                <ExpandableText
+                                                                    text={style.fullDescription}
+                                                                    maxLength={100}
+                                                                    className="text-gray-600 mb-4 text-sm leading-relaxed"
+                                                                    buttonClassName="text-purple-600 text-xs"
+                                                                />
                                                             )}
 
                                                             {/* Цена стиля */}

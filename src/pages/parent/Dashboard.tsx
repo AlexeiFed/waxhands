@@ -170,7 +170,8 @@ const ParentDashboard = () => {
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => {
         // Проверяем, был ли уже показан онбординг
         const hasSeenOnboarding = localStorage.getItem('parent-onboarding-completed');
-        return !hasSeenOnboarding;
+        // НЕ показываем онбординг авторизованным пользователям
+        return false; // Отключаем онбординг для всех авторизованных пользователей
     });
     const [isEditChildDialogOpen, setIsEditChildDialogOpen] = useState(false);
     const [editingChild, setEditingChild] = useState<ChildData | null>(null);

@@ -109,7 +109,7 @@ export const HeroSection: React.FC = () => {
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-yellow-300/20 to-pink-400/20 rounded-full blur-3xl animate-pulse delay-500"></div>
             </div>
 
-            <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="relative z-10 max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
                 <div className="max-w-4xl mx-auto">
                     {/* Главный заголовок */}
                     <div className="mb-8">
@@ -161,16 +161,18 @@ export const HeroSection: React.FC = () => {
                     {/* Статистика */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-8 max-w-2xl mx-auto px-4">
                         <div className="text-center">
-                            <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-orange-600 mb-1 sm:mb-2">500+</div>
-                            <div className="text-sm sm:text-base text-gray-600">Довольных клиентов</div>
+                            <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-orange-600 mb-1 sm:mb-2">100000+</div>
+                            <div className="text-sm sm:text-base text-gray-600">Довольных детей</div>
                         </div>
                         <div className="text-center">
-                            <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600 mb-1 sm:mb-2">50+</div>
-                            <div className="text-sm sm:text-base text-gray-600">Проведенных мастер-классов</div>
+                            <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600 mb-1 sm:mb-2">3+</div>
+                            <div className="text-sm sm:text-base text-gray-600">Возраст детей</div>
                         </div>
                         <div className="text-center">
                             <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600 mb-1 sm:mb-2">100%</div>
                             <div className="text-sm sm:text-base text-gray-600">Безопасные материалы</div>
+                            {/*          <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600 mb-1 sm:mb-2">1200+</div>
+                            <div className="text-sm sm:text-base text-gray-600">Школ и садов</div> */}
                         </div>
                     </div>
                 </div>

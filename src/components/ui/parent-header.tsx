@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import ParentChat from '@/components/ui/parent-chat';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
 interface ParentHeaderProps {
     showBackButton?: boolean;
@@ -203,17 +204,27 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
                                             </div>
                                         </div>
                                     </SheetHeader>
-                                    <nav className="mt-6 space-y-4">
+                                    <nav className="mt-4 space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
                                         {menuItems.map((item) => (
                                             <button
                                                 key={item.href}
                                                 onClick={() => handleMenuClick(item.href)}
-                                                className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/20 hover:text-white transition-colors duration-200 text-white font-medium"
+                                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/20 hover:text-white transition-colors duration-200 text-white font-medium text-sm"
                                             >
-                                                <span className="mr-3">{item.icon}</span>
+                                                <span className="mr-2 text-base">{item.icon}</span>
                                                 {item.label}
                                             </button>
                                         ))}
+
+                                        {/* Кнопка установки PWA */}
+                                        <div className="pt-4 border-t border-white/20">
+                                            <PWAInstallButton
+                                                variant="ghost"
+                                                className="w-full justify-start text-white hover:bg-white/20 hover:text-white"
+                                            >
+                                                📱 Установить приложение
+                                            </PWAInstallButton>
+                                        </div>
                                     </nav>
                                 </SheetContent>
                             </Sheet>

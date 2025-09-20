@@ -10,6 +10,15 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     strictPort: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/index-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`
+      }
+    }
+  },
   plugins: [
     react(),
     mode === 'development' &&

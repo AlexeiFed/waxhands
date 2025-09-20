@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,19 @@ const Login = () => {
     const { toast } = useToast();
     const navigate = useNavigate();
     const { login, loading: authLoading, isAuthenticated, user } = useAuth();
+
+    // Если пользователь уже авторизован, перенаправляем на соответствующий dashboard
+    useEffect(() => {
+        if (isAuthenticated && user && !authLoading) {
+            console.log('🔄 Пользователь авторизован, перенаправляем на dashboard для роли:', user.role);
+            
+            const redirectPath = user.role === 'admin' ? '/admin' : 
+                                 user.role === 'executor' ? '/executor' : 
+                                 user.role === 'child' ? '/child' : '/parent';
+            
+            navigate(redirectPath, { replace: true });
+        }
+    }, [isAuthenticated, user, authLoading, navigate]);
 
     // Показываем индикатор загрузки пока проверяется аутентификация
     if (authLoading) {

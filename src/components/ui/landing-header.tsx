@@ -10,14 +10,18 @@ import { Button } from '@/components/ui/button';
 import { Menu, X, User, LogIn } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import { useNavigate } from 'react-router-dom';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
 export const LandingHeader: React.FC = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const navigate = useNavigate();
 
     const menuItems = [
+        { label: 'Процесс', href: '#process' },
         { label: 'О нас', href: '#about' },
         { label: 'Услуги', href: '#services' },
+        { label: 'Гарантии', href: '#guarantees' },
+        { label: 'Оплата', href: '#payment' },
         { label: 'Галерея', href: '#gallery' },
         { label: 'Контакты', href: '#contacts' }
     ];
@@ -32,7 +36,7 @@ export const LandingHeader: React.FC = () => {
 
     return (
         <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-orange-200 shadow-sm">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between items-center h-16">
                     {/* Логотип */}
                     <div className="flex items-center space-x-3">
@@ -62,6 +66,14 @@ export const LandingHeader: React.FC = () => {
 
                     {/* Кнопки действий */}
                     <div className="flex items-center space-x-2 sm:space-x-3">
+                        <PWAInstallButton
+                            variant="ghost"
+                            size="sm"
+                            className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                        >
+                            <span>Установить</span>
+                        </PWAInstallButton>
+
                         <Button
                             variant="ghost"
                             onClick={() => navigate('/login')}
@@ -105,7 +117,13 @@ export const LandingHeader: React.FC = () => {
                                     {item.label}
                                 </button>
                             ))}
-                            <div className="pt-2 border-t border-orange-200">
+                            <div className="pt-2 border-t border-orange-200 space-y-1">
+                                <PWAInstallButton
+                                    variant="ghost"
+                                    className="w-full justify-start text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                                >
+                                    Установить приложение
+                                </PWAInstallButton>
                                 <Button
                                     variant="ghost"
                                     onClick={() => {

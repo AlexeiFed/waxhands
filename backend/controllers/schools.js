@@ -144,37 +144,81 @@ export const updateSchool = async (req, res) => {
     }
 };
 export const deleteSchool = async (req, res) => {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         const { id } = req.params;
+        console.log('🗑️ Начинаем удаление школы:', id);
+
         // Проверяем, есть ли пользователи, связанные с этой школой
-        const usersResult = await pool.query('SELECT COUNT(*) FROM users WHERE school_id = $1', [id]);
+        const usersResult = await client.query('SELECT COUNT(*) FROM users WHERE school_id = $1', [id]);
         const userCount = parseInt(usersResult.rows[0].count);
         if (userCount > 0) {
+            await client.query('ROLLBACK');
             res.status(400).json({
                 success: false,
                 error: `Cannot delete school. There are ${userCount} users associated with this school.`
             });
             return;
         }
-        const result = await pool.query('DELETE FROM schools WHERE id = $1 RETURNING *', [id]);
+
+        // Проверяем, есть ли мастер-классы, связанные с этой школой
+        const masterClassesResult = await client.query('SELECT COUNT(*) FROM master_class_events WHERE school_id = $1', [id]);
+        const masterClassesCount = parseInt(masterClassesResult.rows[0].count);
+        console.log('🔍 Найдено мастер-классов связанных со школой:', masterClassesCount);
+
+        if (masterClassesCount > 0) {
+            // Удаляем все связанные мастер-классы и их участников
+            console.log('🗑️ Удаляем связанные мастер-классы...');
+
+            // Сначала получаем все мастер-классы для удаления связанных счетов
+            const masterClassesToDelete = await client.query('SELECT id FROM master_class_events WHERE school_id = $1', [id]);
+            const masterClassIds = masterClassesToDelete.rows.map(row => row.id);
+
+            if (masterClassIds.length > 0) {
+                // Удаляем связанные счета (invoices)
+                await client.query('DELETE FROM invoices WHERE master_class_event_id = ANY($1)', [masterClassIds]);
+                console.log('🗑️ Удалены связанные счета');
+
+                // Удаляем участников мастер-классов
+                await client.query('DELETE FROM master_class_participants WHERE master_class_event_id = ANY($1)', [masterClassIds]);
+                console.log('🗑️ Удалены участники мастер-классов');
+
+                // Удаляем сами мастер-классы
+                await client.query('DELETE FROM master_class_events WHERE school_id = $1', [id]);
+                console.log('🗑️ Удалены мастер-классы школы');
+            }
+        }
+
+        // Удаляем саму школу
+        const result = await client.query('DELETE FROM schools WHERE id = $1 RETURNING *', [id]);
         if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
             res.status(404).json({
                 success: false,
                 error: 'School not found'
             });
             return;
         }
+
+        await client.query('COMMIT');
+        console.log('✅ Школа и все связанные данные успешно удалены');
+
         res.json({
             success: true,
-            message: 'School deleted successfully'
+            message: `School deleted successfully. Also deleted ${masterClassesCount} related master classes.`
         });
     }
     catch (error) {
+        await client.query('ROLLBACK');
         console.error('Delete school error:', error);
         res.status(500).json({
             success: false,
             error: 'Internal server error'
         });
+    } finally {
+        client.release();
     }
 };
 export const getSchoolClasses = async (req, res) => {

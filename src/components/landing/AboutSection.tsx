@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Hand, Star, Users, Clock, Shield, Award, Play, X } from 'lucide-react';
 import { useAboutContentContext } from '@/contexts/AboutContentContext';
 import { useAboutMedia } from '@/hooks/use-about-api';
+import { ExpandableText } from '@/components/ui/expandable-text';
 
 export const AboutSection: React.FC = () => {
     const { content, isLoading: contentLoading } = useAboutContentContext();
@@ -66,7 +67,7 @@ export const AboutSection: React.FC = () => {
     if (contentLoading || mediaLoading) {
         return (
             <section id="about" className="py-20">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
                         <p className="text-xl text-gray-700">Загружаем информацию о студии...</p>
@@ -78,7 +79,7 @@ export const AboutSection: React.FC = () => {
 
     return (
         <section id="about" className="py-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Заголовок секции */}
                 <div className="text-center mb-16">
                     <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
@@ -99,11 +100,12 @@ export const AboutSection: React.FC = () => {
                                     <Hand className="w-8 h-8 text-orange-600 mr-3" />
                                     Что мы делаем
                                 </h3>
-                                <p className="text-lg text-gray-700 leading-relaxed mb-6">
-                                    Создаем уникальные 3D копии рук в восковом исполнении.
-                                    Каждый мастер-класс — это увлекательное путешествие в мир творчества,
-                                    где дети и взрослые могут создать неповторимый сувенир на память.
-                                </p>
+                                <ExpandableText
+                                    text="Создаем уникальные 3D копии рук в восковом исполнении. Каждый мастер-класс — это увлекательное путешествие в мир творчества, где дети и взрослые могут создать неповторимый сувенир на память."
+                                    maxLength={120}
+                                    className="text-lg text-gray-700 leading-relaxed mb-6"
+                                    buttonClassName="text-orange-600"
+                                />
                                 <div className="flex flex-wrap gap-2">
                                     <Badge className="bg-orange-100 text-orange-800 border-orange-300">
                                         <Star className="w-4 h-4 mr-1" />
@@ -207,9 +209,14 @@ export const AboutSection: React.FC = () => {
                             </h3>
                         </div>
                         <div className="text-justify leading-relaxed">
-                            <p className="text-lg text-gray-700 mb-4 px-4">
-                                {displayContent.safety_description}
-                            </p>
+                            <div className="px-4">
+                                <ExpandableText
+                                    text={displayContent.safety_description}
+                                    maxLength={150}
+                                    className="text-lg text-gray-700 mb-4"
+                                    buttonClassName="text-green-600"
+                                />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4">
                                 <div className="bg-white/50 rounded-lg p-4 border border-green-200">
                                     <h4 className="font-semibold text-green-800 mb-2">🛡️ Безопасные материалы</h4>

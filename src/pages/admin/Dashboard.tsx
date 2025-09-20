@@ -22,6 +22,7 @@ import { useWebSocketChat } from '@/hooks/use-websocket-chat';
 import { useWorkshopRequestsWebSocket } from '@/hooks/use-workshop-requests-websocket';
 import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { Chat } from '@/types/chat';
 import { SchoolModal } from '@/components/ui/school-modal';
 import { SchoolFilters } from '@/components/ui/school-filters';
@@ -36,6 +37,7 @@ import OffersTab from '@/components/admin/OffersTab';
 import PrivacyPolicyTab from '@/components/admin/PrivacyPolicyTab';
 import ContactsTab from '@/components/admin/ContactsTab';
 import BonusesTab from '@/components/admin/BonusesTab';
+import PrivacyConsentTab from '@/components/admin/PrivacyConsentTab';
 import { Service, ServiceStyle, ServiceOption } from '@/types';
 import { MasterClassEvent, MasterClassParticipant } from '@/types/services';
 import {
@@ -144,7 +146,7 @@ const DashboardContent: React.FC = () => {
     );
 
     // WebSocket для автоматических обновлений мастер-классов
-    const { isConnected: masterClassesWsConnected } = useMasterClassesWebSocket({
+    const { isConnected: masterClassesWsConnected, sendMasterClassMessage } = useMasterClassesWebSocket({
         userId: user?.id,
         enabled: true,
         onMasterClassUpdate: () => {
@@ -218,7 +220,7 @@ const DashboardContent: React.FC = () => {
 
     // Хуки для работы с данными
     const { users, loading: usersLoading, error: usersError, total: usersTotal, deleteUser, createUser, fetchUsers, lastFetch: usersLastFetch } = useUsers();
-    const { schools, loading: schoolsLoading, error: schoolsError, total: schoolsTotal, deleteSchool, createSchool, updateSchool } = useSchools();
+    const { schools, loading: schoolsLoading, error: schoolsError, total: schoolsTotal, deleteSchool, createSchool, updateSchool, fetchSchools } = useSchools();
     const { data: invoicesData, isLoading: invoicesLoading, error: invoicesError } = useInvoices({});
 
     // Отладочная информация для счетов (убрано для оптимизации)
@@ -764,11 +766,37 @@ const DashboardContent: React.FC = () => {
     const handleDeleteSchool = async (schoolId: string) => {
         try {
             await deleteSchool(schoolId);
+
+            // Принудительно обновляем ВСЕ данные после удаления школы
+            console.log('🔄 Обновляем все данные после удаления школы...');
+
+            // Обновляем список школ
+            await fetchSchools();
+
+            // Обновляем список мастер-классов
+            await fetchMasterClasses({ forceRefresh: true });
+
+            // Дополнительное обновление через небольшую задержку
+            setTimeout(async () => {
+                console.log('🔄 Дополнительное обновление мастер-классов...');
+                await fetchMasterClasses({ forceRefresh: true });
+            }, 500);
+
+            // Отправляем WebSocket уведомление об удалении школы
+            if (masterClassesWsConnected) {
+                console.log('🔌 Отправляем WebSocket уведомление об удалении школы...');
+                sendMasterClassMessage('master_class_deleted', {
+                    schoolId: schoolId,
+                    message: 'Школа удалена, обновляем список мастер-классов'
+                });
+            }
+
             toast({
                 title: "Школа удалена",
-                description: "Школа успешно удалена из системы",
+                description: "Школа и все связанные мастер-классы успешно удалены из системы",
             });
         } catch (error) {
+            console.error('❌ Ошибка при удалении школы:', error);
             toast({
                 title: "Ошибка",
                 description: "Не удалось удалить школу",
@@ -791,6 +819,50 @@ const DashboardContent: React.FC = () => {
             toast({
                 title: "Ошибка",
                 description: "Не удалось удалить мастер-класс",
+                variant: "destructive",
+            });
+        }
+    };
+
+    const handleDeleteSchoolMasterClasses = async (schoolId: string, date: string) => {
+        try {
+            console.log('🗑️ Начинаем удаление мастер-классов школы:', { schoolId, date });
+
+            // Получаем все мастер-классы школы за указанную дату
+            const schoolMasterClasses = masterClasses.filter(mc =>
+                mc.schoolId === schoolId && mc.date === date
+            );
+
+            console.log('🔍 Найдено мастер-классов для удаления:', schoolMasterClasses.length);
+
+            if (schoolMasterClasses.length === 0) {
+                toast({
+                    title: "Предупреждение",
+                    description: "Нет мастер-классов для удаления",
+                    variant: "destructive",
+                });
+                return;
+            }
+
+            // Удаляем все мастер-классы школы за дату
+            console.log('🚀 Вызываем API для удаления...');
+            await api.masterClassEvents.deleteSchoolMasterClasses(schoolId, date);
+            console.log('✅ API вызов успешен');
+
+            toast({
+                title: "Мастер-классы удалены",
+                description: `Удалено ${schoolMasterClasses.length} мастер-классов школы за ${new Date(date).toLocaleDateString('ru-RU')}`,
+            });
+
+            // Принудительно обновляем список мастер-классов
+            console.log('🔄 Обновляем список мастер-классов...');
+            await fetchMasterClasses();
+            console.log('✅ Список обновлен');
+        } catch (error) {
+            console.error('❌ Ошибка при удалении мастер-классов школы:', error);
+            toast({
+                title: "Ошибка",
+                description: `Не удалось удалить мастер-классы школы: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
                 variant: "destructive",
             });
         }
@@ -932,13 +1004,14 @@ const DashboardContent: React.FC = () => {
 
     const handleRefreshMasterClasses = async () => {
         try {
-            await fetchMasterClasses();
+            console.log('🔄 Принудительное обновление мастер-классов...');
+            await fetchMasterClasses({ forceRefresh: true });
             toast({
                 title: "Данные обновлены",
                 description: "Список мастер-классов успешно обновлен",
             });
         } catch (error) {
-            console.error('Error refreshing master classes:', error);
+            console.error('❌ Ошибка при обновлении мастер-классов:', error);
             toast({
                 title: "Ошибка",
                 description: "Не удалось обновить список мастер-классов",
@@ -1280,6 +1353,15 @@ const DashboardContent: React.FC = () => {
                                 <span className="flex items-center justify-center w-full">
                                     <span className="mr-1">🎁</span>
                                     <span>Бонусы</span>
+                                </span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="privacy-consent"
+                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
+                            >
+                                <span className="flex items-center justify-center w-full">
+                                    <span className="mr-1">🛡️</span>
+                                    <span>Согласия</span>
                                 </span>
                             </TabsTrigger>
                             <TabsTrigger
@@ -1858,6 +1940,7 @@ const DashboardContent: React.FC = () => {
                                 onEditMasterClass={handleEditMasterClassEvent}
                                 onViewMasterClass={handleViewMasterClassEvent}
                                 onDeleteMasterClass={handleDeleteMasterClass}
+                                onDeleteSchoolMasterClasses={handleDeleteSchoolMasterClasses}
                                 onRefreshMasterClasses={handleRefreshMasterClasses}
                                 filters={filters.masterClasses}
                                 onFiltersChange={(newFilters) => updateFilters('masterClasses', newFilters)}
@@ -1899,6 +1982,10 @@ const DashboardContent: React.FC = () => {
 
                         <TabsContent value="bonuses" className="space-y-4">
                             <BonusesTab />
+                        </TabsContent>
+
+                        <TabsContent value="privacy-consent" className="space-y-4">
+                            <PrivacyConsentTab />
                         </TabsContent>
 
                         <TabsContent value="chat" className="space-y-4">

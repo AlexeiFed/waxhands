@@ -2,7 +2,7 @@
   "name": "Студия МК 'Восковые ручки'",
   "short_name": "Восковые ручки",
   "description": "Приложение для записи на мастер-классы по лепке из воска в студии",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#fef7e0",

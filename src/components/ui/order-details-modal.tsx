@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useServices } from '@/hooks/use-services';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import YandexPaymentButton from '@/components/ui/yandex-payment-button';
+import { RobokassaPayment } from '@/components/payment/RobokassaPayment';
 import { Service, ServiceStyle, ServiceOption, Invoice } from '@/types';
 import {
     Calendar,
@@ -717,26 +717,15 @@ export default function OrderDetailsModal({ isOpen, onOpenChange, workshop }: Or
                                             </div>
                                         </div>
 
-                                        <YandexPaymentButton
-                                            invoiceId={invoice.id}
-                                            amount={invoice.amount}
-                                            description={`Участие в мастер-классе "${workshop.title}" для ${invoice.participant_name}`}
-                                            children={[{
-                                                id: invoice.participant_id || '',
-                                                name: invoice.participant_name || '',
-                                                selectedServices: ['Мастер-класс'],
-                                                totalAmount: invoice.amount
-                                            }]}
-                                            masterClassName={workshop.title}
-                                            eventDate={workshop.date}
-                                            eventTime={workshop.time}
-                                            isPaymentDisabled={true}
+                                        <RobokassaPayment
+                                            invoice={invoice}
                                             onPaymentSuccess={() => {
                                                 toast({
                                                     title: "Оплата успешна! 🎉",
                                                     description: "Статус счета обновлен. Спасибо за оплату!",
                                                 });
                                                 onOpenChange(false);
+                                                window.location.reload();
                                             }}
                                             onPaymentError={(error) => {
                                                 toast({
@@ -745,9 +734,14 @@ export default function OrderDetailsModal({ isOpen, onOpenChange, workshop }: Or
                                                     variant: "destructive"
                                                 });
                                             }}
-                                            className="w-full"
-                                            variant="default"
-                                            size="lg"
+                                            onRefundSuccess={() => {
+                                                toast({
+                                                    title: "Возврат успешен! 💰",
+                                                    description: "Средства возвращены на ваш счет.",
+                                                });
+                                                onOpenChange(false);
+                                                window.location.reload();
+                                            }}
                                         />
                                     </div>
                                 ))}

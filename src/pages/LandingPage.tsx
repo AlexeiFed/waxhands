@@ -5,7 +5,9 @@
  * @created: 2024-12-25
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { LandingHeader } from '@/components/ui/landing-header';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { ProcessSection } from '@/components/landing/ProcessSection';
@@ -13,8 +15,50 @@ import { AboutSection } from '@/components/landing/AboutSection';
 import { ServicesSection } from '@/components/landing/ServicesSection';
 import { GallerySection } from '@/components/landing/GallerySection';
 import { CTASection } from '@/components/landing/CTASection';
+import { DeliveryPaymentSection } from '@/components/landing/DeliveryPaymentSection';
+import { GuaranteesSection } from '@/components/landing/GuaranteesSection';
 
 const LandingPage: React.FC = () => {
+    const { user, isAuthenticated, loading } = useAuth();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        // Если пользователь авторизован, перенаправляем на соответствующий dashboard
+        if (!loading && isAuthenticated && user) {
+            console.log('🔄 LandingPage: Пользователь авторизован, перенаправляем на dashboard для роли:', user.role);
+
+            const redirectPath = user.role === 'admin' ? '/admin' :
+                user.role === 'executor' ? '/executor' :
+                    user.role === 'child' ? '/child' : '/parent';
+
+            navigate(redirectPath, { replace: true });
+        }
+    }, [user, isAuthenticated, loading, navigate]);
+
+    // Показываем индикатор загрузки пока проверяется аутентификация
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
+                    <p className="text-orange-600 text-lg">Загрузка приложения...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Если пользователь авторизован, показываем индикатор перенаправления
+    if (isAuthenticated && user) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-orange-100 via-purple-50 to-blue-100 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
+                    <p className="text-orange-600 text-lg">Перенаправление...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-gradient-wax-hands">
             <LandingHeader />
@@ -23,13 +67,15 @@ const LandingPage: React.FC = () => {
                 <ProcessSection />
                 <AboutSection />
                 <ServicesSection />
+                <GuaranteesSection />
+                <DeliveryPaymentSection />
                 <GallerySection />
                 <CTASection />
             </main>
 
             {/* Футер */}
             <footer className="bg-gray-900 text-white py-12">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         {/* Логотип и описание */}
                         <div>
@@ -58,6 +104,22 @@ const LandingPage: React.FC = () => {
                                         className="text-gray-400 hover:text-white transition-colors"
                                     >
                                         Услуги
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        onClick={() => document.getElementById('guarantees')?.scrollIntoView({ behavior: 'smooth' })}
+                                        className="text-gray-400 hover:text-white transition-colors"
+                                    >
+                                        Гарантии
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        onClick={() => document.getElementById('payment')?.scrollIntoView({ behavior: 'smooth' })}
+                                        className="text-gray-400 hover:text-white transition-colors"
+                                    >
+                                        Оплата
                                     </button>
                                 </li>
                                 <li>

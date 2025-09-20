@@ -58,7 +58,7 @@ const PaymentSuccess: React.FC = () => {
     };
 
     const handleViewInvoices = () => {
-        navigate('/parent/dashboard');
+        navigate('/parent');
     };
 
     if (loading) {

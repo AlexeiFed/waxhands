@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken, authorizeAdmin } from '../middleware/auth.js';
-import { getMasterClassEvents, createMasterClassEvent, createMultipleMasterClassEvents, updateMasterClassEvent, deleteMasterClassEvent, updateParticipantPaymentStatus, getMasterClassEventById } from '../controllers/masterClasses.js';
+import { getMasterClassEvents, createMasterClassEvent, createMultipleMasterClassEvents, updateMasterClassEvent, deleteMasterClassEvent, deleteSchoolMasterClasses, updateParticipantPaymentStatus, getMasterClassEventById } from '../controllers/masterClasses.js';
 const router = Router();
 // Middleware для логирования всех запросов к мастер-классам
 router.use((req, res, next) => {
@@ -20,6 +20,8 @@ router.post('/multiple', authenticateToken, authorizeAdmin, createMultipleMaster
 router.get('/:id', getMasterClassEventById);
 router.put('/:id', authenticateToken, authorizeAdmin, updateMasterClassEvent);
 router.delete('/:id', authenticateToken, authorizeAdmin, deleteMasterClassEvent);
+// Удаление всех мастер-классов школы за дату
+router.delete('/school/:schoolId/date/:date', authenticateToken, authorizeAdmin, deleteSchoolMasterClasses);
 // Обновление статуса оплаты участника
 router.patch('/:masterClassId/participants/:participantId/payment-status', authenticateToken, authorizeAdmin, updateParticipantPaymentStatus);
 // Роуты для мастер-классов (шаблонов) удалены - больше не используются

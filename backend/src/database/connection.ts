@@ -13,7 +13,18 @@ const dbConfig: PoolConfig = {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
+    // Принудительно используем TCP подключение вместо Unix socket
+    connectionString: undefined
 };
+
+console.log('🔍 Настройки подключения к БД:', {
+    host: dbConfig.host,
+    port: dbConfig.port,
+    database: dbConfig.database,
+    user: dbConfig.user,
+    hasPassword: !!dbConfig.password,
+    ssl: dbConfig.ssl
+});
 
 const pool = new Pool(dbConfig);
 
@@ -22,8 +33,20 @@ export const db = pool;
 
 // Обработка ошибок подключения
 pool.on('error', (err) => {
-    console.error('Unexpected error on idle client', err);
+    console.error('❌ Unexpected error on idle client', err);
     process.exit(-1);
+});
+
+pool.on('connect', () => {
+    console.log('✅ Подключение к БД установлено');
+});
+
+pool.on('acquire', () => {
+    console.log('🔗 Получено соединение из пула');
+});
+
+pool.on('remove', () => {
+    console.log('🔌 Соединение удалено из пула');
 });
 
 // Проверка подключения

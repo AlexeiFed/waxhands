@@ -18,7 +18,7 @@ if ('serviceWorker' in navigator) {
     } else {
         // В production регистрируем Service Worker асинхронно для быстрой загрузки
         setTimeout(() => {
-            navigator.serviceWorker.register('/sw.js?v=2.0.11')
+            navigator.serviceWorker.register('/sw.js?v=3.0.3')
                 .then((registration) => {
                     console.log('SW registered: ', registration);
                 })

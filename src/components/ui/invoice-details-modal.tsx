@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Invoice } from '@/hooks/use-invoices';
 import { Calendar, MapPin, Users, CreditCard, CheckCircle, Clock } from 'lucide-react';
+import { RobokassaPayment } from '@/components/payment/RobokassaPayment';
 
 interface InvoiceDetailsModalProps {
     invoice: Invoice | null;
@@ -166,6 +167,24 @@ const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: 
                     </CardContent>
                 </Card>
 
+                {/* Компонент оплаты Robokassa */}
+                <RobokassaPayment
+                    invoice={invoice}
+                    onPaymentSuccess={() => {
+                        onOpenChange(false);
+                        // Обновляем страницу для отображения нового статуса
+                        window.location.reload();
+                    }}
+                    onPaymentError={(error) => {
+                        console.error('Ошибка оплаты:', error);
+                    }}
+                    onRefundSuccess={() => {
+                        onOpenChange(false);
+                        // Обновляем страницу для отображения нового статуса
+                        window.location.reload();
+                    }}
+                />
+
                 {/* Кнопки действий */}
                 <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t-2 border-gradient-to-r from-orange-200 via-purple-200 to-blue-200">
                     <Button
@@ -175,16 +194,6 @@ const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: 
                     >
                         Закрыть
                     </Button>
-
-                    {invoice.status === 'pending' && onPaymentClick && (
-                        <Button
-                            onClick={() => onPaymentClick(invoice.id)}
-                            className="w-full sm:w-auto min-w-[180px] py-3 px-6 text-lg bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-glow transform hover:scale-105 transition-all duration-300"
-                        >
-                            <CreditCard className="w-5 h-5 mr-2" />
-                            Оплатить
-                        </Button>
-                    )}
                 </div>
             </DialogContent>
         </Dialog>

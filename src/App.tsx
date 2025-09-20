@@ -24,6 +24,8 @@ import AdminServicePage from "./pages/admin/ServicePage.tsx";
 import About from "./pages/AboutNew"; // Страница "О нас" с загрузкой из БД
 import PaymentSuccess from "./pages/PaymentSuccess"; // Страница успешной оплаты
 import PolicyPage from "./pages/PolicyPage"; // Страница политики конфиденциальности
+import PaymentSuccessPage from "./pages/payment/SuccessPage"; // Страница успешной оплаты Robokassa
+import PaymentFailPage from "./pages/payment/FailPage"; // Страница неуспешной оплаты Robokassa
 import NotFound from "./pages/NotFound";
 
 // Components
@@ -32,7 +34,7 @@ import { AuthGuard } from "./components/auth/AuthGuard";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { PWAForceUpdate } from "./components/PWAForceUpdate";
 import { PWAVersionCheck } from "./components/PWAVersionCheck";
-import CookieConsentBanner from "./components/ui/cookie-consent-banner";
+import PrivacyConsentBanner from "./components/ui/privacy-consent-banner";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -161,14 +163,21 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/payment/robokassa/success"
+                  element={<PaymentSuccessPage />}
+                />
+                <Route
+                  path="/payment/robokassa/fail"
+                  element={<PaymentFailPage />}
+                />
 
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
             <PWAInstallPrompt />
             <PWAForceUpdate />
-            {/* ВИНОВНИК НАЙДЕН: CookieConsentBanner вызывает критическую ошибку загрузки */}
-            {/* <CookieConsentBanner /> */}
+            <PrivacyConsentBanner />
             <Toaster />
           </AboutContentProvider>
         </TooltipProvider>

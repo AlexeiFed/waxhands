@@ -1,5 +1,5 @@
 // Service Worker для PWA
-const CACHE_NAME = 'waxhands-pwa-v3.0.0-20250125-updated';
+const CACHE_NAME = 'waxhands-pwa-v3.1.0-20250920-network-first';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -20,7 +20,7 @@ const urlsToCache = [
 
 // Установка service worker
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installing v3.0.0 with PWA update modal...');
+  console.log('Service Worker: Installing v3.1.0 with network-first strategy...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -38,20 +38,43 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Перехват запросов
+// Перехват запросов с network-first стратегией
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Возвращаем кэшированный ответ или делаем сетевой запрос
-        return response || fetch(event.request);
+    // Для всех критически важных файлов используем network-first
+    fetch(event.request)
+      .then((networkResponse) => {
+        // Если сетевой запрос успешен, кэшируем только статические ресурсы
+        if (networkResponse.ok &&
+          (event.request.url.includes('/icons/') ||
+            event.request.url.includes('/manifest.json'))) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Если сеть недоступна, пытаемся получить из кэша
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Для HTML файлов возвращаем index.html
+          if (event.request.headers.get('accept').includes('text/html')) {
+            return caches.match('/index.html');
+          }
+          // Для остальных запросов возвращаем ошибку
+          throw new Error('Network error and no cached version available');
+        });
       })
   );
 });
 
 // Активация service worker
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating v3.0.0...');
+  console.log('Service Worker: Activating v3.1.0 with network-first...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -64,7 +87,7 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      console.log('Service Worker: Activated v3.0.0 - All old caches cleared');
+      console.log('Service Worker: Activated v3.1.0 - All old caches cleared, network-first enabled');
       // Безопасно обновляем клиентов
       return self.clients.claim();
     }).catch((error) => {

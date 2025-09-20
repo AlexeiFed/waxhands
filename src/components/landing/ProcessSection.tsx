@@ -25,8 +25,8 @@ export const ProcessSection: React.FC = () => {
 
     if (contentLoading) {
         return (
-            <section className="py-20">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <section id="process" className="py-20">
+                <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-pink-600 mx-auto mb-4"></div>
                         <p className="text-xl text-gray-700">Загружаем процесс мастер-класса...</p>
@@ -37,7 +37,7 @@ export const ProcessSection: React.FC = () => {
     }
 
     return (
-        <section className="py-20 relative overflow-hidden">
+        <section id="process" className="py-20 relative overflow-hidden">
             {/* Декоративные элементы */}
             <div className="absolute inset-0 overflow-hidden">
                 {/* Плавающие звездочки */}
@@ -63,7 +63,7 @@ export const ProcessSection: React.FC = () => {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                 {/* Заголовок секции */}
                 <div className="text-center mb-16">
                     <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6 animate-pulse">

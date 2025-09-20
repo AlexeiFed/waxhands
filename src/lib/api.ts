@@ -726,6 +726,17 @@ export const masterClassesAPI = {
             throw new Error(response.error || 'Failed to delete master class');
         }
     },
+
+    // Удаление всех мастер-классов школы за дату
+    deleteSchoolMasterClasses: async (schoolId: string, date: string): Promise<void> => {
+        const response = await apiRequest(`/master-classes/school/${schoolId}/date/${date}`, {
+            method: 'DELETE',
+        });
+
+        if (!response.success) {
+            throw new Error(response.error || 'Failed to delete school master classes');
+        }
+    },
 };
 
 // Тип для статистики мастер-класса
@@ -980,6 +991,11 @@ export const masterClassEventsAPI = {
             body: JSON.stringify({ isPaid })
         });
         if (!response.success) throw new Error(response.error || 'Failed to update participant payment status');
+    },
+    // Удалить все мастер-классы школы за дату
+    deleteSchoolMasterClasses: async (schoolId: string, date: string): Promise<void> => {
+        const response = await apiRequest(`/master-classes/school/${schoolId}/date/${date}`, { method: 'DELETE' });
+        if (!response.success) throw new Error(response.error || 'Failed to delete school master classes');
     }
 };
 

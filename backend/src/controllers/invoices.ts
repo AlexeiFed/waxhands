@@ -7,8 +7,19 @@
 
 import { Request, Response } from 'express';
 import pool from '../database/connection.js';
-import { Invoice, CreateInvoiceRequest, InvoiceFilters, ApiResponse } from '../types/index.js';
+import { Invoice, CreateInvoiceRequest, InvoiceFilters, ApiResponse, UserRole } from '../types/index.js';
 import { wsManager } from '../websocket-server.js';
+
+// Расширяем интерфейс Request для добавления user
+interface AuthenticatedRequest extends Request {
+    user?: {
+        userId: string;
+        role: UserRole;
+        email?: string;
+        iat: number;
+        exp: number;
+    };
+}
 
 // Функция для добавления участника в мастер-класс
 const addParticipantToMasterClass = async (client: any, invoice: Invoice) => { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -263,7 +274,7 @@ const addParticipantToMasterClass = async (client: any, invoice: Invoice) => { /
     console.log('Статистика мастер-класса обновлена');
 };
 
-export const createInvoice = async (req: Request, res: Response): Promise<void> => {
+export const createInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
         console.log('🔄 createInvoice: Начало обработки запроса');
         console.log('🔄 createInvoice: Заголовки запроса:', req.headers);
@@ -658,7 +669,7 @@ export const getInvoiceById = async (req: Request, res: Response): Promise<void>
     }
 };
 
-export const updateInvoice = async (req: Request, res: Response): Promise<void> => {
+export const updateInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const { selected_styles, selected_options, amount } = req.body;
@@ -705,10 +716,10 @@ export const updateInvoice = async (req: Request, res: Response): Promise<void> 
         // - Администраторы могут обновлять любые счета
         // - Родители могут обновлять только счета своих детей
         if (userRole !== 'admin' && invoice.participant_id !== userId) {
-            console.log('❌ Доступ запрещен для обновления счета:', { 
-                userRole, 
-                userId, 
-                invoiceParticipantId: invoice.participant_id 
+            console.log('❌ Доступ запрещен для обновления счета:', {
+                userRole,
+                userId,
+                invoiceParticipantId: invoice.participant_id
             });
             res.status(403).json({
                 success: false,
@@ -1013,7 +1024,7 @@ export const getInvoicesByDate = async (req: Request, res: Response): Promise<vo
 };
 
 // Удалить счет
-export const deleteInvoice = async (req: Request, res: Response): Promise<void> => {
+export const deleteInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const userId = req.user?.userId;

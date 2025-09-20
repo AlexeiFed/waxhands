@@ -688,4 +688,88 @@ export const deleteMasterClassEvent = async (req, res) => {
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
+
+export const deleteSchoolMasterClasses = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const { schoolId, date } = req.params;
+        console.log('🗑️ Удаление всех мастер-классов школы:', { schoolId, date });
+
+        // Получаем все мастер-классы школы за указанную дату
+        const masterClassesResult = await client.query(
+            'SELECT id, participants FROM master_class_events WHERE school_id = $1 AND date = $2',
+            [schoolId, date]
+        );
+
+        if (masterClassesResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            res.status(404).json({
+                success: false,
+                error: 'Мастер-классы школы за указанную дату не найдены'
+            });
+            return;
+        }
+
+        const masterClasses = masterClassesResult.rows;
+        console.log(`🔍 Найдено ${masterClasses.length} мастер-классов для удаления`);
+
+        // Удаляем связанные счета для каждого мастер-класса
+        for (const masterClass of masterClasses) {
+            const participants = masterClass.participants || [];
+
+            for (const participant of participants) {
+                // Удаляем связанный счет, если он существует
+                if (participant.notes && participant.notes.includes('Счет:')) {
+                    const invoiceIdMatch = participant.notes.match(/Счет:\s*(\d+)/);
+                    if (invoiceIdMatch) {
+                        const invoiceId = invoiceIdMatch[1];
+                        console.log('🗑️ Удаляем связанный счет:', invoiceId);
+                        await client.query('DELETE FROM invoices WHERE id = $1', [invoiceId]);
+                        console.log('✅ Счет удален');
+                    }
+                }
+
+                // Удаляем запись из workshop_registrations, если она существует
+                const registrationResult = await client.query(
+                    'SELECT id FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+                    [masterClass.id, participant.childId]
+                );
+                if (registrationResult.rows.length > 0) {
+                    await client.query(
+                        'DELETE FROM workshop_registrations WHERE workshop_id = $1 AND user_id = $2',
+                        [masterClass.id, participant.childId]
+                    );
+                    console.log('✅ Запись из workshop_registrations удалена');
+                }
+            }
+        }
+
+        // Удаляем все мастер-классы школы за дату
+        const deleteResult = await client.query(
+            'DELETE FROM master_class_events WHERE school_id = $1 AND date = $2 RETURNING id',
+            [schoolId, date]
+        );
+
+        await client.query('COMMIT');
+
+        console.log(`✅ Успешно удалено ${deleteResult.rows.length} мастер-классов школы`);
+
+        res.json({
+            success: true,
+            message: `Успешно удалено ${deleteResult.rows.length} мастер-классов школы за ${date}`,
+            deletedCount: deleteResult.rows.length
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении мастер-классов школы:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера при удалении мастер-классов школы'
+        });
+    } finally {
+        client.release();
+    }
+};
 //# sourceMappingURL=masterClasses.js.map

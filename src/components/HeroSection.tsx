@@ -108,7 +108,7 @@ const HeroSection = () => {
                 <div className="text-sm text-gray-600">Время создания</div>
               </div>
               <div className="text-center group">
-                <div className="text-3xl font-bold text-purple-600 group-hover:scale-110 transition-transform duration-200">100+</div>
+                <div className="text-3xl font-bold text-purple-600 group-hover:scale-110 transition-transform duration-200">100000+</div>
                 <div className="text-sm text-gray-600">Довольных детей</div>
               </div>
               <div className="text-center group">
@@ -116,7 +116,7 @@ const HeroSection = () => {
                 <div className="text-sm text-gray-600">Возраст детей</div>
               </div>
               <div className="text-center group">
-                <div className="text-3xl font-bold text-green-600 group-hover:scale-110 transition-transform duration-200">50+</div>
+                <div className="text-3xl font-bold text-green-600 group-hover:scale-110 transition-transform duration-200">1200+</div>
                 <div className="text-sm text-gray-600">Школ и садов</div>
               </div>
             </div>

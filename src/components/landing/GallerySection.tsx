@@ -67,8 +67,28 @@ export const GallerySection: React.FC = () => {
         return [...stylesMedia, ...optionsMedia];
     });
 
-    // Объединяем все медиа
+    // Объединяем все медиа и убираем дубликаты по file_path
     const allDisplayMedia = [...displayMedia, ...servicesMedia];
+
+    // Улучшенная дедупликация: убираем дубликаты по file_path и группируем по содержимому
+    const uniqueMedia = allDisplayMedia.reduce((acc, item) => {
+        // Проверяем, есть ли уже элемент с таким же file_path
+        const existingIndex = acc.findIndex(existing => existing.file_path === item.file_path);
+
+        if (existingIndex === -1) {
+            // Если нет, добавляем новый элемент
+            acc.push(item);
+        } else {
+            // Если есть, объединяем названия стилей для лучшего отображения
+            const existing = acc[existingIndex];
+            if (existing.title !== item.title) {
+                // Если названия стилей разные, объединяем их
+                existing.title = `${existing.title}, ${item.title}`;
+            }
+        }
+
+        return acc;
+    }, [] as typeof allDisplayMedia);
 
     // Функция для получения URL медиа файлов
     const getMediaUrl = (filePath: string) => {
@@ -83,8 +103,8 @@ export const GallerySection: React.FC = () => {
     };
 
     // Фильтрация медиа по типам
-    const images = allDisplayMedia.filter(item => item.type === 'image');
-    const videos = allDisplayMedia.filter(item => item.type === 'video');
+    const images = uniqueMedia.filter(item => item.type === 'image');
+    const videos = uniqueMedia.filter(item => item.type === 'video');
     const allMedia = [...videos, ...images]; // Сначала видео, потом фото
 
     // Фильтрация по активной вкладке
@@ -123,7 +143,7 @@ export const GallerySection: React.FC = () => {
     if (mediaLoading) {
         return (
             <section id="gallery" className="py-20">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto mb-4"></div>
                         <p className="text-xl text-gray-700">Загружаем галерею...</p>
@@ -135,7 +155,7 @@ export const GallerySection: React.FC = () => {
 
     return (
         <section id="gallery" className="py-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Заголовок секции */}
                 <div className="text-center mb-16">
                     <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">

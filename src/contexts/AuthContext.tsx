@@ -93,9 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const login = async (credentials: LoginCredentials): Promise<boolean> => {
         try {
             setLoading(true);
+            console.log('🔐 Начинаем процесс входа для:', credentials.phone);
             const response = await api.auth.login(credentials);
+            console.log('✅ Успешный вход, пользователь:', response.user);
             setUser({ ...response.user, role: response.user.role as UserRole });
             setIsAuthenticated(true);
+            console.log('🔑 Состояние аутентификации обновлено');
             return true;
         } catch (error) {
             console.error('Login failed:', error);

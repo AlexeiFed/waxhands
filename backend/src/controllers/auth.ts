@@ -170,7 +170,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 const parentId = parent.id;
 
                 // 2. Создаем детей
-                const childrenUsers = [];
+                const childrenUsers: User[] = [];
                 for (const childData of userData.children) {
                     // Проверяем уникальность для каждого ребенка только по имени и фамилии
                     // Убираем проверку по школе и классу - дети могут быть в разных школах
@@ -218,7 +218,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                         parentId
                     ]);
 
-                    childrenUsers.push(childResult.rows[0]);
+                    childrenUsers.push(childResult.rows[0] as User);
                 }
 
                 // 3. Создаем JWT токен для родителя
@@ -315,7 +315,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
             } else {
                 // Обычная регистрация для других ролей
-                let passwordHash = null;
+                let passwordHash: string | null = null;
                 if (userData.password) {
                     passwordHash = await bcrypt.hash(userData.password, 12);
                 }
@@ -444,7 +444,9 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
             schoolId: user.school_id,
             class: user.class_group || user.class, // Приоритет class_group
             createdAt: user.created_at,
-            updatedAt: user.updated_at
+            updatedAt: user.updated_at,
+            surname: user.surname,
+            phone: user.phone
         };
 
         res.json({
@@ -523,7 +525,9 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
             schoolId: updatedUser.school_id,
             class: updatedUser.class_group || updatedUser.class, // Приоритет class_group
             createdAt: updatedUser.created_at,
-            updatedAt: updatedUser.updated_at
+            updatedAt: updatedUser.updated_at,
+            surname: updatedUser.surname,
+            phone: updatedUser.phone
         };
 
         res.json({
