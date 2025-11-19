@@ -44,19 +44,16 @@ export const AboutContentProvider: React.FC<AboutContentProviderProps> = ({ chil
 
     const addMedia = async (mediaItem: Omit<AboutMedia, 'id' | 'order_index' | 'created_at' | 'updated_at'>): Promise<boolean> => {
         // TODO: Реализовать добавление медиа через API
-        console.log('Добавление медиа:', mediaItem);
         return true;
     };
 
     const removeMedia = async (id: number): Promise<boolean> => {
         // TODO: Реализовать удаление медиа через API
-        console.log('Удаление медиа:', id);
         return true;
     };
 
     const reorderMedia = async (mediaIds: number[]): Promise<boolean> => {
         // TODO: Реализовать изменение порядка медиа через API
-        console.log('Изменение порядка медиа:', mediaIds);
         return true;
     };
 
@@ -67,7 +64,6 @@ export const AboutContentProvider: React.FC<AboutContentProviderProps> = ({ chil
 
     const resetToDefault = async (): Promise<boolean> => {
         // TODO: Реализовать сброс к значениям по умолчанию
-        console.log('Сброс к значениям по умолчанию');
         return true;
     };
 

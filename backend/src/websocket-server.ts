@@ -20,7 +20,7 @@ interface ClientConnection {
 }
 
 interface SystemEvent {
-    type: 'chat_message' | 'chat_status_change' | 'chat_list_update' | 'new_chat' | 'unread_count_update' | 'invoice_update' | 'master_class_update' | 'user_registration' | 'system_notification' | 'workshop_request_update' | 'workshop_request_created' | 'workshop_request_deleted' | 'workshop_request_status_change' | 'about_content_update' | 'about_media_update' | 'about_media_added' | 'about_media_deleted' | 'notification';
+    type: 'chat_message' | 'chat_status_change' | 'chat_list_update' | 'new_chat' | 'unread_count_update' | 'invoice_update' | 'master_class_update' | 'user_registration' | 'system_notification' | 'workshop_request_update' | 'workshop_request_created' | 'workshop_request_deleted' | 'workshop_request_status_change' | 'about_content_update' | 'about_media_update' | 'about_media_added' | 'about_media_deleted' | 'notification' | 'service_style_updated' | 'service_option_updated' | 'payment_settings_changed';
     data: Record<string, unknown>;
     timestamp: number;
     targetUsers?: string[];
@@ -58,7 +58,12 @@ export class WebSocketManager {
             };
 
             this.clients.set(clientId, client);
-            console.log(`🔌 WebSocket клиент подключен: ${clientId} (${isAdmin ? 'admin' : 'user'})`);
+            console.log(`🔌 WebSocket клиент подключен: ${clientId} (${isAdmin ? 'admin' : 'user'})`, {
+                url: request.url,
+                userId,
+                isAdmin,
+                subscriptions: Array.from(client.subscriptions)
+            });
 
             // Автоматически подписываем на события пользователя
             if (userId) {
@@ -212,9 +217,16 @@ export class WebSocketManager {
         if (client.ws.readyState === 1) { // WebSocket.OPEN = 1
             try {
                 client.ws.send(JSON.stringify(event));
+                if (event.type === 'invoice_update') {
+                    console.log(`✉️ [WebSocket] INVOICE_UPDATE отправлен клиенту ${client.id} (${client.userRole}, userId: ${client.userId})`);
+                }
             } catch (error) {
                 console.error(`❌ Ошибка отправки события клиенту ${client.id}:`, error);
                 this.removeClient(client.id);
+            }
+        } else {
+            if (event.type === 'invoice_update') {
+                console.warn(`⚠️ [WebSocket] Клиент ${client.id} не готов (readyState: ${client.ws.readyState}), событие не отправлено`);
             }
         }
     }
@@ -303,8 +315,21 @@ export class WebSocketManager {
     }
 
     // Публичные методы для отправки событий
-    public notifyChatMessage(chatId: string, message: Record<string, unknown>, senderId: string, senderType: 'user' | 'admin') {
+    public async notifyChatMessage(chatId: string, message: Record<string, unknown>, senderId: string, senderType: 'user' | 'admin') {
         console.log(`📡 Отправка сообщения чата ${chatId} от ${senderType} ${senderId}`);
+
+        // Получаем userId из чата для отправки уведомления родителю
+        let userId: string | null = null;
+        try {
+            const { db } = await import('./database/connection.js');
+            const { rows } = await db.query('SELECT user_id FROM chats WHERE id = $1', [chatId]);
+            if (rows.length > 0) {
+                userId = rows[0].user_id;
+                console.log(`📡 Найден userId ${userId} для чата ${chatId}`);
+            }
+        } catch (error) {
+            console.error('❌ Ошибка получения userId из чата:', error);
+        }
 
         // Отправляем сообщение всем участникам чата
         this.clients.forEach((client) => {
@@ -320,15 +345,16 @@ export class WebSocketManager {
                 if (client.subscriptions.has(`chat:${chatId}`)) {
                     shouldReceive = true;
                     console.log(`📨 Пользователь ${client.id} подписан на чат ${chatId}`);
-                } else {
-                    // Если пользователь не подписан на конкретный чат, но это его чат
-                    // то он должен получить сообщение
-                    if (client.subscriptions.has(`user:${client.userId}`)) {
-                        shouldReceive = true;
-                        console.log(`📨 Пользователь ${client.id} получит сообщение как участник чата ${chatId}`);
-                    } else {
-                        console.log(`❌ Пользователь ${client.id} НЕ подписан на чат ${chatId}`);
-                    }
+                }
+                // Если пользователь не подписан на конкретный чат, но это его чат
+                // то он должен получить сообщение через канал user:${userId} (НЕ else if!)
+                if (userId && client.subscriptions.has(`user:${userId}`)) {
+                    shouldReceive = true;
+                    console.log(`📨 Пользователь ${client.id} получит сообщение как участник чата ${chatId} через канал user:${userId}`);
+                }
+
+                if (!shouldReceive) {
+                    console.log(`❌ Пользователь ${client.id} НЕ подписан на чат ${chatId}`);
                 }
             }
 
@@ -338,6 +364,19 @@ export class WebSocketManager {
                     data: { chatId, message, senderId, senderType },
                     timestamp: Date.now()
                 });
+            }
+        });
+
+        // КРИТИЧНО: Отправляем событие chat_message на канал admin:all для мигания таба
+        // Это событие должно приходить ВСЕМ админам, независимо от того, открыт ли чат
+        this.clients.forEach((client) => {
+            if (client.userRole === 'admin' && client.subscriptions.has('admin:all')) {
+                this.sendEventToClient(client, {
+                    type: 'chat_message',
+                    data: { chatId, message, senderId, senderType },
+                    timestamp: Date.now()
+                });
+                console.log(`📨 Отправлено событие chat_message на канал admin:all для админа ${client.id}`);
             }
         });
 
@@ -369,12 +408,41 @@ export class WebSocketManager {
         });
     }
 
-    public notifyUnreadCountUpdate(chatId: string) {
+    public async notifyUnreadCountUpdate(chatId: string) {
         console.log(`📡 Уведомление об обновлении непрочитанных для чата ${chatId}`);
+
+        // Получаем userId из чата для отправки уведомления родителю
+        let userId: string | null = null;
+        try {
+            const { db } = await import('./database/connection.js');
+            const { rows } = await db.query('SELECT user_id FROM chats WHERE id = $1', [chatId]);
+            if (rows.length > 0) {
+                userId = rows[0].user_id;
+                console.log(`📡 Найден userId ${userId} для чата ${chatId}`);
+            }
+        } catch (error) {
+            console.error('❌ Ошибка получения userId из чата:', error);
+        }
 
         // Отправляем уведомление всем участникам чата
         this.clients.forEach((client) => {
-            if (client.subscriptions.has(`chat:${chatId}`) || client.subscriptions.has('admin:all')) {
+            let shouldReceive = false;
+
+            // Админ получает уведомление через admin:all
+            if (client.subscriptions.has('admin:all')) {
+                shouldReceive = true;
+            }
+            // Родитель получает уведомление через канал user:${userId} (НЕ else if!)
+            if (userId && client.subscriptions.has(`user:${userId}`)) {
+                shouldReceive = true;
+                console.log(`📨 Родитель ${client.id} (user:${userId}) получит уведомление о непрочитанных`);
+            }
+            // Также проверяем подписку на конкретный чат (НЕ else if!)
+            if (client.subscriptions.has(`chat:${chatId}`)) {
+                shouldReceive = true;
+            }
+
+            if (shouldReceive) {
                 this.sendEventToClient(client, {
                     type: 'unread_count_update',
                     data: { chatId },
@@ -393,12 +461,46 @@ export class WebSocketManager {
         });
     }
 
-    public notifyInvoiceUpdate(invoiceId: string, userId: string, status: string) {
-        this.broadcastEvent({
+    public notifyInvoiceUpdate(invoiceId: string, userId: string, status: string, masterClassId?: string) {
+        const adminEvent: SystemEvent = {
             type: 'invoice_update',
-            data: { invoiceId, userId, status },
+            data: { invoiceId, userId, status, masterClassId },
+            timestamp: Date.now(),
+            targetRoles: ['admin']
+        };
+        console.log('📡 [WebSocket] INVOICE_UPDATE отправка админам:', {
+            ...adminEvent,
+            activeClients: this.clients.size,
+            adminClients: Array.from(this.clients.values()).filter(c => c.userRole === 'admin').length,
+            timestamp: new Date().toISOString()
+        });
+        this.broadcastEvent(adminEvent);
+        // Дополнительно пробрасываем событие всем подписчикам admin:all / system:all
+        this.sendToSubscribers(['admin:all', 'system:all'], adminEvent);
+        console.log('✅ [WebSocket] INVOICE_UPDATE отправлен через sendToSubscribers на admin:all и system:all');
+        
+        // Также уведомляем конкретного пользователя через отдельное событие на его канале
+        const userEvent: SystemEvent = {
+            type: 'invoice_update',
+            data: { invoiceId, userId, status, masterClassId },
             timestamp: Date.now(),
             targetUsers: [userId]
+        };
+        console.log('📡 [WebSocket] INVOICE_UPDATE отправка пользователю:', {
+            ...userEvent,
+            userId,
+            timestamp: new Date().toISOString()
+        });
+        this.broadcastEvent(userEvent);
+        console.log('✅ [WebSocket] INVOICE_UPDATE отправлен через broadcastEvent пользователю');
+    }
+
+    public notifyPaymentSettingsChanged(isEnabled: boolean, updatedAt?: string | null) {
+        this.broadcastEvent({
+            type: 'payment_settings_changed',
+            data: { isEnabled, updatedAt: updatedAt ?? null },
+            timestamp: Date.now(),
+            targetRoles: ['admin', 'user']
         });
     }
 

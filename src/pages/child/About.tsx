@@ -129,4 +129,3 @@ const AboutChild = () => {
 
 export default AboutChild;
 
-

@@ -81,7 +81,7 @@ const ChildDashboard = () => {
     // Загружаем мастер-классы с учетом школы и класса пользователя
     useEffect(() => {
         if (user?.id) {
-            console.log('Dashboard: Loading master classes for user:', user.id);
+
             fetchMasterClasses({ userId: user.id });
         }
     }, [user?.id, fetchMasterClasses]);
@@ -89,7 +89,7 @@ const ChildDashboard = () => {
     // Загружаем регистрации пользователя
     useEffect(() => {
         if (user?.id) {
-            console.log('Dashboard: Loading user registrations for user:', user.id);
+
             getUserRegistrations(user.id)
                 .then(setUserRegistrations)
                 .catch(console.error);
@@ -135,19 +135,8 @@ const ChildDashboard = () => {
 
         const filteredEvents = masterClasses.filter(ev => {
             const isAfterToday = ev.date >= today;
-            console.log('Date filter check:', {
-                event: ev.id,
-                date: ev.date,
-                today,
-                isAfterToday,
-                stringComparison: `"${ev.date}" >= "${today}"`
-            });
-            return isAfterToday;
-        });
 
-        console.log('After date filtering:', {
-            originalCount: masterClasses.length,
-            filteredCount: filteredEvents.length
+            return isAfterToday;
         });
 
         return filteredEvents
@@ -211,7 +200,6 @@ const ChildDashboard = () => {
     const refreshData = async () => {
         if (user?.id) {
             try {
-                console.log('Обновление данных после регистрации...');
 
                 // Инвалидируем все связанные кэши React Query
                 await queryClient.invalidateQueries({ queryKey: ['masterClasses'] });
@@ -226,7 +214,6 @@ const ChildDashboard = () => {
                 // Обновляем мастер-классы с актуальными данными
                 await fetchMasterClasses({ userId: user.id });
 
-                console.log('Данные обновлены после записи');
             } catch (error) {
                 console.error('Ошибка при обновлении данных:', error);
             }
@@ -256,15 +243,8 @@ const ChildDashboard = () => {
         });
 
         // TODO: Открыть модальное окно с деталями заказа
-        console.log('Детали заказа ребенка:', {
-            workshop: workshop.title,
-            status: workshop.participationStatus,
-            registration: workshop.registration,
-            invoice: workshop.invoice
-        });
+
     };
-
-
 
     return (
         <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
@@ -535,6 +515,9 @@ const ChildDashboard = () => {
                 <DialogContent className="max-w-3xl">
                     <DialogHeader className="text-center">
                         <DialogTitle className="text-lg sm:text-xl">Видео о мастер‑классе</DialogTitle>
+                        <DialogDescription>
+                            Просмотр видео о мастер-классе
+                        </DialogDescription>
                     </DialogHeader>
                     {videoDialogSrc && (
                         <video src={videoDialogSrc} className="w-full rounded-lg" controls autoPlay />

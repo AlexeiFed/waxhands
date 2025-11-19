@@ -82,7 +82,7 @@ export const useAboutContent = () => {
                 setIsLoading(true);
                 // Пока загружаем из localStorage, позже будет API
                 const savedContent = localStorage.getItem('aboutContent');
-                let parsedContent = savedContent ? JSON.parse(savedContent) : defaultContent;
+                const parsedContent = savedContent ? JSON.parse(savedContent) : defaultContent;
 
                 // Если медиа пустое, добавляем демо-файлы
                 if (!parsedContent.media || parsedContent.media.length === 0) {
@@ -140,7 +140,6 @@ export const useAboutContent = () => {
                 }
 
                 setContent(parsedContent);
-                console.log('Content loaded successfully:', parsedContent);
 
                 // Сохраняем обновленный контент если были добавлены демо-файлы
                 if (!savedContent || !savedContent.includes('demo-')) {
@@ -151,7 +150,7 @@ export const useAboutContent = () => {
                             url: item.filename?.includes('demo-') ? `/src/assets/about/${item.filename}` : ''
                         }))
                     }));
-                    console.log('Demo content saved to localStorage');
+
                 }
             } catch (err) {
                 setError('Ошибка загрузки контента');
@@ -180,7 +179,7 @@ export const useAboutContent = () => {
             // Пока сохраняем в localStorage, позже будет API
             localStorage.setItem('aboutContent', JSON.stringify(contentToSave));
             setContent(newContent); // В состоянии оставляем с URL
-            console.log('Content saved successfully to localStorage');
+
             return true;
         } catch (err) {
             setError('Ошибка сохранения контента');
@@ -190,13 +189,13 @@ export const useAboutContent = () => {
     };
 
     // Обновление отдельного поля
-    const updateField = async (field: keyof AboutContent, value: any) => {
+    const updateField = async (field: keyof AboutContent, value: AboutContent[keyof AboutContent]) => {
         const newContent = { ...content, [field]: value };
         const success = await saveContent(newContent);
         if (success) {
             // Обновляем состояние немедленно для UI
             setContent(newContent);
-            console.log('Field updated successfully:', field, value);
+
         }
         return success;
     };
@@ -239,7 +238,7 @@ export const useAboutContent = () => {
             if (success) {
                 // Обновляем состояние немедленно для UI
                 setContent(newContent);
-                console.log('Media added successfully:', newMediaItem);
+
             }
             return success;
         } catch (error) {
@@ -272,7 +271,7 @@ export const useAboutContent = () => {
             if (success) {
                 // Обновляем состояние немедленно для UI
                 setContent(newContent);
-                console.log('Media removed successfully:', id);
+
             }
             return success;
         } catch (error) {
@@ -298,7 +297,7 @@ export const useAboutContent = () => {
         if (success) {
             // Обновляем состояние немедленно для UI
             setContent(newContent);
-            console.log('Media reordered successfully:', newMedia);
+
         }
         return success;
     };

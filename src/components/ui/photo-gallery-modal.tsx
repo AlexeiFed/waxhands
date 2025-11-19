@@ -28,7 +28,6 @@ export const PhotoGalleryModal = ({ isOpen, onOpenChange, images, title }: Photo
             setImageErrors(new Set());
             if (images.length > 0) {
                 setCurrentImageSrc(images[0]);
-                console.log(`PhotoGalleryModal: Открываем галерею для "${title}" с ${images.length} изображениями:`, images);
             }
         }
     }, [isOpen, images, title]);
@@ -64,7 +63,6 @@ export const PhotoGalleryModal = ({ isOpen, onOpenChange, images, title }: Photo
     };
 
     const handleImageLoad = (index: number) => {
-        console.log(`PhotoGalleryModal: Изображение ${index} успешно загружено:`, images[index]);
     };
 
     const getValidImages = () => {

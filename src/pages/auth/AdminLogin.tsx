@@ -20,7 +20,7 @@ export default function AdminLogin() {
 
         try {
             const formData = new FormData(e.currentTarget);
-            const username = formData.get("username") as string;
+            const username = (formData.get("username") as string).trim();
             const password = formData.get("password") as string;
 
             if (!username || !password) {

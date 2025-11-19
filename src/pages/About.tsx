@@ -5,6 +5,7 @@
  * @created: 2024-12-19
  */
 
+import { useState } from "react";
 import { Sparkles, Star, Palette, Gift, Users, Clock, MapPin, Hand, Award, Shield, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,11 +15,15 @@ import { ExpandableText } from "@/components/ui/expandable-text";
 import { useNavigate } from "react-router-dom";
 import { useAboutContentContext } from "@/contexts/AboutContentContext";
 import { useAboutMedia } from "@/hooks/use-about-api";
+import { VideoModal } from "@/components/ui/video-modal";
 
 const About = () => {
     const navigate = useNavigate();
     const { content, isLoading } = useAboutContentContext();
     const { media: aboutMedia, loading: aboutMediaLoading } = useAboutMedia();
+
+    // Состояние для модального окна видео
+    const [selectedVideo, setSelectedVideo] = useState<{ src: string; title?: string } | null>(null);
 
     // Функция для получения URL медиа файлов
     const getMediaUrl = (filePath: string) => {
@@ -223,11 +228,12 @@ const About = () => {
                             <p className="text-lg text-gray-600 mb-8">
                                 Примеры наших мастер-классов и работ
                             </p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {/* Адаптивная сетка для мобильных устройств - 2 сверху, 1 снизу */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                                 {aboutMedia.slice(0, 12).map((media, index) => (
                                     <div
                                         key={index}
-                                        className="relative bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200"
+                                        className="relative bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200 hover:scale-105"
                                     >
                                         {media.type === 'image' ? (
                                             <div className="aspect-square">
@@ -239,16 +245,20 @@ const About = () => {
                                                 />
                                             </div>
                                         ) : (
-                                            <div className="aspect-square relative">
+                                            <div className="aspect-square relative group">
                                                 <video
                                                     src={getMediaUrl(media.file_path)}
                                                     className="w-full h-full object-cover cursor-pointer"
                                                     preload="metadata"
                                                     muted
-                                                    onClick={() => window.open(getMediaUrl(media.file_path), '_blank')}
+                                                    poster=""
+                                                    onClick={() => setSelectedVideo({
+                                                        src: getMediaUrl(media.file_path),
+                                                        title: media.title
+                                                    })}
                                                     onLoadedData={(e) => {
                                                         const video = e.target as HTMLVideoElement;
-                                                        video.currentTime = 1; // Устанавливаем на 1 секунду для показа кадра
+                                                        video.currentTime = 1; // Показываем кадр на 1 секунде
                                                     }}
                                                     onError={(e) => {
                                                         const target = e.target as HTMLVideoElement;
@@ -256,7 +266,7 @@ const About = () => {
                                                         target.parentElement!.innerHTML = `
                                                             <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
                                                                 <div class="text-center">
-                                                                    <svg class="w-8 h-8 text-gray-400 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <svg class="w-6 h-6 text-gray-400 mx-auto mb-1" fill="currentColor" viewBox="0 0 20 20">
                                                                         <path d="M8 5v10l8-5-8-5z"/>
                                                                     </svg>
                                                                     <span class="text-xs text-gray-500 font-medium">Видео</span>
@@ -265,22 +275,25 @@ const About = () => {
                                                         `;
                                                     }}
                                                 />
-                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                    <div className="w-8 h-8 bg-black/50 rounded-full flex items-center justify-center">
-                                                        <Play className="w-4 h-4 text-white ml-0.5" />
+                                                {/* Overlay с кнопкой воспроизведения */}
+                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:bg-black/20 transition-all duration-200">
+                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black/60 rounded-full flex items-center justify-center group-hover:bg-black/80 transition-all duration-200">
+                                                        <Play className="w-4 h-4 sm:w-5 sm:h-5 text-white ml-0.5" />
                                                     </div>
                                                 </div>
                                             </div>
                                         )}
-                                        {(media.title || media.description) && (
-                                            <div className="p-2 bg-white">
+
+                                        {/* Информация о медиа (только для видео) */}
+                                        {media.type === 'video' && (media.title || media.description) && (
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                                                 {media.title && (
-                                                    <h4 className="text-xs font-medium text-gray-800 mb-1 line-clamp-1">
+                                                    <h4 className="text-xs font-medium text-white mb-1 line-clamp-1">
                                                         {media.title}
                                                     </h4>
                                                 )}
                                                 {media.description && (
-                                                    <p className="text-xs text-gray-600 line-clamp-2">
+                                                    <p className="text-xs text-gray-200 line-clamp-1">
                                                         {media.description}
                                                     </p>
                                                 )}
@@ -332,6 +345,16 @@ const About = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Модальное окно для видео */}
+            {selectedVideo && (
+                <VideoModal
+                    isOpen={!!selectedVideo}
+                    onClose={() => setSelectedVideo(null)}
+                    videoSrc={selectedVideo.src}
+                    title={selectedVideo.title}
+                />
+            )}
         </div>
     );
 };

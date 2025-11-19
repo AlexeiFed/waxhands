@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
   },
   build: {
+    minify: false, // Временно отключаем минификацию для дебага
     rollupOptions: {
       output: {
         entryFileNames: `assets/index-[hash]-${Date.now()}.js`,

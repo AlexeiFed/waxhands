@@ -5,16 +5,18 @@
  * @created: 2024-12-19
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Share2 } from 'lucide-react';
+import { Share2, Bell } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import ParentChat from '@/components/ui/parent-chat';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
+import { useChat } from '@/hooks/use-chat';
 
 interface ParentHeaderProps {
     showBackButton?: boolean;
@@ -23,9 +25,55 @@ interface ParentHeaderProps {
 export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = false }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
-    const { logout } = useAuth();
+    const { user, logout } = useAuth();
     const { toast } = useToast();
     const navigate = useNavigate();
+
+    // Получаем количество непрочитанных сообщений
+    const chatData = useChat(user?.id);
+    const { unreadCount, refetchUnread } = chatData;
+
+    // Логируем изменения счетчика для отладки
+    useEffect(() => {
+        console.log('📊 ParentHeader: ПОЛНЫЕ ДАННЫЕ useChat:', chatData);
+        console.log('📊 ParentHeader: unreadCount:', unreadCount, 'тип:', typeof unreadCount);
+        console.log('📊 ParentHeader: user?.id:', user?.id);
+        console.log('📊 ParentHeader: unreadCount > 0:', unreadCount > 0);
+        if (unreadCount > 0) {
+            console.log('✅ ParentHeader: Показываем Badge и зеленый кружок');
+        } else {
+            console.log('⚠️ ParentHeader: unreadCount = 0, Badge и кружок скрыты');
+        }
+    }, [unreadCount, chatData, user?.id]);
+
+    // Принудительно обновляем счетчик при монтировании и фокусировке
+    useEffect(() => {
+        // Обновляем сразу при монтировании
+        if (user?.id) {
+            console.log('🔄 ParentHeader: Обновляем счетчик при монтировании');
+            refetchUnread();
+        }
+
+        const handleFocus = () => {
+            console.log('👁️ ParentHeader: Окно получило фокус - обновляем счетчик');
+            refetchUnread();
+        };
+
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+    }, [refetchUnread, user?.id]);
+
+    // Обновляем счетчик каждые 10 секунд для надежности
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const interval = setInterval(() => {
+            console.log('⏰ ParentHeader: Периодическое обновление счетчика');
+            refetchUnread();
+        }, 10000); // каждые 10 секунд
+
+        return () => clearInterval(interval);
+    }, [refetchUnread, user?.id]);
 
     const menuItems = [
         { label: 'Главная', href: '/parent', icon: '🏠' },
@@ -41,14 +89,14 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
 
     const handleShare = () => {
         const url = window.location.origin;
-        const text = 'Отличные творческие мастер-классы для детей! 🎨✨';
+        const text = 'Отличный творческий мастер-класс для детей! 🎨✨';
         const shareText = `${text}\n\n${url}`;
 
         // Пытаемся использовать нативный Web Share API
         if (navigator.share) {
             navigator.share({
                 title: 'Студия МК Восковые ручки',
-                text: shareText,
+                //  text: shareText,
                 url: url
             }).catch(() => {
                 // Если нативный шаринг не сработал, показываем выбор
@@ -158,6 +206,30 @@ export const ParentHeader: React.FC<ParentHeaderProps> = ({ showBackButton = fal
 
                         {/* Кнопки действий */}
                         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+                            {/* Кнопка уведомлений */}
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setIsChatOpen(true)}
+                                className="text-white hover:bg-white/20 hover:text-white w-8 h-8 sm:w-10 sm:h-10 relative"
+                                title="Сообщения"
+                            >
+                                <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+                                {unreadCount > 0 && (
+                                    <>
+                                        {/* Зеленый индикатор непрочитанных */}
+                                        <div className="absolute top-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse z-10" />
+                                        {/* Счетчик непрочитанных */}
+                                        <Badge
+                                            variant="destructive"
+                                            className="absolute -top-1 -right-1 h-6 w-6 sm:h-7 sm:w-7 flex items-center justify-center p-0 text-xs sm:text-sm font-bold animate-pulse bg-red-600 border-2 border-white shadow-lg z-20"
+                                        >
+                                            {unreadCount > 9 ? '9+' : unreadCount}
+                                        </Badge>
+                                    </>
+                                )}
+                            </Button>
+
                             {/* Кнопка поделиться */}
                             <Button
                                 variant="ghost"

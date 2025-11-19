@@ -86,8 +86,31 @@ const signatureString = `${this.config.merchantLogin}:${data.amount}:${invId}:${
 Теперь при нажатии на кнопку "Оплатить заказ" должна корректно открываться форма Robokassa без ошибки 29.
 
 ## 📅 Дата исправления
-**20 сентября 2025, 18:30 MSK**
+**20 сентября 2025, 18:30 MSK** (первое исправление)
+**20 сентября 2025, 22:58 MSK** (окончательное исправление)
 
 ## 📦 Файлы обновления
-- `backend-robokassa-signature-fix-20250920-182957.zip`
+- `backend-robokassa-signature-fix-20250920-182957.zip` (первая версия)
+- `backend-robokassa-signature-fix-20250920-225753.zip` (окончательная версия)
 - Развернуто на сервере: `/var/www/waxhands-app/`
+
+## 🔧 Дополнительные исправления (20.09.2025 22:58)
+
+### Проблема с iframe подписью
+В методе `createIframePaymentData()` Receipt не был URL-кодирован перед включением в подпись.
+
+### Исправления:
+```diff
+- const receipt = this.createReceipt(data);
+- const signatureString = `${this.config.merchantLogin}:${data.amount}:${invId}:${receipt}:${this.config.password1}`;
+
++ const receipt = this.createReceipt(data);
++ const receiptUrlEncoded = encodeURIComponent(receipt);
++ const signatureString = `${this.config.merchantLogin}:${data.amount}:${invId}:${receiptUrlEncoded}:${this.config.password1}`;
+```
+
+### Результат:
+- ✅ Классический интерфейс: подпись БЕЗ Receipt
+- ✅ Iframe интерфейс: подпись С URL-кодированным Receipt
+- ✅ Соответствие документации Robokassa
+- ✅ Backend успешно обновлен и перезапущен

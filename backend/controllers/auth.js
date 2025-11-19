@@ -1,9 +1,26 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../database/connection.js';
+// Функция нормализации телефона - приводит к формату без + и пробелов
+const normalizePhone = (phone) => {
+    if (!phone)
+        return '';
+    // Убираем все символы кроме цифр
+    return phone.replace(/\D/g, '');
+};
 export const login = async (req, res) => {
     try {
         const credentials = req.body;
+        // Очищаем пробелы из полей логина и приводим к нижнему регистру
+        if (credentials.name)
+            credentials.name = credentials.name.trim();
+        if (credentials.surname)
+            credentials.surname = credentials.surname.trim().toLowerCase();
+        if (credentials.phone) {
+            credentials.phone = credentials.phone.trim();
+            // Нормализуем телефон для поиска
+            credentials.phone = normalizePhone(credentials.phone);
+        }
         if (credentials.role === 'admin') {
             // Логика для администратора - проверяем в базе данных
             const adminQuery = 'SELECT * FROM users WHERE role = \'admin\' AND name = $1';
@@ -12,7 +29,8 @@ export const login = async (req, res) => {
             if (!adminUser) {
                 res.status(401).json({
                     success: false,
-                    error: 'Admin user not found'
+                    error: 'Администратор не найден',
+                    details: 'Проверьте правильность имени администратора'
                 });
                 return;
             }
@@ -22,7 +40,8 @@ export const login = async (req, res) => {
                 if (!isValidPassword) {
                     res.status(401).json({
                         success: false,
-                        error: 'Invalid admin password'
+                        error: 'Неверный пароль администратора',
+                        details: 'Проверьте правильность введенного пароля'
                     });
                     return;
                 }
@@ -59,15 +78,44 @@ export const login = async (req, res) => {
         }
         else {
             // Для родителей и исполнителей ищем по фамилии и телефону
-            query = 'SELECT * FROM users WHERE role = $1 AND surname = $2 AND phone = $3';
-            params = [credentials.role, credentials.surname || '', credentials.phone || ''];
+            // Корректная обработка NULL значений для phone
+            if (credentials.phone) {
+                // Ищем по нормализованному телефону (убираем все символы кроме цифр)
+                // Сравниваем фамилию без учета регистра (LOWER)
+                query = `SELECT * FROM users 
+                         WHERE role = $1 
+                         AND LOWER(TRIM(surname)) = $2 
+                         AND regexp_replace(TRIM(phone), '[^0-9]', '', 'g') = $3`;
+                params = [credentials.role, credentials.surname || '', credentials.phone];
+                // Детальное логирование для отладки
+                console.log('🔍 Login attempt:', {
+                    role: credentials.role,
+                    surname: credentials.surname,
+                    surname_original: req.body.surname,
+                    phone_original: req.body.phone,
+                    phone_normalized: credentials.phone,
+                    query_params: params
+                });
+            }
+            else {
+                query = 'SELECT * FROM users WHERE role = $1 AND LOWER(TRIM(surname)) = $2 AND (phone IS NULL OR phone = \'\')';
+                params = [credentials.role, credentials.surname || ''];
+            }
         }
         const result = await pool.query(query, params);
         const user = result.rows[0];
+        // Логируем результат поиска
+        console.log('📊 Query result:', {
+            found: !!user,
+            userId: user?.id,
+            userName: user?.name,
+            userSurname: user?.surname
+        });
         if (!user) {
             res.status(401).json({
                 success: false,
-                error: 'User not found'
+                error: 'Пользователь не найден',
+                details: `Проверьте правильность введенных данных: роль "${credentials.role}", фамилия "${credentials.surname}", ${credentials.phone ? `телефон "${credentials.phone}"` : 'телефон не указан'}`
             });
             return;
         }
@@ -77,7 +125,8 @@ export const login = async (req, res) => {
             if (!isValidPassword) {
                 res.status(401).json({
                     success: false,
-                    error: 'Invalid password'
+                    error: 'Неверный пароль',
+                    details: 'Проверьте правильность введенного пароля'
                 });
                 return;
             }
@@ -100,6 +149,167 @@ export const login = async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({
             success: false,
+            error: 'Ошибка сервера при авторизации',
+            details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Попробуйте позже'
+        });
+    }
+};
+// Регистрация родителя и детей администратором (без токена JWT)
+export const adminRegisterParent = async (req, res) => {
+    try {
+        const userData = req.body;
+        // Нормализуем данные перед регистрацией
+        if (userData.name)
+            userData.name = userData.name.trim();
+        if (userData.surname)
+            userData.surname = userData.surname.trim();
+        if (userData.phone)
+            userData.phone = userData.phone.trim();
+        // Проверяем уникальность телефона с нормализацией
+        if (userData.phone) {
+            const normalizedPhone = normalizePhone(userData.phone);
+            const existingUser = await pool.query('SELECT id, name, surname FROM users WHERE regexp_replace(TRIM(phone), \'[^0-9]\', \'\', \'g\') = $1', [normalizedPhone]);
+            if (existingUser.rows.length > 0) {
+                console.log('⚠️ Duplicate phone found:', {
+                    attemptedPhone: userData.phone,
+                    normalizedPhone: normalizedPhone,
+                    existingUser: existingUser.rows[0]
+                });
+                res.status(400).json({
+                    success: false,
+                    error: 'User with this phone number already exists',
+                    details: existingUser.rows[0]
+                });
+                return;
+            }
+        }
+        // Начинаем транзакцию
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            if (!userData.children || userData.children.length === 0) {
+                await client.query('ROLLBACK');
+                res.status(400).json({
+                    success: false,
+                    error: 'Children data is required'
+                });
+                return;
+            }
+            // Нормализуем данные детей
+            userData.children.forEach(child => {
+                if (child.name)
+                    child.name = child.name.trim();
+                if (child.surname)
+                    child.surname = child.surname.trim();
+            });
+            // Получаем школу первого ребенка для родителя
+            const firstChild = userData.children[0];
+            const parentSchoolId = firstChild.schoolId || null;
+            let parentSchoolName = null;
+            if (parentSchoolId) {
+                try {
+                    const schoolResult = await client.query('SELECT name FROM schools WHERE id = $1', [parentSchoolId]);
+                    parentSchoolName = schoolResult.rows[0]?.name || null;
+                }
+                catch (error) {
+                    console.log('School not found for id:', parentSchoolId);
+                }
+            }
+            // 1. Создаем родителя со школой первого ребенка
+            const parentResult = await client.query(`
+                INSERT INTO users (name, surname, phone, role, school_id, school_name, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING *
+            `, [userData.name, userData.surname, userData.phone, 'parent', parentSchoolId, parentSchoolName]);
+            const parent = parentResult.rows[0];
+            const parentId = parent.id;
+            console.log('✅ Родитель создан админом:', {
+                parentId,
+                name: parent.name,
+                surname: parent.surname,
+                phone: parent.phone
+            });
+            // 2. Создаем детей
+            const childrenUsers = [];
+            for (const childData of userData.children) {
+                // Проверяем уникальность для каждого ребенка только по имени и фамилии
+                const existingChild = await client.query(`
+                    SELECT id FROM users 
+                    WHERE role = 'child' 
+                    AND name = $1 
+                    AND surname = $2
+                `, [childData.name, childData.surname]);
+                if (existingChild.rows.length > 0) {
+                    await client.query('ROLLBACK');
+                    res.status(400).json({
+                        success: false,
+                        error: `Child ${childData.name} ${childData.surname} already exists`
+                    });
+                    return;
+                }
+                // Получаем название школы
+                let schoolName = null;
+                if (childData.schoolId) {
+                    try {
+                        const schoolResult = await client.query('SELECT name FROM schools WHERE id = $1', [childData.schoolId]);
+                        schoolName = schoolResult.rows[0]?.name || null;
+                    }
+                    catch (error) {
+                        console.log('School not found for id:', childData.schoolId);
+                    }
+                }
+                // Создаем ребенка
+                const childResult = await client.query(`
+                    INSERT INTO users (name, surname, age, role, school_id, school_name, class, class_group, parent_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING *
+                `, [
+                    childData.name,
+                    childData.surname,
+                    childData.age || null,
+                    'child',
+                    childData.schoolId,
+                    schoolName,
+                    childData.class,
+                    childData.class,
+                    parentId
+                ]);
+                childrenUsers.push(childResult.rows[0]);
+                console.log('✅ Ребенок создан:', {
+                    childId: childResult.rows[0].id,
+                    name: childData.name,
+                    surname: childData.surname,
+                    school: schoolName,
+                    class: childData.class
+                });
+            }
+            await client.query('COMMIT');
+            // Формируем ответ с данными родителя и детей (БЕЗ токена JWT)
+            const responseUser = {
+                ...parent,
+                children: childrenUsers
+            };
+            res.status(201).json({
+                success: true,
+                data: {
+                    parent: responseUser,
+                    children: childrenUsers
+                },
+                message: 'Parent and children registered successfully by admin'
+            });
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+    catch (error) {
+        console.error('❌ Admin register parent error:', error);
+        res.status(500).json({
+            success: false,
             error: 'Internal server error'
         });
     }
@@ -107,10 +317,25 @@ export const login = async (req, res) => {
 export const register = async (req, res) => {
     try {
         const userData = req.body;
-        // Проверяем уникальность телефона для родителей
+        // Нормализуем данные перед регистрацией
+        if (userData.name)
+            userData.name = userData.name.trim();
+        if (userData.surname)
+            userData.surname = userData.surname.trim();
+        if (userData.phone)
+            userData.phone = userData.phone.trim();
+        if (userData.email)
+            userData.email = userData.email.trim().toLowerCase();
+        // Проверяем уникальность телефона с нормализацией
         if (userData.phone) {
-            const existingUser = await pool.query('SELECT id FROM users WHERE phone = $1', [userData.phone]);
+            const normalizedPhone = normalizePhone(userData.phone);
+            const existingUser = await pool.query('SELECT id, name, surname FROM users WHERE regexp_replace(TRIM(phone), \'[^0-9]\', \'\', \'g\') = $1', [normalizedPhone]);
             if (existingUser.rows.length > 0) {
+                console.log('⚠️ Duplicate phone found:', {
+                    attemptedPhone: userData.phone,
+                    normalizedPhone: normalizedPhone,
+                    existingUser: existingUser.rows[0]
+                });
                 res.status(400).json({
                     success: false,
                     error: 'User with this phone number already exists'
@@ -124,12 +349,32 @@ export const register = async (req, res) => {
             await client.query('BEGIN');
             if (userData.role === 'parent' && userData.children && userData.children.length > 0) {
                 // Семейная регистрация: создаем родителя и детей
-                // 1. Создаем родителя
+                // Нормализуем данные детей
+                userData.children.forEach(child => {
+                    if (child.name)
+                        child.name = child.name.trim();
+                    if (child.surname)
+                        child.surname = child.surname.trim();
+                });
+                // Получаем школу первого ребенка для родителя
+                const firstChild = userData.children[0];
+                const parentSchoolId = firstChild.schoolId || null;
+                let parentSchoolName = null;
+                if (parentSchoolId) {
+                    try {
+                        const schoolResult = await client.query('SELECT name FROM schools WHERE id = $1', [parentSchoolId]);
+                        parentSchoolName = schoolResult.rows[0]?.name || null;
+                    }
+                    catch (error) {
+                        console.log('School not found for id:', parentSchoolId);
+                    }
+                }
+                // 1. Создаем родителя со школой первого ребенка
                 const parentResult = await client.query(`
-                    INSERT INTO users (name, surname, phone, role, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    INSERT INTO users (name, surname, phone, role, school_id, school_name, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     RETURNING *
-                `, [userData.name, userData.surname, userData.phone, 'parent']);
+                `, [userData.name, userData.surname, userData.phone, 'parent', parentSchoolId, parentSchoolName]);
                 const parent = parentResult.rows[0];
                 const parentId = parent.id;
                 // 2. Создаем детей
@@ -364,7 +609,9 @@ export const getProfile = async (req, res) => {
             schoolId: user.school_id,
             class: user.class_group || user.class, // Приоритет class_group
             createdAt: user.created_at,
-            updatedAt: user.updated_at
+            updatedAt: user.updated_at,
+            surname: user.surname,
+            phone: user.phone
         };
         res.json({
             success: true,
@@ -433,7 +680,9 @@ export const updateProfile = async (req, res) => {
             schoolId: updatedUser.school_id,
             class: updatedUser.class_group || updatedUser.class, // Приоритет class_group
             createdAt: updatedUser.created_at,
-            updatedAt: updatedUser.updated_at
+            updatedAt: updatedUser.updated_at,
+            surname: updatedUser.surname,
+            phone: updatedUser.phone
         };
         res.json({
             success: true,

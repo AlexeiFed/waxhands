@@ -14,6 +14,7 @@ import { useToast } from './use-toast';
 import { useNotificationSound } from './use-notification-sound';
 import { WS_BASE_URL } from '../lib/config';
 import { useWebSocketChat } from './use-websocket-chat';
+import { useWebSocketContext } from '../contexts/WebSocketContext';
 
 export const useChat = (userId?: string) => {
     const { user } = useAuth();
@@ -34,15 +35,15 @@ export const useChat = (userId?: string) => {
         queryKey: ['chats', userId],
         queryFn: async () => {
             if (!userId) throw new Error('User ID required');
-            console.log('🔍 Запрашиваю чаты для пользователя:', userId);
+
             const result = await chatApi.getUserChats(userId);
-            console.log('📡 Получен ответ от API:', result);
+
             // Проверяем, что данные не undefined
             if (!result || !result.chats) {
                 console.error('❌ Неверный формат ответа:', result);
                 throw new Error('Invalid response format');
             }
-            console.log('✅ Данные валидны, возвращаю:', result);
+
             return result;
         },
         enabled: !!userId,
@@ -57,7 +58,7 @@ export const useChat = (userId?: string) => {
     useEffect(() => {
         if (chatsData?.chats && chatsData.chats.length > 0 && !selectedChat) {
             const firstChat = chatsData.chats[0];
-            console.log('🎯 Автоматически выбираю первый чат:', firstChat);
+
             setSelectedChat(firstChat);
         }
     }, [chatsData, selectedChat]);
@@ -72,9 +73,9 @@ export const useChat = (userId?: string) => {
         queryKey: ['chat-messages', selectedChat?.id],
         queryFn: async () => {
             if (!selectedChat?.id) throw new Error('Chat ID required');
-            console.log('🔍 Запрашиваю сообщения для чата:', selectedChat.id);
+
             const result = await chatApi.getChatMessages(selectedChat.id);
-            console.log('📡 Получены сообщения:', result);
+
             return result;
         },
         enabled: !!selectedChat?.id,
@@ -86,8 +87,6 @@ export const useChat = (userId?: string) => {
         gcTime: 5 * 60 * 1000, // Кэш хранится 5 минут
     });
 
-
-
     // Получение количества непрочитанных сообщений
     const {
         data: unreadData,
@@ -96,51 +95,56 @@ export const useChat = (userId?: string) => {
         queryKey: ['chatUnread', userId],
         queryFn: async () => {
             if (!userId) throw new Error('User ID required');
+            console.log('🔍 useChat: Запрос непрочитанных сообщений для userId:', userId);
             const result = await chatApi.getUnreadCount(userId);
             // Проверяем, что данные не undefined
             if (!result || typeof result.unreadTotal !== 'number') {
+                console.error('❌ useChat: Неверный формат ответа unreadCount:', result);
                 throw new Error('Invalid response format');
             }
+            console.log('✅ useChat: Получено непрочитанных сообщений:', result.unreadTotal);
             return result;
         },
         enabled: !!userId,
-        refetchInterval: false, // Отключаем автоматическое обновление
-        retry: 1, // Пробуем только 1 раз при ошибке
-        retryDelay: 10000, // Задержка перед повтором
+        refetchInterval: 5000, // Обновляем каждые 5 секунд
+        retry: 3, // Пробуем 3 раза при ошибке
+        retryDelay: 3000, // Задержка перед повтором
+        staleTime: 0, // Данные всегда считаются устаревшими
+        gcTime: 0, // Не кэшируем данные
     });
 
-    // Автоматически сбрасываем непрочитанные сообщения при открытии чата
-    useEffect(() => {
-        if (selectedChat?.id && messagesData?.messages && messagesData.messages.length > 0) {
-            console.log('🔍 Автоматически сбрасываем непрочитанные для чата пользователя:', selectedChat.id);
-            // Отмечаем сообщения как прочитанные
-            chatApi.markAsRead({
-                chatId: selectedChat.id,
-                userId: userId || ''
-            }).then(() => {
-                console.log('✅ Сообщения отмечены как прочитанные для чата:', selectedChat.id);
-                // Обновляем количество непрочитанных
-                refetchUnread();
-            }).catch((error) => {
-                console.warn('⚠️ Не удалось отметить сообщения как прочитанные:', error);
-            });
-        }
-    }, [selectedChat?.id, messagesData?.messages, userId, refetchUnread]);
+    // ОТКЛЮЧЕНО: автоматическое прочтение перенесено в компонент ParentChat
+    // Теперь сообщения отмечаются как прочитанные ЯВНО при открытии чата родителем
+    // useEffect(() => {
+    //     if (selectedChat?.id) {
+    //         console.log('🔓 useChat: Открыт чат', selectedChat.id, '- отмечаем сообщения как прочитанные');
+    //         
+    //         chatApi.markAsRead({
+    //             chatId: selectedChat.id,
+    //             userId: userId || ''
+    //         }).then(() => {
+    //             console.log('✅ useChat: Сообщения отмечены как прочитанные для чата', selectedChat.id);
+    //             refetchUnread();
+    //         }).catch((error) => {
+    //             console.warn('⚠️ Не удалось отметить сообщения как прочитанные:', error);
+    //         });
+    //     }
+    // }, [selectedChat?.id, userId, refetchUnread]);
 
     // Создание нового чата
     const createChatMutation = useMutation({
         mutationFn: chatApi.createChat,
         onSuccess: (data) => {
-            console.log('✅ Чат создан успешно:', data);
+
             toast({
                 title: "Чат создан! 💬",
                 description: "Ваше сообщение отправлено в поддержку",
             });
-            console.log('🔄 Обновляю список чатов...');
+
             refetchChats();
             // Автоматически открываем созданный чат
             if (data && data.chatId) {
-                console.log('🎯 Создаю временный объект чата...');
+
                 // Создаем временный объект чата для отображения
                 const tempChat: Chat = {
                     id: data.chatId,
@@ -164,7 +168,7 @@ export const useChat = (userId?: string) => {
                     },
                     unreadCount: 0
                 };
-                console.log('💾 Устанавливаю выбранный чат:', tempChat);
+
                 setSelectedChat(tempChat);
             }
         },
@@ -215,7 +219,7 @@ export const useChat = (userId?: string) => {
         }
 
         try {
-            console.log('📤 Отправляю сообщение:', { chatId: selectedChat.id, message: message.trim() });
+
             await sendMessageMutation.mutateAsync({
                 chatId: selectedChat.id,
                 message: message.trim()
@@ -246,56 +250,74 @@ export const useChat = (userId?: string) => {
     }, [messagesData?.messages, scrollToBottom, playMessageSound, selectedChat]);
 
     // WebSocket для real-time обновлений сообщений
-    const { isConnected: wsConnected } = useWebSocketChat(selectedChat?.id, userId, false);
-
-    // Автоматическое обновление сообщений при получении WebSocket уведомлений
-    useEffect(() => {
-        if (!selectedChat?.id) return;
-
-        console.log('🔌 WebSocket: инициализация real-time обновлений сообщений...');
-
-        if (wsConnected) {
-            console.log('✅ WebSocket подключен для чата:', selectedChat.id);
-            // При получении нового сообщения обновляем данные
-            const handleNewMessage = () => {
-                console.log('📨 Получено новое сообщение, обновляем данные...');
+    const { isConnected: wsConnected } = useWebSocketChat(selectedChat?.id, userId, false, {
+        onMessage: (data) => {
+            // Обработка новых сообщений в чате
+            if (data.type === 'chat_message') {
+                console.log('📨 Родитель получил новое сообщение через WebSocket:', data);
                 refetchMessages();
                 refetchChats();
+                // Обязательно обновляем счетчик непрочитанных сразу
                 refetchUnread();
-            };
-
-            // Добавляем обработчик для WebSocket сообщений
-            window.addEventListener('chat-message-received', handleNewMessage);
-
-            return () => {
-                window.removeEventListener('chat-message-received', handleNewMessage);
-            };
-        } else {
-            console.log('⏸️ WebSocket не подключен для чата:', selectedChat.id);
+                console.log('🔄 Родитель обновил счетчик непрочитанных сообщений');
+            }
         }
-    }, [selectedChat?.id, wsConnected, refetchMessages, refetchChats, refetchUnread]);
+    });
 
-    // WebSocket для real-time обновлений списка чатов (заменяет polling)
+    // Получаем WebSocket контекст для подписки на каналы родителя
+    const wsContext = useWebSocketContext();
+
+    // Подписка на обновления чатов родителя - НЕЗАВИСИМО от открытого чата
     useEffect(() => {
-        console.log('🔌 WebSocket: инициализация real-time обновлений списка чатов...');
+        if (!userId || !wsContext || !wsContext.isConnected) return;
 
-        // TODO: Здесь будет WebSocket соединение для real-time обновлений
-        // Пока отключаем polling для экономии ресурсов
+        console.log('📡 Родитель подписывается на канал user:', userId);
 
-        console.log('⏸️ Polling списка чатов отключен - переход на WebSocket режим');
-    }, [refetchChats, unreadData?.unreadTotal]);
+        // Подписываемся на канал пользователя
+        const unsubscribe = wsContext.subscribe(`user:${userId}`, (data) => {
+            console.log('📢 Родитель получил событие на канале user:', data);
 
-    // WebSocket для real-time обновлений непрочитанных сообщений (заменяет polling)
-    useEffect(() => {
-        if (!userId) return;
+            // Обрабатываем различные типы событий
+            if (data.type === 'chat_message') {
+                console.log('🔄 Обновляем список чатов, сообщения и непрочитанные (новое сообщение)');
+                refetchChats();
+                refetchMessages(); // Обновляем сообщения текущего чата
+                // Принудительно инвалидируем кэш и обновляем счетчик
+                queryClient.invalidateQueries({ queryKey: ['chatUnread', userId] });
+                setTimeout(() => {
+                    refetchUnread();
+                    console.log('✅ Счетчик непрочитанных обновлен после нового сообщения');
+                }, 300);
+            } else if (data.type === 'new_chat') {
+                console.log('🔄 Обновляем список чатов (новый чат)');
+                refetchChats();
+                // Принудительно инвалидируем кэш и обновляем счетчик
+                queryClient.invalidateQueries({ queryKey: ['chatUnread', userId] });
+                setTimeout(() => {
+                    refetchUnread();
+                    console.log('✅ Счетчик непрочитанных обновлен после нового чата');
+                }, 300);
+            } else if (data.type === 'unread_count_update') {
+                console.log('🔄 Обновляем счетчик непрочитанных сообщений');
+                queryClient.invalidateQueries({ queryKey: ['chatUnread', userId] });
+                refetchUnread();
+            }
+        });
 
-        console.log('🔌 WebSocket: инициализация real-time обновлений непрочитанных...');
+        // Сообщаем серверу о подписке
+        wsContext.sendMessage({
+            type: 'subscribe',
+            channels: [`user:${userId}`],
+            userId,
+            userRole: 'user',
+            timestamp: Date.now()
+        });
 
-        // TODO: Здесь будет WebSocket соединение для real-time обновлений
-        // Пока отключаем polling для экономии ресурсов
-
-        console.log('⏸️ Polling непрочитанных отключен - переход на WebSocket режим');
-    }, [userId, refetchUnread]);
+        return () => {
+            console.log('📡 Родитель отписывается от канала user:', userId);
+            unsubscribe();
+        };
+    }, [userId, wsContext, wsContext?.isConnected, refetchChats, refetchMessages, refetchUnread, queryClient]);
 
     // Мемоизируем selectedChat для предотвращения лишних перерендеров
     const memoizedSelectedChat = useMemo(() => selectedChat, [selectedChat]);
@@ -303,31 +325,25 @@ export const useChat = (userId?: string) => {
     // Отслеживаем изменения selectedChat
     useEffect(() => {
         if (memoizedSelectedChat !== selectedChat) {
-            console.log('🎯 selectedChat изменился:', selectedChat);
+
             setSelectedChat(memoizedSelectedChat);
         }
     }, [memoizedSelectedChat, selectedChat]);
 
     // Отслеживаем изменения chatsData
     useEffect(() => {
-        console.log('📊 chatsData изменился:', chatsData);
+
     }, [chatsData]);
 
     // Обработка ошибок чатов
     useEffect(() => {
-        console.log('🔍 useEffect - обработка ошибок чатов:', {
-            chatsError,
-            chatsData: chatsData ? `${chatsData.chats?.length || 0} чатов` : 'нет данных',
-            isLoadingChats,
-            userId
-        });
 
         if (chatsError && !chatsData && !isLoadingChats) {
             // Показываем ошибку только если нет данных и не загружаемся
             // И только один раз, не показываем постоянно
             const errorKey = `chat-error-${userId}`;
             if (!localStorage.getItem(errorKey)) {
-                console.log('🚨 Показываю ошибку загрузки чатов');
+
                 toast({
                     title: "Ошибка загрузки чатов",
                     description: "Не удалось загрузить список чатов. Попробуйте позже.",
@@ -392,7 +408,11 @@ export const useChat = (userId?: string) => {
 };
 
 // Хук для администраторов
-export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusFilter?: string) => {
+export const useAdminChat = (
+    externalSelectedChat?: Chat | null,
+    externalStatusFilter?: string,
+    onNewMessage?: (data: { type: string; chatId?: string; message?: string }) => void
+) => {
     const { toast } = useToast();
     const { user } = useAuth();
     const { playMessageSound } = useNotificationSound();
@@ -418,9 +438,8 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
     } = useQuery({
         queryKey: ['adminChats', statusFilter],
         queryFn: async () => {
-            console.log('🔍 useAdminChat: queryFn вызван с statusFilter:', statusFilter);
+
             const result = await chatApi.getAllChats(statusFilter);
-            console.log('🔍 useAdminChat: API результат:', result);
 
             // Проверяем, что данные не undefined и имеют правильную структуру
             if (!result) {
@@ -434,12 +453,6 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
                 throw new Error('Invalid response format');
             }
 
-            console.log('✅ useAdminChat: Данные чатов получены:', {
-                total: result.total,
-                chatsCount: result.chats?.length,
-                unreadTotal: result.unreadTotal
-            });
-
             return result;
         },
         refetchInterval: false, // Отключаем автоматическое обновление
@@ -450,18 +463,13 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
 
     // Автоматическая загрузка чатов при монтировании
     useEffect(() => {
-        console.log('🚀 useAdminChat hook mounted, fetching chats...');
+
         refetchChats();
     }, [refetchChats]);
 
     // Логируем изменения состояния чатов
     useEffect(() => {
-        console.log('📊 useAdminChat: Состояние чатов изменилось:', {
-            chatsData,
-            isLoadingChats,
-            chatsError,
-            statusFilter
-        });
+
     }, [chatsData, isLoadingChats, chatsError, statusFilter]);
 
     // Получение сообщений выбранного чата
@@ -553,10 +561,6 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
         if (!currentSelectedChat?.id || !message.trim()) return;
 
         try {
-            console.log('Отправка сообщения админом:', {
-                chatId: currentSelectedChat.id,
-                message: message.trim()
-            });
 
             await sendMessageMutation.mutateAsync({
                 chatId: currentSelectedChat.id,
@@ -612,116 +616,67 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
         }
     }, [messagesError, isLoadingMessages, currentSelectedChat?.id, toast]);
 
-    // WebSocket для real-time обновлений сообщений администратора
-    useEffect(() => {
-        if (!currentSelectedChat?.id || !user?.id) return;
-
-        console.log('🔌 WebSocket: инициализация real-time обновлений для администратора...');
-
-        // Создаем WebSocket соединение для real-time обновлений
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        // Исправляем URL для WebSocket - используем правильный порт для backend
-        const wsUrl = `${WS_BASE_URL}?userId=${user.id}&isAdmin=true`;
-
-        console.log('🔌 Подключаемся к WebSocket URL:', wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-            console.log('🔌 WebSocket соединение установлено для администратора');
-            // Подписываемся на обновления чата
-            ws.send(JSON.stringify({
-                type: 'subscribe',
-                channels: [`chat:${currentSelectedChat.id}`]
-            }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-
-                if (message.type === 'chat_message' && message.data.chatId === currentSelectedChat.id) {
-                    console.log('📨 Получено новое сообщение через WebSocket, обновляем данные...');
-                    // Обновляем сообщения и список чатов
+    // WebSocket для real-time обновлений чатов администратора через централизованный контекст
+    const { isConnected: wsAdminConnected } = useWebSocketChat(
+        currentSelectedChat?.id,
+        user?.id,
+        true, // isAdmin = true
+        {
+            onMessage: (data) => {
+                // Обработка новых сообщений в чате
+                if (data.type === 'chat_message') {
+                    console.log('📨 Получено новое сообщение через WebSocket:', data);
                     refetchMessages();
                     refetchChats();
-                }
-            } catch (error) {
-                console.warn('⚠️ Ошибка обработки WebSocket сообщения:', error);
-            }
-        };
-
-        ws.onerror = (error) => {
-            console.warn('⚠️ WebSocket ошибка для администратора:', error);
-        };
-
-        ws.onclose = (event) => {
-            console.log('🔌 WebSocket соединение закрыто для администратора:', event.code, event.reason);
-        };
-
-        return () => {
-            console.log('🔌 Закрываем WebSocket соединение для администратора');
-            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-                ws.close();
-            }
-        };
-    }, [currentSelectedChat?.id, user?.id, refetchMessages, refetchChats]);
-
-    // WebSocket для real-time обновлений списка чатов администратора
-    useEffect(() => {
-        if (!user?.id) return;
-
-        console.log('🔌 WebSocket: инициализация real-time обновлений списка чатов для администратора...');
-
-        // Создаем WebSocket соединение для обновлений списка чатов
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        // Исправляем URL для WebSocket - используем правильный порт для backend
-        const wsUrl = `${WS_BASE_URL}?userId=${user.id}&isAdmin=true`;
-
-        console.log('🔌 Подключаемся к WebSocket URL для списка чатов:', wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-            console.log('🔌 WebSocket соединение установлено для списка чатов администратора');
-            // Подписываемся на обновления всех чатов
-            ws.send(JSON.stringify({
-                type: 'subscribe',
-                channels: ['admin_chats']
-            }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-
-                if (message.type === 'chat_message' || message.type === 'chat_status_change') {
-                    console.log('📨 Получено обновление чата через WebSocket, обновляем список...');
-                    // Обновляем список чатов
+                } else if (data.type === 'chat_status_change') {
+                    console.log('🔄 Изменен статус чата через WebSocket:', data);
                     refetchChats();
                 }
-            } catch (error) {
-                console.warn('⚠️ Ошибка обработки WebSocket сообщения для списка чатов:', error);
+            },
+            onStatusChange: (status) => {
+                console.log('🔌 WebSocket статус для админа:', status);
             }
-        };
+        }
+    );
 
-        ws.onerror = (error) => {
-            console.warn('⚠️ WebSocket ошибка для списка чатов администратора:', error);
-        };
+    // Получаем WebSocket контекст для подписки на админские каналы
+    const wsContext = useWebSocketContext();
 
-        ws.onclose = (event) => {
-            console.log('🔌 WebSocket соединение закрыто для списка чатов администратора:', event.code, event.reason);
-        };
+    // Подписка на все админские чаты для получения обновлений
+    useEffect(() => {
+        if (!user?.id || !wsAdminConnected || !wsContext) return;
+
+        console.log('📡 Админ подписывается на канал admin:all');
+
+        // Подписываемся на все админские обновления
+        const unsubscribe = wsContext.subscribe('admin:all', (data) => {
+            console.log('📢 Получено событие на канале admin:all:', data);
+
+            if (data.type === 'chat_message' || data.type === 'new_chat' || data.type === 'chat_status_change') {
+                console.log('🔄 Обновляем список чатов админа');
+                refetchChats();
+
+                // Вызываем callback для уведомления о новом сообщении
+                if (data.type === 'chat_message' && onNewMessage) {
+                    onNewMessage(data);
+                }
+            }
+        });
+
+        // Сообщаем серверу о подписке с метаданными админа
+        wsContext.sendMessage({
+            type: 'subscribe',
+            channels: ['admin:all'],
+            userId: user.id,
+            userRole: 'admin',
+            timestamp: Date.now()
+        });
 
         return () => {
-            console.log('🔌 Закрываем WebSocket соединение для списка чатов администратора');
-            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-                ws.close();
-            }
+            console.log('📡 Админ отписывается от канала admin:all');
+            unsubscribe();
         };
-    }, [user?.id, refetchChats]);
+    }, [user?.id, wsAdminConnected, refetchChats, wsContext, onNewMessage]);
 
     // Автоматическая прокрутка при новых сообщениях
     useEffect(() => {
@@ -748,7 +703,6 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
     // Автоматически сбрасываем непрочитанные сообщения при открытии чата
     useEffect(() => {
         if (currentSelectedChat?.id && messagesData?.messages && messagesData.messages.length > 0) {
-            console.log('🔍 Автоматически сбрасываем непрочитанные для чата администратора:', currentSelectedChat.id);
 
             // Отмечаем все непрочитанные сообщения от пользователя как прочитанные
             const unreadMessages = messagesData.messages.filter(
@@ -756,7 +710,6 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
             );
 
             if (unreadMessages.length > 0) {
-                console.log(`📖 Отмечаем ${unreadMessages.length} сообщений как прочитанные`);
 
                 // Отмечаем каждое сообщение как прочитанное
                 Promise.all(
@@ -769,7 +722,7 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
                         })
                     )
                 ).then(() => {
-                    console.log('✅ Все сообщения отмечены как прочитанные администратором');
+
                     // Обновляем сообщения чата
                     refetchMessages();
                 }).catch((error) => {
@@ -777,19 +730,11 @@ export const useAdminChat = (externalSelectedChat?: Chat | null, externalStatusF
                 });
             }
 
-            // Также отмечаем весь чат как прочитанный
-            chatApi.markAsRead({
-                chatId: currentSelectedChat.id,
-                userId: currentSelectedChat.userId
-            }).then(() => {
-                console.log('✅ Чат отмечен как прочитанный администратором');
-                // Обновляем список чатов
-                refetchChats();
-            }).catch((error) => {
-                console.warn('⚠️ Не удалось отметить чат как прочитанный администратором:', error);
-            });
+            // УДАЛЕНО: markAsRead с userId родителя - это сбрасывало счетчик у родителя!
+            // Теперь отмечаются только конкретные сообщения как прочитанные админом (выше)
+            // Счетчик родителя НЕ сбрасывается, пока родитель сам не откроет чат
         }
-    }, [currentSelectedChat?.id, currentSelectedChat?.userId, messagesData?.messages, refetchChats, refetchMessages, user?.id]);
+    }, [currentSelectedChat?.id, currentSelectedChat?.userId, messagesData?.messages, refetchMessages, user?.id]);
 
     return {
         // Данные

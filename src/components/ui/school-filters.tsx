@@ -38,8 +38,6 @@ export const SchoolFilters: React.FC<SchoolFiltersProps> = ({ schools, onFilters
     const [selectedSchool, setSelectedSchool] = useState<string>("");
     const [selectedClass, setSelectedClass] = useState<string>("");
 
-
-
     // Извлекаем уникальные города из адресов школ
     const cities = Array.from(new Set(
         schools.map(school => {
@@ -47,8 +45,6 @@ export const SchoolFilters: React.FC<SchoolFiltersProps> = ({ schools, onFilters
             return city;
         })
     )).sort();
-
-
 
     // Получаем школы для выбранного города
     const schoolsInCity = schools.filter(school => {

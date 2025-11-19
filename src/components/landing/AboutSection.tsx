@@ -196,7 +196,6 @@ export const AboutSection: React.FC = () => {
                     </div>
                 </div>
 
-
                 {/* Безопасность */}
                 <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 shadow-xl">
                     <CardContent className="p-8">

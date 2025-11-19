@@ -35,9 +35,9 @@ const BonusesTab: React.FC = () => {
     const { data: bonusesResponse, isLoading } = useQuery({
         queryKey: ['bonuses'],
         queryFn: async () => {
-            console.log('BonusesTab: Загружаем данные о бонусах...');
+
             const response = await api.get('/bonuses');
-            console.log('BonusesTab: API ответ:', response.data);
+
             return response.data;
         },
     });
@@ -66,19 +66,19 @@ const BonusesTab: React.FC = () => {
 
     // Инициализация данных
     useEffect(() => {
-        console.log('BonusesTab: useEffect triggered, bonusesResponse:', bonusesResponse);
+
         if (bonusesResponse?.success && bonusesResponse.data) {
-            console.log('BonusesTab: Устанавливаем данные:', bonusesResponse.data);
+
             setTitle(bonusesResponse.data.title || '');
             // Обрабатываем media как массив, если это строка - парсим JSON
             const mediaArray = typeof bonusesResponse.data.media === 'string'
                 ? JSON.parse(bonusesResponse.data.media)
                 : (bonusesResponse.data.media || []);
-            console.log('BonusesTab: Media array:', mediaArray);
+
             setMedia(mediaArray);
         } else if (bonusesResponse && !bonusesResponse.success) {
             // Если API вернул данные напрямую (без success обертки)
-            console.log('BonusesTab: API вернул данные напрямую:', bonusesResponse);
+
             setTitle(bonusesResponse.title || '');
             const mediaArray = typeof bonusesResponse.media === 'string'
                 ? JSON.parse(bonusesResponse.media)
@@ -86,12 +86,11 @@ const BonusesTab: React.FC = () => {
             console.log('BonusesTab: Media array (direct):', mediaArray);
             setMedia(mediaArray);
         } else {
-            console.log('BonusesTab: Нет данных или ошибка:', bonusesResponse);
+
         }
     }, [bonusesResponse]);
 
     const handleSave = () => {
-        console.log('BonusesTab: handleSave вызван, title:', title, 'media:', media);
 
         if (!title.trim()) {
             toast({
@@ -107,11 +106,9 @@ const BonusesTab: React.FC = () => {
             media: media,
         };
 
-        console.log('BonusesTab: Отправляем данные для сохранения:', saveData);
-
         updateBonusesMutation.mutate(saveData, {
             onSuccess: (response) => {
-                console.log('BonusesTab: Успешное сохранение:', response);
+
                 // Принудительно обновляем кэш
                 queryClient.invalidateQueries({ queryKey: ['bonuses'] });
                 queryClient.refetchQueries({ queryKey: ['bonuses'] });
@@ -152,16 +149,7 @@ const BonusesTab: React.FC = () => {
             const formData = new FormData();
             formData.append('images', file);
 
-            console.log('Uploading file:', {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                formDataKeys: Array.from(formData.keys())
-            });
-
             const response = await api.post('/upload', formData);
-
-            console.log('Upload response:', response.data);
 
             // Проверяем разные форматы ответа
             let imageUrl = null;
@@ -172,7 +160,7 @@ const BonusesTab: React.FC = () => {
             }
 
             if (imageUrl) {
-                console.log('Adding image URL to media:', imageUrl);
+
                 setMedia(prev => [...prev, imageUrl]);
                 toast({
                     title: 'Успешно!',

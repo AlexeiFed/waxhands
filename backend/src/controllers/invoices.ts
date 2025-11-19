@@ -435,7 +435,7 @@ export const createInvoice = async (req: AuthenticatedRequest, res: Response): P
             // Отправляем WebSocket уведомление о создании счета
             if (wsManager) {
                 try {
-                    wsManager.notifyInvoiceUpdate(newInvoice.id, newInvoice.participant_id, 'created');
+                    wsManager.notifyInvoiceUpdate(newInvoice.id, newInvoice.participant_id, 'created', newInvoice.master_class_id);
                     console.log('📡 WebSocket уведомление о создании счета отправлено');
                 } catch (wsError) {
                     console.warn('⚠️ Ошибка отправки WebSocket уведомления:', wsError);
@@ -830,6 +830,18 @@ export const updateInvoiceStatus = async (req: Request, res: Response): Promise<
             });
         }
 
+        // Отправляем WebSocket уведомления о изменении статуса счета
+        if (wsManager && invoice.participant_id) {
+            console.log(`📡 Отправка WebSocket уведомлений об обновлении счета ${id}`);
+            wsManager.notifyInvoiceUpdate(id, invoice.participant_id, status, invoice.master_class_id);
+            
+            // Уведомляем об обновлении мастер-класса
+            if (invoice.master_class_id) {
+                wsManager.notifyMasterClassUpdate(invoice.master_class_id, 'payment_status_updated');
+                console.log(`✅ WebSocket уведомления отправлены для счета ${id}`);
+            }
+        }
+
         res.json({
             success: true,
             data: result.rows[0],
@@ -846,7 +858,7 @@ export const updateInvoiceStatus = async (req: Request, res: Response): Promise<
 };
 
 // Функция для синхронизации статуса оплаты между счетами и участниками мастер-класса
-const syncPaymentStatusWithParticipants = async (masterClassId: string, participantId: string, isPaid: boolean): Promise<void> => {
+export const syncPaymentStatusWithParticipants = async (masterClassId: string, participantId: string, isPaid: boolean): Promise<void> => {
     try {
         console.log(`🔄 Синхронизация статуса оплаты: мастер-класс ${masterClassId}, participantId ${participantId}, статус: ${isPaid ? 'оплачено' : 'не оплачено'}`);
 

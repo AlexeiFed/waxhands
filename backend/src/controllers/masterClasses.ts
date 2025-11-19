@@ -28,49 +28,101 @@ export const getMasterClassEvents = async (req: Request, res: Response): Promise
         let userSchoolId: string | null = null;
         let userClassGroup: string | null = null;
 
-        // Если передан userId (для детского дашборда), показываем все мастер-классы с приоритетом
+        // Если передан userId, определяем роль пользователя
         if (userId) {
-            // Получаем школу и класс ребенка
+            // Получаем роль пользователя
             const userQuery = `
-                SELECT school_id, COALESCE(class_group, class) as class_group 
+                SELECT role, school_id, COALESCE(class_group, class) as class_group 
                 FROM users 
                 WHERE id = $1
             `;
             const userResult = await pool.query(userQuery, [userId]);
 
             if (userResult.rows.length > 0) {
+                const userRole = userResult.rows[0].role;
                 userSchoolId = userResult.rows[0].school_id;
                 userClassGroup = userResult.rows[0].class_group;
 
-                console.log('Child dashboard filter:', { userSchoolId, userClassGroup });
+                console.log('User filter:', { userId, userRole, userSchoolId, userClassGroup });
 
-                // Проверяем есть ли и школа и класс
-                if (userSchoolId && userClassGroup) {
-                    // Строгая фильтрация: только точное совпадение школы И класса
+                if (userRole === 'parent') {
+                    // Для родителя: показываем только будущие мастер-классы с точным совпадением школы и класса его детей
                     query = `
-                        SELECT mce.*, 
+                        SELECT DISTINCT mce.*, 
                                s.name as school_name,
                                srv.name as service_name,
                                s.address as school_address
                         FROM master_class_events mce
                         LEFT JOIN schools s ON mce.school_id = s.id
                         LEFT JOIN services srv ON mce.service_id = srv.id
-                        WHERE mce.date >= CURRENT_DATE 
-                          AND mce.school_id = $1 
-                          AND mce.class_group = $2
+                        WHERE mce.date >= CURRENT_DATE
+                          AND EXISTS (
+                              SELECT 1 FROM users u 
+                              WHERE u.parent_id = $1 
+                                AND u.school_id = mce.school_id 
+                                AND COALESCE(u.class_group, u.class) = mce.class_group
+                          )
                         ORDER BY mce.date ASC, mce.time ASC
                     `;
                     countQuery = `
-                        SELECT COUNT(*) 
+                        SELECT COUNT(DISTINCT mce.id) 
                         FROM master_class_events mce
-                        WHERE mce.date >= CURRENT_DATE 
-                          AND mce.school_id = $1 
-                          AND mce.class_group = $2
+                        WHERE mce.date >= CURRENT_DATE
+                          AND EXISTS (
+                              SELECT 1 FROM users u 
+                              WHERE u.parent_id = $1 
+                                AND u.school_id = mce.school_id 
+                                AND COALESCE(u.class_group, u.class) = mce.class_group
+                          )
                     `;
-                    params = [userSchoolId, userClassGroup];
+                    params = [userId as string];
+                } else if (userRole === 'child') {
+                    // Для детей: строгая фильтрация по школе и классу
+                    if (userSchoolId && userClassGroup) {
+                        query = `
+                            SELECT mce.*, 
+                                   s.name as school_name,
+                                   srv.name as service_name,
+                                   s.address as school_address
+                            FROM master_class_events mce
+                            LEFT JOIN schools s ON mce.school_id = s.id
+                            LEFT JOIN services srv ON mce.service_id = srv.id
+                            WHERE mce.date >= CURRENT_DATE
+                              AND mce.school_id = $1 
+                              AND mce.class_group = $2
+                            ORDER BY mce.date ASC, mce.time ASC
+                        `;
+                        countQuery = `
+                            SELECT COUNT(*) 
+                            FROM master_class_events mce
+                            WHERE mce.date >= CURRENT_DATE
+                              AND mce.school_id = $1 
+                              AND mce.class_group = $2
+                        `;
+                        params = [userSchoolId, userClassGroup];
+                    } else {
+                        // Если нет данных о школе или классе, показываем все будущие мастер-классы
+                        console.log('Недостаточно данных для фильтрации: school_id =', userSchoolId, 'class_group =', userClassGroup);
+                        query = `
+                            SELECT mce.*, 
+                                   s.name as school_name,
+                                   srv.name as service_name,
+                                   s.address as school_address
+                            FROM master_class_events mce
+                            LEFT JOIN schools s ON mce.school_id = s.id
+                            LEFT JOIN services srv ON mce.service_id = srv.id
+                            WHERE mce.date >= CURRENT_DATE
+                            ORDER BY mce.date ASC, mce.time ASC
+                        `;
+                        countQuery = `
+                            SELECT COUNT(*) 
+                            FROM master_class_events mce
+                            WHERE mce.date >= CURRENT_DATE
+                        `;
+                        params = [];
+                    }
                 } else {
-                    // Если нет данных о школе или классе, показываем все будущие мастер-классы
-                    console.log('Недостаточно данных для фильтрации: school_id =', userSchoolId, 'class_group =', userClassGroup);
+                    // Для других ролей (admin, executor) - показываем все мастер-классы
                     query = `
                         SELECT mce.*, 
                                s.name as school_name,
@@ -79,14 +131,9 @@ export const getMasterClassEvents = async (req: Request, res: Response): Promise
                         FROM master_class_events mce
                         LEFT JOIN schools s ON mce.school_id = s.id
                         LEFT JOIN services srv ON mce.service_id = srv.id
-                        WHERE mce.date >= CURRENT_DATE
                         ORDER BY mce.date ASC, mce.time ASC
                     `;
-                    countQuery = `
-                        SELECT COUNT(*) 
-                        FROM master_class_events mce
-                        WHERE mce.date >= CURRENT_DATE
-                    `;
+                    countQuery = `SELECT COUNT(*) FROM master_class_events mce`;
                     params = [];
                 }
             } else {
@@ -99,18 +146,13 @@ export const getMasterClassEvents = async (req: Request, res: Response): Promise
                     FROM master_class_events mce
                     LEFT JOIN schools s ON mce.school_id = s.id
                     LEFT JOIN services srv ON mce.service_id = srv.id
-                    WHERE mce.date >= CURRENT_DATE
                     ORDER BY mce.date ASC, mce.time ASC
                 `;
-                countQuery = `
-                    SELECT COUNT(*) 
-                    FROM master_class_events mce
-                    WHERE mce.date >= CURRENT_DATE
-                `;
+                countQuery = `SELECT COUNT(*) FROM master_class_events mce`;
                 params = [];
             }
         } else {
-            // Для админского интерфейса - обычная фильтрация
+            // Для админского интерфейса - показываем ВСЕ мастер-классы (включая прошедшие)
             const filters: string[] = [];
             params = [];
 
@@ -143,76 +185,26 @@ export const getMasterClassEvents = async (req: Request, res: Response): Promise
             countQuery = `SELECT COUNT(*) FROM master_class_events mce ${whereClause}`;
         }
 
-        let countParams: (string | number)[] = [];
-        if (userId) {
-            // Для детского дашборда используем те же параметры фильтрации что и для основного запроса
-            if (userSchoolId && userClassGroup) {
-                countParams = [userSchoolId, userClassGroup];
-            } else {
-                countParams = [];
-            }
-        } else {
-            countParams = params; // Используем все параметры для count
-        }
+        // Используем те же параметры для count что и для основного запроса
+        const countParams = params;
 
         const [listResult, countResult] = await Promise.all([
             pool.query(query, params),
             pool.query(countQuery, countParams)
         ]);
 
-        // Расширенная отладочная информация для детского дашборда
+        // Минимальная отладочная информация для детского дашборда
         if (userId) {
-            // Получаем все мастер-классы для сравнения
-            const allMasterClassesResult = await pool.query(`
-                SELECT mce.*, s.name as school_name
-                FROM master_class_events mce
-                LEFT JOIN schools s ON mce.school_id = s.id
-                WHERE mce.date >= CURRENT_DATE
-                ORDER BY mce.date ASC
-            `);
-
-            console.log('=== CHILD DASHBOARD DEBUG ===');
-            console.log('User data:', { userId, userSchoolId, userClassGroup });
-            console.log('All future master classes:');
-            allMasterClassesResult.rows.forEach((mc, index) => {
-                const schoolMatch = mc.school_id === userSchoolId;
-                const classMatch = mc.class_group === userClassGroup;
-                console.log(`${index + 1}. ${mc.notes || 'Мастер-класс'}`);
-                console.log(`   School ID: ${mc.school_id} (matches: ${schoolMatch})`);
-                console.log(`   Class Group: ${mc.class_group} (matches: ${classMatch})`);
-                console.log(`   Date: ${mc.date}`);
-                console.log(`   School Name: ${mc.school_name}`);
-                console.log(`   Both match: ${schoolMatch && classMatch}`);
-                console.log('');
+            console.log('Child dashboard filter:', {
+                userId,
+                userSchoolId,
+                userClassGroup,
+                foundMasterClasses: listResult.rows.length
             });
-
-            console.log('Filtered result:', {
-                foundMasterClasses: listResult.rows.length,
-                total: parseInt(countResult.rows[0].count),
-                query: query.replace(/\s+/g, ' ').trim(),
-                params
-            });
-
-            if (listResult.rows.length > 0) {
-                console.log('Found matching master classes:');
-                listResult.rows.forEach((mc, index) => {
-                    console.log(`${index + 1}. ${mc.notes || 'Мастер-класс'} - ${mc.date}`);
-                });
-            }
-            console.log('=== END DEBUG ===');
         }
 
         // Форматируем даты для правильной передачи на фронтенд
         const formattedMasterClasses = listResult.rows.map(mc => {
-            // Отладочная информация для понимания проблемы с датами
-            console.log('getMasterClassEvents: форматируем дату:', {
-                originalDate: mc.date,
-                originalDateType: typeof mc.date,
-                isDate: mc.date instanceof Date,
-                toISOString: mc.date instanceof Date ? mc.date.toISOString() : 'N/A',
-                toLocaleDateString: mc.date instanceof Date ? mc.date.toLocaleDateString() : 'N/A'
-            });
-
             return {
                 ...mc,
                 // Убираем проблемное преобразование через toISOString(), которое может смещать дату
@@ -368,11 +360,73 @@ export const getMasterClassEventById = async (req: Request, res: Response): Prom
 
         // Обрабатываем участников, если они есть
         if (masterClass.participants && Array.isArray(masterClass.participants)) {
-            // Участники уже содержат примечания из createGroupWorkshopRegistration и addParticipantToMasterClass
             console.log('Участники мастер-класса:', masterClass.participants.length);
+
+            // Получаем дополнительные данные участников (школа и телефон родителя)
+            try {
+                const participantIds = masterClass.participants
+                    .map((p: Record<string, unknown>) => p.parentId)
+                    .filter(Boolean);
+
+                const childIds = masterClass.participants
+                    .map((p: Record<string, unknown>) => p.childId)
+                    .filter(Boolean);
+
+                if (participantIds.length > 0 || childIds.length > 0) {
+                    // Получаем данные родителей
+                    const parentData = new Map();
+                    if (participantIds.length > 0) {
+                        const parentQuery = `
+                            SELECT id, name, surname, phone 
+                            FROM users 
+                            WHERE id = ANY($1)
+                        `;
+                        const parentResult = await pool.query(parentQuery, [participantIds]);
+                        parentResult.rows.forEach(parent => {
+                            parentData.set(parent.id, {
+                                phone: parent.phone || ''
+                            });
+                        });
+                    }
+
+                    // Получаем данные детей (школа)
+                    const childData = new Map();
+                    if (childIds.length > 0) {
+                        const childQuery = `
+                            SELECT u.id, u.name, u.surname, u.school_id, s.name as school_name 
+                            FROM users u
+                            LEFT JOIN schools s ON u.school_id = s.id
+                            WHERE u.id = ANY($1)
+                        `;
+                        const childResult = await pool.query(childQuery, [childIds]);
+                        childResult.rows.forEach(child => {
+                            childData.set(child.id, {
+                                schoolName: child.school_name || ''
+                            });
+                        });
+                    }
+
+                    // Обогащаем данные участников
+                    masterClass.participants = masterClass.participants.map((participant: Record<string, unknown>) => {
+                        const parentInfo = participantIds.length > 0 ? parentData.get(participant.parentId) : null;
+                        const childInfo = childIds.length > 0 ? childData.get(participant.childId) : null;
+
+                        return {
+                            ...participant,
+                            parentPhone: parentInfo?.phone || '',
+                            schoolName: childInfo?.schoolName || ''
+                        };
+                    });
+                }
+            } catch (participantError) {
+                console.error('Ошибка получения дополнительных данных участников:', participantError);
+            }
+
             masterClass.participants.forEach((participant: Record<string, unknown>, index: number) => {
                 console.log(`Участник ${index + 1}:`, {
                     childName: participant.childName,
+                    schoolName: participant.schoolName,
+                    parentPhone: participant.parentPhone,
                     notes: participant.notes,
                     hasNotes: !!participant.notes
                 });
@@ -656,6 +710,75 @@ export const updateMasterClassEvent = async (req: Request, res: Response): Promi
     }
 };
 
+// Обновить статус получения услуги участником
+export const updateParticipantServiceReceived = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { masterClassId, participantId } = req.params;
+        const { hasReceived } = req.body;
+
+        console.log('🔄 updateParticipantServiceReceived called:', {
+            masterClassId,
+            participantId,
+            hasReceived
+        });
+
+        if (typeof hasReceived !== 'boolean') {
+            res.status(400).json({ success: false, error: 'hasReceived must be a boolean' });
+            return;
+        }
+
+        // Получаем текущий мастер-класс
+        const masterClassResult = await pool.query(`
+            SELECT participants
+            FROM master_class_events
+            WHERE id = $1
+        `, [masterClassId]);
+
+        if (masterClassResult.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Master class not found' });
+            return;
+        }
+
+        const participants = masterClassResult.rows[0].participants || [];
+
+        // Находим участника
+        const participantIndex = participants.findIndex((p: { id: string }) => p.id === participantId);
+        if (participantIndex === -1) {
+            res.status(404).json({ success: false, error: 'Participant not found' });
+            return;
+        }
+
+        // Обновляем статус получения услуги
+        participants[participantIndex].hasReceived = hasReceived;
+
+        // Сохраняем обновленных участников
+        const updateResult = await pool.query(`
+            UPDATE master_class_events
+            SET participants = $1::jsonb,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING *
+        `, [JSON.stringify(participants), masterClassId]);
+
+        console.log('✅ Service received status updated:', {
+            masterClassId,
+            participantId,
+            hasReceived
+        });
+
+        res.json({
+            success: true,
+            data: updateResult.rows[0]
+        });
+    } catch (error) {
+        console.error('❌ Error updating service received status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+};
+
 // Обновить статус оплаты участника мастер-класса
 export const updateParticipantPaymentStatus = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -693,26 +816,30 @@ export const updateParticipantPaymentStatus = async (req: Request, res: Response
         participants[participantIndex].isPaid = isPaid;
 
         // Обновляем статистику
-        let paidAmount = statistics.paidAmount || 0;
-        let unpaidAmount = statistics.unpaidAmount || 0;
+        let paidAmount = Number(statistics.paidAmount) || 0;
+        let unpaidAmount = Number(statistics.unpaidAmount) || 0;
 
         if (oldPaymentStatus && !isPaid) {
             // Было оплачено, стало не оплачено
-            paidAmount -= participants[participantIndex].totalAmount || 0;
-            unpaidAmount += participants[participantIndex].totalAmount || 0;
+            paidAmount -= Number(participants[participantIndex].totalAmount) || 0;
+            unpaidAmount += Number(participants[participantIndex].totalAmount) || 0;
         } else if (!oldPaymentStatus && isPaid) {
             // Было не оплачено, стало оплачено
-            paidAmount += participants[participantIndex].totalAmount || 0;
-            unpaidAmount -= participants[participantIndex].totalAmount || 0;
+            paidAmount += Number(participants[participantIndex].totalAmount) || 0;
+            unpaidAmount -= Number(participants[participantIndex].totalAmount) || 0;
         }
+
+        // Убеждаемся, что значения не отрицательные
+        paidAmount = Math.max(0, paidAmount);
+        unpaidAmount = Math.max(0, unpaidAmount);
 
         // Обновляем мастер-класс
         const updateResult = await pool.query(
             `UPDATE master_class_events 
-             SET participants = $1, 
+             SET participants = $1::jsonb, 
                  statistics = jsonb_set(
                      COALESCE(statistics, '{}'::jsonb),
-                     '{paidAmount}', to_jsonb($2)
+                     '{paidAmount}', to_jsonb($2::numeric)
                  ),
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = $3
@@ -725,6 +852,35 @@ export const updateParticipantPaymentStatus = async (req: Request, res: Response
             return;
         }
 
+        // Обновляем статус счета в таблице invoices
+        const participant = participants[participantIndex];
+        const newStatus = isPaid ? 'paid' : 'pending';
+
+        // Ищем счет по masterClassId и participantId (родителю)
+        const invoiceResult = await pool.query(
+            'SELECT id FROM invoices WHERE master_class_id = $1 AND participant_id = $2',
+            [masterClassId, participant.parentId || participant.parent_id]
+        );
+
+        if (invoiceResult.rows.length > 0) {
+            const invoiceId = invoiceResult.rows[0].id;
+            await pool.query(
+                'UPDATE invoices SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                [newStatus, invoiceId]
+            );
+            console.log(`🔄 Обновлен статус счета ${invoiceId}: ${newStatus}`);
+        } else {
+            console.log(`⚠️ Счет не найден для masterClassId: ${masterClassId}, participantId: ${participant.parentId || participant.parent_id}`);
+        }
+
+        // Отправляем WebSocket уведомление об обновлении мастер-класса
+        if (wsManager) {
+            wsManager.notifyMasterClassUpdate(masterClassId, 'payment_status_updated');
+            console.log('📡 WebSocket уведомление отправлено для обновления статуса оплаты:', masterClassId);
+        } else {
+            console.log('⚠️ WebSocket manager не инициализирован, пропускаем уведомление');
+        }
+
         res.json({
             success: true,
             data: updateResult.rows[0],
@@ -733,6 +889,341 @@ export const updateParticipantPaymentStatus = async (req: Request, res: Response
 
     } catch (error) {
         console.error('Error updating participant payment status:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+// Оплата наличными (для администратора)
+export const markParticipantAsCashPayment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { masterClassId, participantId } = req.params;
+
+        console.log('💵 Обработка наличной оплаты:', { masterClassId, participantId });
+
+        // Получаем текущий мастер-класс
+        const masterClassResult = await pool.query(
+            'SELECT participants, statistics FROM master_class_events WHERE id = $1',
+            [masterClassId]
+        );
+
+        if (masterClassResult.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Master class not found' });
+            return;
+        }
+
+        const masterClass = masterClassResult.rows[0];
+        const participants = masterClass.participants || [];
+        const statistics = masterClass.statistics || {};
+
+        // Находим участника
+        const participantIndex = participants.findIndex((p: { id: string }) => p.id === participantId);
+        if (participantIndex === -1) {
+            res.status(404).json({ success: false, error: 'Participant not found' });
+            return;
+        }
+
+        const participant = participants[participantIndex];
+        const oldPaymentStatus = participant.isPaid;
+        const participantAmount = Number(participant.totalAmount) || 0;
+
+        // Обновляем данные участника
+        participants[participantIndex].isPaid = true;
+        participants[participantIndex].paymentMethod = 'cash';
+        participants[participantIndex].paymentDate = new Date().toISOString();
+
+        // Обновляем статистику
+        let paidAmount = Number(statistics.paidAmount) || 0;
+        let unpaidAmount = Number(statistics.unpaidAmount) || 0;
+        let cashAmount = Number(statistics.cashAmount) || 0;
+
+        if (!oldPaymentStatus) {
+            // Было не оплачено, стало оплачено наличными
+            paidAmount += participantAmount;
+            unpaidAmount -= participantAmount;
+            cashAmount += participantAmount;
+        } else {
+            // Уже было оплачено, просто переводим в наличные (если было не наличными)
+            if (participant.paymentMethod !== 'cash') {
+                cashAmount += participantAmount;
+            }
+        }
+
+        // Убеждаемся, что значения не отрицательные
+        paidAmount = Math.max(0, paidAmount);
+        unpaidAmount = Math.max(0, unpaidAmount);
+        cashAmount = Math.max(0, cashAmount);
+
+        // Обновляем статистику
+        statistics.paidAmount = paidAmount;
+        statistics.unpaidAmount = unpaidAmount;
+        statistics.cashAmount = cashAmount;
+
+        console.log('📊 Обновленная статистика:', {
+            paidAmount,
+            unpaidAmount,
+            cashAmount
+        });
+
+        // Обновляем мастер-класс
+        const updateResult = await pool.query(
+            `UPDATE master_class_events 
+             SET participants = $1::jsonb, 
+                 statistics = $2::jsonb,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3
+             RETURNING *`,
+            [JSON.stringify(participants), JSON.stringify(statistics), masterClassId]
+        );
+
+        if (updateResult.rows.length === 0) {
+            res.status(500).json({ success: false, error: 'Failed to update master class' });
+            return;
+        }
+
+        // Обновляем статус счета в таблице invoices
+        const newStatus = 'paid';
+
+        // Ищем счет по masterClassId и participantId (родителю)
+        const invoiceResult = await pool.query(
+            'SELECT id FROM invoices WHERE master_class_id = $1 AND participant_id = $2',
+            [masterClassId, participant.parentId || participant.parent_id]
+        );
+
+        if (invoiceResult.rows.length > 0) {
+            const invoiceId = invoiceResult.rows[0].id;
+            await pool.query(
+                'UPDATE invoices SET status = $1, payment_method = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+                [newStatus, 'cash', invoiceId]
+            );
+            console.log(`💵 Счет ${invoiceId} помечен как оплаченный наличными`);
+        } else {
+            console.log(`⚠️ Счет не найден для masterClassId: ${masterClassId}, participantId: ${participant.parentId || participant.parent_id}`);
+        }
+
+        // Отправляем WebSocket уведомление об обновлении мастер-класса
+        if (wsManager) {
+            wsManager.notifyMasterClassUpdate(masterClassId, 'cash_payment_confirmed');
+            console.log('📡 WebSocket уведомление отправлено для подтверждения наличной оплаты:', masterClassId);
+        } else {
+            console.log('⚠️ WebSocket manager не инициализирован, пропускаем уведомление');
+        }
+
+        res.json({
+            success: true,
+            data: updateResult.rows[0],
+            message: 'Participant marked as cash payment successfully'
+        });
+
+    } catch (error) {
+        console.error('❌ Error marking participant as cash payment:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+// Обновить данные участника мастер-класса (для родителей)
+export const updateParticipantData = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id: masterClassId } = req.params;
+        const { participantId, selectedStyles, selectedOptions, notes } = req.body;
+
+        console.log('🔄 updateParticipantData called:', {
+            masterClassId,
+            participantId,
+            selectedStyles,
+            selectedOptions,
+            notes
+        });
+
+        if (!participantId) {
+            res.status(400).json({ success: false, error: 'participantId is required' });
+            return;
+        }
+
+        // Получаем текущий мастер-класс с услугой для расчета стоимости
+        const masterClassResult = await pool.query(`
+            SELECT mce.participants, mce.statistics, s.styles, s.options
+            FROM master_class_events mce
+            LEFT JOIN services s ON mce.service_id = s.id
+            WHERE mce.id = $1
+        `, [masterClassId]);
+
+        if (masterClassResult.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Master class not found' });
+            return;
+        }
+
+        const masterClass = masterClassResult.rows[0];
+        const participants = masterClass.participants || [];
+        const statistics = masterClass.statistics || {};
+        const serviceStyles = masterClass.styles || [];
+        const serviceOptions = masterClass.options || [];
+
+        // Находим участника (сначала ищем точное совпадение, потом по realParticipantId)
+        const realParticipantId = participantId.split('_')[0];
+        let participantIndex = participants.findIndex((p: { id: string }) => p.id === participantId);
+        if (participantIndex === -1) {
+            participantIndex = participants.findIndex((p: { id: string }) => p.id === realParticipantId);
+        }
+        if (participantIndex === -1) {
+            console.log('❌ Participant not found:', { participantId, realParticipantId, participants: participants.map(p => p.id) });
+            res.status(404).json({ success: false, error: 'Participant not found' });
+            return;
+        }
+
+        console.log('✅ Participant found at index:', participantIndex);
+
+        const oldTotalAmount = participants[participantIndex].totalAmount || 0;
+
+        // Обновляем данные участника
+        if (selectedStyles !== undefined) {
+            participants[participantIndex].selectedStyles = selectedStyles;
+        }
+        if (selectedOptions !== undefined) {
+            participants[participantIndex].selectedOptions = selectedOptions;
+        }
+        if (notes !== undefined) {
+            participants[participantIndex].notes = notes;
+        }
+
+        // Пересчитываем totalAmount для участника
+        let newTotalAmount = 0;
+
+        // Считаем стоимость стилей
+        if (participants[participantIndex].selectedStyles) {
+            participants[participantIndex].selectedStyles.forEach((styleItem: string | { id: string; quantity?: number }) => {
+                if (!styleItem) return;
+                const styleId = typeof styleItem === 'string' ? styleItem : styleItem.id;
+                const quantity = typeof styleItem === 'object' && styleItem.quantity ? styleItem.quantity : 1;
+                const style = serviceStyles.find((s: { id: string; price?: number }) => s.id === styleId);
+                if (style) {
+                    newTotalAmount += (style.price || 0) * quantity;
+                }
+            });
+        }
+
+        // Считаем стоимость опций
+        if (participants[participantIndex].selectedOptions) {
+            participants[participantIndex].selectedOptions.forEach((optionItem: string | { id: string; quantity?: number }) => {
+                if (!optionItem) return;
+                const optionId = typeof optionItem === 'string' ? optionItem : optionItem.id;
+                const quantity = typeof optionItem === 'object' && optionItem.quantity ? optionItem.quantity : 1;
+                const option = serviceOptions.find((o: { id: string; price?: number }) => o.id === optionId);
+                if (option) {
+                    newTotalAmount += (option.price || 0) * quantity;
+                }
+            });
+        }
+
+        // Обновляем totalAmount участника
+        participants[participantIndex].totalAmount = newTotalAmount;
+
+        // Обновляем статистику мастер-класса
+        const totalAmount = participants.reduce((sum: number, p: { totalAmount?: number }) => sum + (p.totalAmount || 0), 0);
+        const paidAmount = participants
+            .filter((p: { isPaid?: boolean }) => p.isPaid)
+            .reduce((sum: number, p: { totalAmount?: number }) => sum + (p.totalAmount || 0), 0);
+        const unpaidAmount = totalAmount - paidAmount;
+
+        // Подсчитываем наличные
+        const cashAmount = participants
+            .filter((p: { isPaid?: boolean; paymentMethod?: string }) => p.isPaid && p.paymentMethod === 'cash')
+            .reduce((sum: number, p: { totalAmount?: number }) => sum + (p.totalAmount || 0), 0);
+
+        const newStatistics = {
+            ...statistics,
+            totalAmount,
+            paidAmount,
+            unpaidAmount,
+            cashAmount,
+            totalParticipants: participants.length
+        };
+
+        // Обновляем мастер-класс
+        const updateResult = await pool.query(
+            'UPDATE master_class_events SET participants = $1, statistics = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+            [JSON.stringify(participants), JSON.stringify(newStatistics), masterClassId]
+        );
+
+        if (updateResult.rows.length === 0) {
+            res.status(500).json({ success: false, error: 'Failed to update master class' });
+            return;
+        }
+
+        // Обновляем сумму в счете, если она изменилась
+        if (oldTotalAmount !== newTotalAmount) {
+            console.log('💰 Updating invoice amounts:', {
+                oldTotalAmount,
+                newTotalAmount,
+                masterClassId,
+                participantId
+            });
+
+            try {
+                // Извлекаем реальный participant_id (убираем _0, _1 и т.д.)
+                const realParticipantId = participantId.split('_')[0];
+                console.log('🔍 Real participant ID:', realParticipantId);
+
+                // В таблице invoices participant_id уже содержит ID родителя
+                // realParticipantId уже является ID родителя
+                const parentId = realParticipantId;
+                console.log('👨‍👩‍👧‍👦 Parent ID (direct):', parentId);
+
+                // Обновляем amount для счета родителя
+                const updateAmountResult = await pool.query(
+                    'UPDATE invoices SET amount = $1 WHERE master_class_id = $2 AND participant_id = $3',
+                    [newTotalAmount.toString(), masterClassId, parentId]
+                );
+
+                console.log('✅ Updated participant amount, affected rows:', updateAmountResult.rowCount);
+
+                // Пересчитываем total_amount для всех счетов этого мастер-класса
+                const invoiceResult = await pool.query(
+                    'SELECT id, participant_id FROM invoices WHERE master_class_id = $1',
+                    [masterClassId]
+                );
+
+                console.log('📊 Found invoices to update:', invoiceResult.rows.length);
+
+                for (const invoice of invoiceResult.rows) {
+                    // Ищем участника по родителю (invoice.participant_id уже содержит ID родителя)
+                    const participant = participants.find((p: { id: string; totalAmount?: number; parentId?: string; parent_id?: string }) => {
+                        return p.parentId === invoice.participant_id || p.parent_id === invoice.participant_id;
+                    });
+
+                    if (participant) {
+                        console.log('🔄 Updating invoice:', {
+                            invoiceId: invoice.id,
+                            participantId: invoice.participant_id,
+                            newAmount: participant.totalAmount
+                        });
+
+                        await pool.query(
+                            'UPDATE invoices SET amount = $1 WHERE id = $2',
+                            [participant.totalAmount.toString(), invoice.id]
+                        );
+                    }
+                }
+                console.log('✅ All invoices for master class updated successfully.');
+            } catch (invoiceError) {
+                console.error('❌ Error updating invoices:', invoiceError);
+                // Не прерываем выполнение, так как основное обновление уже прошло
+            }
+        }
+
+        res.json({
+            success: true,
+            data: updateResult.rows[0],
+            message: 'Participant data updated successfully'
+        });
+
+    } catch (error) {
+        console.error('❌ Error updating participant data:', error);
+        console.error('❌ Error details:', {
+            message: error.message,
+            stack: error.stack,
+            masterClassId: req.params.id,
+            participantId: req.body.participantId
+        });
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
@@ -748,6 +1239,150 @@ export const deleteMasterClassEvent = async (req: Request, res: Response): Promi
         res.json({ success: true, message: 'Master class event deleted successfully' });
     } catch (error) {
         console.error('Delete master class event error:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+// Удаление всех мастер-классов школы за определенную дату
+export const deleteSchoolMasterClasses = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { schoolId, date } = req.params;
+
+        console.log(`🗑️ Удаление мастер-классов школы ${schoolId} за дату ${date}`);
+
+        // Удаляем все мастер-классы школы за указанную дату
+        const result = await pool.query(
+            'DELETE FROM master_class_events WHERE school_id = $1 AND date = $2 RETURNING id',
+            [schoolId, date]
+        );
+
+        const deletedCount = result.rows.length;
+
+        if (deletedCount === 0) {
+            res.status(404).json({
+                success: false,
+                error: 'No master classes found for this school and date'
+            });
+            return;
+        }
+
+        console.log(`✅ Удалено ${deletedCount} мастер-классов`);
+
+        // Отправляем WebSocket уведомление об удалении для каждого удаленного мастер-класса
+        if (wsManager) {
+            result.rows.forEach(row => {
+                wsManager.notifyMasterClassUpdate(row.id, 'deleted');
+            });
+            console.log(`📡 WebSocket уведомления отправлены для ${deletedCount} мастер-классов`);
+        }
+
+        res.json({
+            success: true,
+            message: `Successfully deleted ${deletedCount} master class(es)`,
+            data: { deletedCount }
+        });
+    } catch (error) {
+        console.error('❌ Delete school master classes error:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+// Пересчет статистики мастер-класса на основе текущих участников
+export const recalculateMasterClassStatistics = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        console.log('🔄 Пересчет статистики мастер-класса:', id);
+
+        // Получаем мастер-класс с участниками
+        const result = await pool.query(
+            'SELECT participants FROM master_class_events WHERE id = $1',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            res.status(404).json({ success: false, error: 'Master class not found' });
+            return;
+        }
+
+        const participants = result.rows[0].participants || [];
+
+        // Пересчитываем статистику с нуля
+        const statistics: {
+            totalParticipants: number;
+            totalAmount: number;
+            paidAmount: number;
+            unpaidAmount: number;
+            cashAmount: number;
+            stylesStats: Record<string, number>;
+            optionsStats: Record<string, number>;
+        } = {
+            totalParticipants: participants.length,
+            totalAmount: 0,
+            paidAmount: 0,
+            unpaidAmount: 0,
+            cashAmount: 0,
+            stylesStats: {},
+            optionsStats: {}
+        };
+
+        // Подсчитываем суммы и статистику по стилям/опциям
+        participants.forEach((participant: {
+            totalAmount?: number;
+            isPaid?: boolean;
+            paymentMethod?: string;
+            selectedStyles?: (string | { id: string })[];
+            selectedOptions?: (string | { id: string })[];
+        }) => {
+            const amount = participant.totalAmount || 0;
+            statistics.totalAmount += amount;
+
+            if (participant.isPaid) {
+                statistics.paidAmount += amount;
+                if (participant.paymentMethod === 'cash') {
+                    statistics.cashAmount += amount;
+                }
+            } else {
+                statistics.unpaidAmount += amount;
+            }
+
+            // Подсчитываем стили
+            if (participant.selectedStyles && Array.isArray(participant.selectedStyles)) {
+                participant.selectedStyles.forEach((style: string | { id: string }) => {
+                    const styleId = typeof style === 'string' ? style : style.id;
+                    statistics.stylesStats[styleId] = (statistics.stylesStats[styleId] || 0) + 1;
+                });
+            }
+
+            // Подсчитываем опции
+            if (participant.selectedOptions && Array.isArray(participant.selectedOptions)) {
+                participant.selectedOptions.forEach((option: string | { id: string }) => {
+                    const optionId = typeof option === 'string' ? option : option.id;
+                    statistics.optionsStats[optionId] = (statistics.optionsStats[optionId] || 0) + 1;
+                });
+            }
+        });
+
+        // Обновляем статистику в БД
+        await pool.query(
+            'UPDATE master_class_events SET statistics = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [JSON.stringify(statistics), id]
+        );
+
+        console.log('✅ Статистика пересчитана:', statistics);
+
+        // Отправляем WebSocket уведомление
+        if (wsManager) {
+            wsManager.notifyMasterClassUpdate(id, 'statistics_recalculated');
+        }
+
+        res.json({
+            success: true,
+            message: 'Statistics recalculated successfully',
+            data: { statistics }
+        });
+    } catch (error) {
+        console.error('❌ Recalculate statistics error:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };

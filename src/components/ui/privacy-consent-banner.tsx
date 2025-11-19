@@ -175,5 +175,3 @@ export const PrivacyConsentBanner: React.FC<PrivacyConsentBannerProps> = ({
 
 export default PrivacyConsentBanner;
 
-
-

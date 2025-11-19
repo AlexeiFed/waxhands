@@ -25,9 +25,8 @@ export const useWorkshopRequests = () => {
         setError(null);
 
         try {
-            console.log('🔍 useWorkshopRequests.createRequest: Отправляем заявку:', data);
+
             const response = await api.post('/workshop-requests', data);
-            console.log('✅ useWorkshopRequests.createRequest: Получен ответ:', response.data);
 
             // Проверяем структуру ответа и добавляем недостающие поля
             if (response.data && typeof response.data === 'object') {
@@ -51,10 +50,7 @@ export const useWorkshopRequests = () => {
         } catch (err: unknown) {
             console.error('❌ useWorkshopRequests.createRequest: Ошибка:', err);
             const error = err as { response?: { data?: { error?: string } }; message?: string };
-            console.log('📋 useWorkshopRequests.createRequest: Детали ошибки:', {
-                status: error.response?.data?.error,
-                message: error.message
-            });
+
             const errorMessage = error.response?.data?.error || 'Не удалось создать заявку';
             setError(errorMessage);
             return {
@@ -72,27 +68,25 @@ export const useWorkshopRequests = () => {
         setError(null);
 
         try {
-            console.log('🔍 useWorkshopRequests.getAllRequests: Запрашиваем все заявки...');
-            console.log('🔍 useWorkshopRequests.getAllRequests: API URL:', `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/workshop-requests`);
+
             console.log('🔍 useWorkshopRequests.getAllRequests: Токен авторизации:', !!localStorage.getItem('authToken'));
 
             const response = await api.get('/workshop-requests');
-            console.log('✅ useWorkshopRequests.getAllRequests: Получен ответ:', response.data);
-            console.log('✅ useWorkshopRequests.getAllRequests: Тип response.data:', typeof response.data);
+
             console.log('✅ useWorkshopRequests.getAllRequests: Структура response.data:', Object.keys(response.data || {}));
 
             // Проверяем структуру ответа
             if (response.data && typeof response.data === 'object') {
                 // Если ответ уже в нужном формате
                 if ('success' in response.data && 'data' in response.data) {
-                    console.log('✅ useWorkshopRequests.getAllRequests: Ответ в правильном формате');
+
                     setLoading(false);
                     return response.data as ApiResponse<WorkshopRequestWithParent[]>;
                 }
 
                 // Если ответ - массив напрямую
                 if (Array.isArray(response.data)) {
-                    console.log('✅ useWorkshopRequests.getAllRequests: Ответ - массив, оборачиваем в структуру');
+
                     const wrappedResponse: ApiResponse<WorkshopRequestWithParent[]> = {
                         success: true,
                         data: response.data,
@@ -104,7 +98,7 @@ export const useWorkshopRequests = () => {
 
                 // Если ответ - объект с данными, но без success
                 if ('data' in response.data && Array.isArray(response.data.data)) {
-                    console.log('✅ useWorkshopRequests.getAllRequests: Ответ содержит data массив, добавляем success');
+
                     const wrappedResponse: ApiResponse<WorkshopRequestWithParent[]> = {
                         success: true,
                         data: response.data.data,
@@ -115,7 +109,6 @@ export const useWorkshopRequests = () => {
                 }
             }
 
-            console.log('⚠️ useWorkshopRequests.getAllRequests: Неожиданная структура ответа, возвращаем null');
             setLoading(false);
             return null;
 

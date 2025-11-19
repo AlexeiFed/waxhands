@@ -18,9 +18,12 @@ import paymentCheckRoutes from './payment-check.js';
 import paymentPollerRoutes from './payment-poller.js';
 import offersRoutes from './offers.js';
 import offersPdfRoutes from './offers-pdf.js';
-import privacyPolicyRoutes from './privacy-policy.js';
 import contactsRoutes from './contacts.js';
 import bonusesRoutes from './bonuses.js';
+import robokassaRoutes from './robokassa.js';
+import adminRoutes from './admin.js';
+import privacyPolicyRoutes from './privacy-policy.js';
+import paymentRoutes from './payment.js';
 const router = Router();
 // Основные маршруты
 router.use('/auth', authRoutes);
@@ -41,10 +44,13 @@ router.use('/payments', paymentsRoutes);
 router.use('/payment-check', paymentCheckRoutes);
 router.use('/payment-poller', paymentPollerRoutes);
 router.use('/offers', offersRoutes);
-router.use('/offers', offersPdfRoutes);
-router.use('/privacy-policy', privacyPolicyRoutes);
+router.use('/offers-pdf', offersPdfRoutes);
 router.use('/contacts', contactsRoutes);
 router.use('/bonuses', bonusesRoutes);
+router.use('/robokassa', robokassaRoutes);
+router.use('/admin', adminRoutes);
+router.use('/privacy-policy', privacyPolicyRoutes);
+router.use('/payment', paymentRoutes);
 // Health check
 router.get('/health', (req, res) => {
     res.json({

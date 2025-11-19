@@ -6,7 +6,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { WS_BASE_URL } from '@/config/api';
+import { WS_BASE_URL } from '@/lib/config';
 
 interface WebSocketContextType {
     isConnected: boolean;
@@ -50,12 +50,9 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
                 setIsConnecting(false);
                 return;
             }
-
-            console.log('🔌 Подключение к WebSocket:', WS_BASE_URL);
             const ws = new WebSocket(WS_BASE_URL);
 
             ws.onopen = () => {
-                console.log('🔌 WebSocket соединение установлено');
                 setIsConnected(true);
                 setIsConnecting(false);
                 reconnectAttemptsRef.current = 0;
@@ -66,41 +63,63 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
 
             ws.onmessage = (event) => {
                 try {
-                    const data = JSON.parse(event.data);
+                    let data;
 
-                    // Обрабатываем системные сообщения
-                    if (data.type === 'pong') {
+                    // Проверяем тип данных
+                    if (event.data instanceof Blob) {
+                        // Если это Blob, читаем как текст
+                        event.data.text().then(text => {
+                            try {
+                                data = JSON.parse(text);
+                                processMessage(data);
+                            } catch (parseError) {
+                                console.error('❌ Ошибка парсинга Blob данных:', parseError);
+                            }
+                        }).catch(blobError => {
+                            console.error('❌ Ошибка чтения Blob:', blobError);
+                        });
+                        return;
+                    } else if (typeof event.data === 'string') {
+                        data = JSON.parse(event.data);
+                    } else {
+                        console.warn('⚠️ Неизвестный тип данных WebSocket:', typeof event.data);
                         return;
                     }
 
-                    // Уведомляем подписчиков
-                    if (data.channel && subscribersRef.current.has(data.channel)) {
-                        subscribersRef.current.get(data.channel)?.forEach(callback => {
-                            callback(data);
-                        });
-                    }
-
-                    // Broadcast всем подписчикам если канал не указан
-                    if (!data.channel) {
-                        subscribersRef.current.forEach((callbacks) => {
-                            callbacks.forEach(callback => callback(data));
-                        });
-                    }
+                    processMessage(data);
                 } catch (error) {
                     console.error('❌ Ошибка обработки WebSocket сообщения:', error);
                 }
             };
 
+            const processMessage = (data: any) => {
+                // Обрабатываем системные сообщения
+                if (data.type === 'pong') {
+                    return;
+                }
+
+                // Уведомляем подписчиков
+                if (data.channel && subscribersRef.current.has(data.channel)) {
+                    subscribersRef.current.get(data.channel)?.forEach(callback => {
+                        callback(data);
+                    });
+                }
+
+                // Broadcast всем подписчикам если канал не указан
+                if (!data.channel) {
+                    subscribersRef.current.forEach((callbacks) => {
+                        callbacks.forEach(callback => callback(data));
+                    });
+                }
+            };
+
             ws.onclose = (event) => {
-                console.log('🔌 WebSocket соединение закрыто:', event.code);
                 setIsConnected(false);
                 setIsConnecting(false);
 
                 // Автоматическое переподключение
                 if (reconnectAttemptsRef.current < maxReconnectAttempts) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
-                    console.log(`🔄 Попытка переподключения ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts} через ${delay}ms`);
-
                     reconnectTimeoutRef.current = setTimeout(() => {
                         reconnectAttemptsRef.current++;
                         connect();

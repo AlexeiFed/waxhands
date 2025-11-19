@@ -43,30 +43,25 @@ const Register = () => {
     const schoolsError = null;
 
     // Отладочная информация
-    console.log('Register: cities =', cities);
-    console.log('Register: citiesLoading =', citiesLoading);
-    console.log('Register: cities.length =', cities.length);
-    console.log('Register: filteredSchools =', filteredSchools);
-    console.log('Register: filteredSchools.length =', filteredSchools.length);
 
     const handleCityChange = (city: string) => {
-        console.log('Register: handleCityChange called with city:', city);
+
         setSelectedCity(city);
         setSelectedSchoolId("");
         setAvailableClasses([]);
 
         if (city) {
-            console.log('Register: Filtering schools for city:', city);
+
             // Фильтруем школы на фронтенде как в других компонентах
             const schoolsInCity = schools.filter(school => {
                 if (!school.address) return false;
                 const schoolCity = school.address.split(',')[0].trim();
                 return schoolCity === city;
             });
-            console.log('Register: Schools filtered for city:', schoolsInCity);
+
             setFilteredSchools(schoolsInCity);
         } else {
-            console.log('Register: No city selected, using all schools');
+
             setFilteredSchools(schools);
         }
     };

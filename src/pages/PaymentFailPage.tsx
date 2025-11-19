@@ -14,7 +14,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 const PaymentFailPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const [paymentData, setPaymentData] = useState<any>(null);
+    const [paymentData, setPaymentData] = useState<{
+        outSum: string | null;
+        invId: string | null;
+        signatureValue: string | null;
+        culture: string | null;
+    } | null>(null);
 
     useEffect(() => {
         // Получаем данные из URL параметров
@@ -92,3 +97,4 @@ const PaymentFailPage: React.FC = () => {
 };
 
 export default PaymentFailPage;
+

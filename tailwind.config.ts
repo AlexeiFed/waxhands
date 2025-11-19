@@ -120,6 +120,18 @@ export default {
 				'shimmer': {
 					'0%': { backgroundPosition: '-200% 0' },
 					'100%': { backgroundPosition: '200% 0' }
+				},
+				'pulse-glow': {
+					'0%, 100%': {
+						backgroundColor: 'rgba(239, 68, 68, 0.9)',
+						boxShadow: '0 0 25px rgba(239, 68, 68, 0.8)',
+						transform: 'scale(1)'
+					},
+					'50%': {
+						backgroundColor: 'rgba(220, 38, 38, 1)',
+						boxShadow: '0 0 35px rgba(220, 38, 38, 1)',
+						transform: 'scale(1.08)'
+					}
 				}
 			},
 			animation: {
@@ -129,7 +141,8 @@ export default {
 				'spin-slow': 'spin-slow 8s linear infinite',
 				'bounce-gentle': 'bounce-gentle 2s ease-in-out infinite',
 				'gradient': 'gradient 3s ease infinite',
-				'shimmer': 'shimmer 2s linear infinite'
+				'shimmer': 'shimmer 2s linear infinite',
+				'pulse-glow': 'pulse-glow 1.5s ease-in-out infinite'
 			}
 		}
 	},

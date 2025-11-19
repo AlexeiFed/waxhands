@@ -17,13 +17,6 @@ export const ProtectedRoute = ({
     const { user, loading, isAuthenticated } = useAuth();
 
     // Добавляем отладочную информацию
-    console.log('🛡️ ProtectedRoute проверка:', {
-        loading,
-        isAuthenticated,
-        user: user ? { id: user.id, role: user.role } : null,
-        allowedRoles,
-        redirectTo
-    });
 
     if (loading) {
         return (
@@ -38,15 +31,14 @@ export const ProtectedRoute = ({
     }
 
     if (!isAuthenticated) {
-        console.log('🚫 Пользователь не аутентифицирован, перенаправляем на:', redirectTo);
+
         return <Navigate to={redirectTo} replace />;
     }
 
     if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-        console.log('🚫 Недостаточно прав. Роль пользователя:', user.role, 'Разрешенные роли:', allowedRoles);
+
         return <Navigate to="/unauthorized" replace />;
     }
 
-    console.log('✅ Доступ разрешен для роли:', user?.role);
     return <>{children}</>;
 }; 

@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from './use-toast';
+import { WS_BASE_URL } from '@/lib/config';
 
 export interface AboutContent {
     id: number;
@@ -35,6 +36,7 @@ export interface AboutMedia {
     description?: string;
     order_index: number;
     file_path: string;
+    thumbnail_path?: string;
     created_at: string;
     updated_at: string;
 }
@@ -86,15 +88,16 @@ export function useAboutContent() {
             }
 
             // Обрабатываем специальные поля
-            let processedUpdates = { ...updates };
+            const processedUpdates = { ...updates };
 
-            if ('advantages_list' in updates) {
-                if (typeof updates.advantages_list === 'string') {
+            if ('advantages_list' in updates && updates.advantages_list !== undefined) {
+                const advantagesList = updates.advantages_list;
+                if (typeof advantagesList === 'string') {
                     // Разбиваем строку на массив по переносам строк
-                    processedUpdates.advantages_list = updates.advantages_list.split('\n').filter(item => item.trim());
-                } else if (Array.isArray(updates.advantages_list)) {
+                    processedUpdates.advantages_list = advantagesList.split('\n').filter(item => item.trim());
+                } else if (Array.isArray(advantagesList)) {
                     // Если уже массив, оставляем как есть
-                    processedUpdates.advantages_list = updates.advantages_list;
+                    processedUpdates.advantages_list = advantagesList;
                 }
             }
 
@@ -387,7 +390,6 @@ export function useAboutWebSocket() {
                         message.type === 'about_media_added' ||
                         message.type === 'about_media_deleted') {
 
-                        console.log('📡 Получено обновление about:', message.type);
                         setLastUpdate(Date.now());
                     }
                 } catch (err) {

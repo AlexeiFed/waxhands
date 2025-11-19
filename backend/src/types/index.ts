@@ -190,6 +190,16 @@ export interface Invoice {
     payment_method?: string;
     notes?: string;
     payment_date?: string;
+    // Поля для интеграции с платежными системами
+    robokassa_invoice_id?: string;
+    robokassa_op_key?: string;
+    freekassa_invoice_id?: string;
+    payment_provider?: string;
+    // Поля для возвратов
+    refund_status?: 'none' | 'pending' | 'completed' | 'failed';
+    refund_request_id?: string;
+    refund_reason?: string;
+    refund_date?: string;
 }
 
 export interface CreateInvoiceRequest {

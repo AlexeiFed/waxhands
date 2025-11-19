@@ -20,6 +20,8 @@ export interface Chat {
         surname?: string;
         email: string;
         role: string;
+        schoolName?: string;
+        phone?: string;
     };
     admin?: {
         id: string;

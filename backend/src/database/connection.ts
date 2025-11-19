@@ -8,11 +8,11 @@ const dbConfig: PoolConfig = {
     port: parseInt(process.env.DB_PORT || '5432'),
     database: process.env.DB_NAME || 'waxhands',
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD,
+    password: process.env.DB_PASSWORD || 'waxhands123', // Явно указываем строку по умолчанию
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 20,
+    max: 40, // Увеличен с 20 до 40 для предотвращения timeout
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 5000, // Увеличен с 2000 до 5000ms
     // Принудительно используем TCP подключение вместо Unix socket
     connectionString: undefined
 };

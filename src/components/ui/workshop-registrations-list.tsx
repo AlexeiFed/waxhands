@@ -38,13 +38,13 @@ const statusConfig = {
 export const WorkshopRegistrationsList = ({ workshopId, workshopName }: WorkshopRegistrationsListProps) => {
     const [registrations, setRegistrations] = useState<WorkshopRegistration[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const { getWorkshopRegistrations, updateRegistrationStatus } = useWorkshopRegistrations();
+    const { getRegistrations, updateRegistrationStatus } = useWorkshopRegistrations();
 
     useEffect(() => {
         const fetchRegistrations = async () => {
             setIsLoading(true);
             try {
-                const workshopRegistrations = await getWorkshopRegistrations(workshopId);
+                const workshopRegistrations = await getRegistrations(workshopId);
                 setRegistrations(workshopRegistrations);
             } catch (error) {
                 console.error('Error fetching workshop registrations:', error);
@@ -58,7 +58,7 @@ export const WorkshopRegistrationsList = ({ workshopId, workshopName }: Workshop
         // Обновляем список каждые 30 секунд
         const interval = setInterval(fetchRegistrations, 30000);
         return () => clearInterval(interval);
-    }, [workshopId, getWorkshopRegistrations]);
+    }, [workshopId, getRegistrations]);
 
     const handleStatusUpdate = async (registrationId: string, newStatus: string) => {
         const success = await updateRegistrationStatus(registrationId, newStatus);

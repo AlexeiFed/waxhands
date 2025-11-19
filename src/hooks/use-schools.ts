@@ -32,14 +32,14 @@ export const useSchools = (): UseSchoolsReturn => {
         search?: string;
     }) => {
         try {
-            console.log('use-schools: Начинаем загрузку школ...');
+
             setLoading(true);
             setError(null);
             const response = await api.schools.getSchools(params);
-            console.log('use-schools: Получены школы:', response);
+
             setSchools(response.schools);
             setTotal(response.total);
-            console.log('use-schools: Загрузка завершена, школ:', response.schools.length);
+
         } catch (err) {
             console.error('use-schools: Ошибка загрузки школ:', err);
             setError(err instanceof Error ? err.message : 'Failed to fetch schools');
@@ -162,7 +162,7 @@ export const useSchools = (): UseSchoolsReturn => {
 
     // Загружаем школы при инициализации хука
     useEffect(() => {
-        console.log('use-schools: Хук инициализирован, начинаем загрузку школ...');
+
         fetchSchools();
     }, []);
 

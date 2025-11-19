@@ -13,8 +13,12 @@ import { Hand, MapPin, Users, Clock, Star, ArrowRight, FileImage, FileVideo, Pla
 import { useServices } from '@/hooks/use-services';
 import { useNavigate } from 'react-router-dom';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { useAuth } from '@/contexts/AuthContext';
+import { isStyleVisibleForUser, isOptionVisibleForUser } from '@/types/services';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
 
 export const ServicesSection: React.FC = () => {
+    const { user } = useAuth();
     const { services, loading: servicesLoading } = useServices();
     const navigate = useNavigate();
     const [selectedMedia, setSelectedMedia] = useState<{ type: 'image' | 'video', src: string, title?: string } | null>(null);
@@ -23,6 +27,13 @@ export const ServicesSection: React.FC = () => {
 
     // Используем данные из БД или fallback
     const displayServices = services || [];
+
+    // Данные пользователя для фильтрации
+    const userData = {
+        surname: user?.surname,
+        phone: user?.phone,
+        userId: user?.id
+    };
 
     // Функция для получения URL медиа файлов
     const getMediaUrl = (filePath: string) => {
@@ -128,25 +139,18 @@ export const ServicesSection: React.FC = () => {
                                             </h4>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {(service.styles || []).map((style) => (
+                                                {(service.styles || []).filter(style => isStyleVisibleForUser(style, userData)).map((style) => (
                                                     <Card key={style.id} className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 hover:border-purple-300 transition-all duration-300 transform hover:-translate-y-1">
                                                         <CardContent className="p-6 text-center">
                                                             {/* Аватар стиля */}
-                                                            <div className="w-20 h-20 bg-gradient-to-br from-purple-200 to-pink-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
-                                                                {style.avatar ? (
-                                                                    <img
-                                                                        src={getMediaUrl(style.avatar)}
-                                                                        alt={style.name}
-                                                                        className="w-full h-full object-cover rounded-full"
-                                                                        style={{ zIndex: 1 }}
-                                                                        onError={(e) => {
-                                                                            const target = e.target as HTMLImageElement;
-                                                                            target.src = '/placeholder.svg';
-                                                                            target.alt = 'Аватар недоступен';
-                                                                        }}
-                                                                    />
-                                                                ) : null}
-                                                                <span className={`text-3xl ${style.avatar ? 'hidden' : ''}`} style={{ zIndex: 0 }}>🎨</span>
+                                                            <div className="w-20 h-20 mx-auto mb-4">
+                                                                <AvatarDisplay
+                                                                    images={style.images}
+                                                                    type="style"
+                                                                    alt={style.name}
+                                                                    size="lg"
+                                                                    className="w-20 h-20 rounded-full"
+                                                                />
                                                             </div>
 
                                                             <h5 className="text-xl font-bold text-purple-800 mb-3">
@@ -224,25 +228,18 @@ export const ServicesSection: React.FC = () => {
                                             </h4>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {(service.options || []).map((option) => (
+                                                {(service.options || []).filter(option => isOptionVisibleForUser(option, userData)).map((option) => (
                                                     <Card key={option.id} className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 hover:border-blue-300 transition-all duration-300 transform hover:-translate-y-1">
                                                         <CardContent className="p-6 text-center">
                                                             {/* Аватар опции */}
-                                                            <div className="w-20 h-20 bg-gradient-to-br from-blue-200 to-cyan-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
-                                                                {option.avatar ? (
-                                                                    <img
-                                                                        src={getMediaUrl(option.avatar)}
-                                                                        alt={option.name}
-                                                                        className="w-full h-full object-cover rounded-full"
-                                                                        style={{ zIndex: 1 }}
-                                                                        onError={(e) => {
-                                                                            const target = e.target as HTMLImageElement;
-                                                                            target.src = '/placeholder.svg';
-                                                                            target.alt = 'Аватар недоступен';
-                                                                        }}
-                                                                    />
-                                                                ) : null}
-                                                                <span className={`text-3xl ${option.avatar ? 'hidden' : ''}`} style={{ zIndex: 0 }}>⚙️</span>
+                                                            <div className="w-20 h-20 mx-auto mb-4">
+                                                                <AvatarDisplay
+                                                                    images={option.images}
+                                                                    type="option"
+                                                                    alt={option.name}
+                                                                    size="lg"
+                                                                    className="w-20 h-20 rounded-full"
+                                                                />
                                                             </div>
 
                                                             <h5 className="text-xl font-bold text-blue-800 mb-3">

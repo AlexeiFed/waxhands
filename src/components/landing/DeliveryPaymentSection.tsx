@@ -80,7 +80,7 @@ export const DeliveryPaymentSection: React.FC = () => {
                                 <div className="flex items-start gap-3">
                                     <Shield className="h-5 w-5 text-green-500 mt-1 flex-shrink-0" />
                                     <div>
-                                        <h4 className="font-semibold text-gray-800">Robokassa</h4>
+                                        <h4 className="font-semibold text-gray-800">Сервис приема платежей</h4>
                                         <p className="text-gray-600 text-sm">
                                             Безопасная оплата через проверенную платежную систему с SSL-шифрованием
                                         </p>

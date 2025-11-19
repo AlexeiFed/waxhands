@@ -36,20 +36,22 @@ router.post('/',
             }
 
             // Валидация
-            if (!school_name || !class_group || !desired_date) {
+            if (!school_name || !class_group) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Необходимо указать школу, класс и желаемую дату'
+                    error: 'Необходимо указать школу и класс'
                 });
             }
 
-            // Проверка формата даты
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            if (!dateRegex.test(desired_date)) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Неверный формат даты. Используйте YYYY-MM-DD'
-                });
+            // Проверка формата даты (если указана)
+            if (desired_date) {
+                const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                if (!dateRegex.test(desired_date)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Неверный формат даты. Используйте YYYY-MM-DD'
+                    });
+                }
             }
 
             const result = await WorkshopRequestsController.createRequest({
@@ -61,6 +63,24 @@ router.post('/',
             });
 
             if (result.success) {
+                // Отправляем WebSocket событие о новой заявке
+                try {
+                    const { wsManager } = await import('../websocket-server.js');
+                    if (wsManager) {
+                        wsManager.notifyWorkshopRequestCreated(result.data?.id || '', {
+                            parent_id,
+                            school_name,
+                            class_group,
+                            desired_date,
+                            notes,
+                            status: 'pending'
+                        });
+                        console.log('📡 WebSocket: Отправлено событие о создании заявки');
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка отправки WebSocket события:', error);
+                }
+
                 return res.status(201).json(result);
             } else {
                 return res.status(500).json(result);
@@ -370,6 +390,17 @@ router.patch('/:id/status',
             });
 
             if (result.success) {
+                // Отправляем WebSocket событие об изменении статуса
+                try {
+                    const { wsManager } = await import('../websocket-server.js');
+                    if (wsManager) {
+                        wsManager.notifyWorkshopRequestStatusChange(id, status, admin_notes);
+                        console.log(`📡 WebSocket: Отправлено событие об изменении статуса заявки ${id} на ${status}`);
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка отправки WebSocket события:', error);
+                }
+
                 return res.json(result);
             } else {
                 return res.status(500).json(result);
@@ -402,6 +433,17 @@ router.delete('/:id',
             const result = await WorkshopRequestsController.deleteRequest(id);
 
             if (result.success) {
+                // Отправляем WebSocket событие об удалении заявки
+                try {
+                    const { wsManager } = await import('../websocket-server.js');
+                    if (wsManager) {
+                        wsManager.notifyWorkshopRequestUpdate(id, 'deleted');
+                        console.log(`📡 WebSocket: Отправлено событие об удалении заявки ${id}`);
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка отправки WebSocket события:', error);
+                }
+
                 return res.json(result);
             } else {
                 return res.status(500).json(result);

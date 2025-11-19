@@ -52,27 +52,29 @@ const apiRequest = async <T>(
 ): Promise<ApiResponse<T>> => {
     const token = getAuthToken();
     const headers: Record<string, string> = {
-        // Оптимизированное кэширование для разных типов данных
-        'Cache-Control': options.method === 'GET' ? 'public, max-age=300' : 'no-cache', // 5 минут для GET запросов
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
-        'Expires': options.method === 'GET' ? new Date(Date.now() + 300000).toUTCString() : '0' // 5 минут для GET
+        'Expires': '0'
     };
 
     // Не устанавливаем Content-Type для FormData - браузер установит его автоматически
+    // Для POST запросов всегда устанавливаем Content-Type, даже если нет body
     if (!(options.body instanceof FormData)) {
-        headers['Content-Type'] = 'application/json';
+        if (options.body !== undefined) {
+            headers['Content-Type'] = 'application/json';
+        } else if ((options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') &&
+            !endpoint.includes('/refund/initiate')) {
+            // Для POST/PUT/PATCH запросов без body устанавливаем application/json
+            // Исключение: роуты возврата не должны иметь Content-Type
+            headers['Content-Type'] = 'application/json';
+        }
     }
 
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
-        console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
-    } else {
-        console.log('⚠️ No auth token found');
     }
 
     const fullUrl = `${API_BASE_URL}${endpoint}`;
-    console.log('🌐 Making API request to:', fullUrl);
-    console.log('📋 Request options:', { method: options.method || 'GET', headers });
 
     try {
         const response = await fetch(fullUrl, {
@@ -80,16 +82,11 @@ const apiRequest = async <T>(
             headers,
         });
 
-        console.log('📡 Response status:', response.status);
-        console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
-
         const data = await response.json();
-        console.log('📄 Response data:', data);
 
         if (!response.ok) {
             // Обработка 401 ошибки (неавторизован)
             if (response.status === 401) {
-                console.log('❌ Unauthorized access, clearing auth token');
                 removeAuthToken();
                 // Можно добавить редирект на страницу входа
                 window.location.href = '/login';
@@ -98,7 +95,6 @@ const apiRequest = async <T>(
 
             // Retry логика для 429 ошибок
             if (response.status === 429) {
-                console.log('⏳ Rate limit exceeded, retrying in 5 seconds...');
                 await new Promise(resolve => setTimeout(resolve, 5000));
 
                 // Повторяем запрос один раз
@@ -162,8 +158,7 @@ export const authAPI = {
         if (response.success && response.data) {
             setAuthToken(response.data.token);
 
-            // Логируем успешную регистрацию
-            console.log('✅ Registration successful, token saved');
+            // Регистрация успешна
 
             return response.data;
         }
@@ -200,8 +195,6 @@ export const authAPI = {
             transformedData.class = updateData.class;
             transformedData.class_group = updateData.class;
         }
-
-        console.log('📤 Sending profile update data:', transformedData);
 
         const response = await apiRequest<User>('/auth/profile', {
             method: 'PUT',
@@ -348,7 +341,7 @@ export const usersAPI = {
     },
 
     // Создание пользователя
-    createUser: async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> => {
+    createUser: async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'> & { password?: string }): Promise<User> => {
         const response = await apiRequest<User>('/users', {
             method: 'POST',
             body: JSON.stringify(userData),
@@ -359,6 +352,20 @@ export const usersAPI = {
         }
 
         throw new Error(response.error || 'Failed to create user');
+    },
+
+    // Создание ребенка (для родителей)
+    createChild: async (childData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> => {
+        const response = await apiRequest<User>('/users/children', {
+            method: 'POST',
+            body: JSON.stringify(childData),
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Failed to create child');
     },
 
     // Обновление пользователя
@@ -386,6 +393,17 @@ export const usersAPI = {
         }
     },
 
+    // Удаление ребенка (для родителей и админов)
+    deleteChild: async (id: string): Promise<void> => {
+        const response = await apiRequest(`/users/children/${id}`, {
+            method: 'DELETE',
+        });
+
+        if (!response.success) {
+            throw new Error(response.error || 'Failed to delete child');
+        }
+    },
+
     // Получение детей по ID родителя
     getChildrenByParentId: async (parentId: string): Promise<User[]> => {
         const response = await apiRequest<User[]>(`/users/${parentId}/children`);
@@ -405,11 +423,17 @@ export const servicesAPI = {
         page?: number;
         limit?: number;
         category?: string;
+        surname?: string;
+        phone?: string;
+        userId?: string;
     }): Promise<{ services: Service[]; total: number }> => {
         const searchParams = new URLSearchParams();
         if (params?.page) searchParams.append('page', params.page.toString());
         if (params?.limit) searchParams.append('limit', params.limit.toString());
         if (params?.category) searchParams.append('category', params.category);
+        if (params?.surname) searchParams.append('surname', params.surname);
+        if (params?.phone) searchParams.append('phone', params.phone);
+        if (params?.userId) searchParams.append('userId', params.userId);
 
         const response = await apiRequest<{ services: Service[]; total: number }>(
             `/services?${searchParams.toString()}`
@@ -423,8 +447,14 @@ export const servicesAPI = {
     },
 
     // Получение услуги по ID
-    getServiceById: async (id: string): Promise<Service> => {
-        const response = await apiRequest<Service>(`/services/${id}`);
+    getServiceById: async (id: string, userData?: { surname?: string; phone?: string; userId?: string }): Promise<Service> => {
+        const searchParams = new URLSearchParams();
+        if (userData?.surname) searchParams.append('surname', userData.surname);
+        if (userData?.phone) searchParams.append('phone', userData.phone);
+        if (userData?.userId) searchParams.append('userId', userData.userId);
+
+        const url = `/services/${id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+        const response = await apiRequest<Service>(url);
 
         if (response.success && response.data) {
             return response.data;
@@ -535,15 +565,11 @@ export const servicesAPI = {
 
     // Обновление стиля услуги
     updateServiceStyle: async (serviceId: string, styleId: string, styleData: Partial<ServiceStyle>): Promise<ServiceStyle> => {
-        console.log('api: updateServiceStyle called:', { serviceId, styleId, styleData });
-        console.log('api: styleData price type:', typeof styleData.price, 'value:', styleData.price);
 
         const response = await apiRequest<ServiceStyle>(`/services/${serviceId}/styles/${styleId}`, {
             method: 'PUT',
             body: JSON.stringify(styleData),
         });
-
-        console.log('api: updateServiceStyle response:', response);
 
         if (response.success && response.data) {
             return response.data;
@@ -588,9 +614,7 @@ export const uploadAPI = {
 
         // Добавляем изображения
         if (files.images) {
-            console.log('API: добавляем изображения в FormData:', files.images.length);
-            files.images.forEach((image, index) => {
-                console.log(`API: добавляем изображение ${index + 1}:`, image.name, image.type, image.size);
+            files.images.forEach((image) => {
                 formData.append('images', image);
             });
         }
@@ -600,16 +624,6 @@ export const uploadAPI = {
             files.videos.forEach(video => {
                 formData.append('videos', video);
             });
-        }
-
-        console.log('API: отправляем FormData на сервер');
-        console.log('API: FormData entries:');
-        for (const [key, value] of formData.entries()) {
-            if (value instanceof File) {
-                console.log(`  ${key}: File(${value.name}, ${value.type}, ${value.size} bytes)`);
-            } else {
-                console.log(`  ${key}: ${value}`);
-            }
         }
 
         const response = await fetch(`${API_BASE_URL}/upload/service-files`, {
@@ -794,8 +808,6 @@ type MasterClassEventDTO = {
     updated_at: string;
 };
 
-
-
 export const masterClassEventsAPI = {
     getEvents: async (params?: { schoolId?: string; classGroup?: string; date?: string; userId?: string }): Promise<{ masterClasses: MasterClassEvent[]; total: number }> => {
         try {
@@ -821,15 +833,10 @@ export const masterClassEventsAPI = {
                     // Извлекаем город из адреса школы
                     const city = ev.school_address ? ev.school_address.split(',')[0].trim() : 'Неизвестно';
 
-                    // Отладочная информация для участников
+                    // Обработка участников
                     if (ev.participants && ev.participants.length > 0) {
-                        console.log(`API: Мастер-класс ${ev.id} имеет ${ev.participants.length} участников:`, ev.participants);
-                        ev.participants.forEach((participant, index) => {
-                            console.log(`API: Участник ${index + 1}:`, {
-                                selectedStyles: participant.selectedStyles,
-                                selectedOptions: participant.selectedOptions,
-                                totalAmount: participant.totalAmount
-                            });
+                        ev.participants.forEach((participant) => {
+                            // Обработка участника
                         });
                     }
 
@@ -905,13 +912,6 @@ export const masterClassEventsAPI = {
         throw new Error(response.error || 'Failed to get master class event');
     },
     createEvent: async (data: Record<string, unknown>): Promise<MasterClassEvent> => {
-        // Отладочная информация для понимания проблемы с датами
-        console.log('API createEvent: отправляем данные:', {
-            originalData: data,
-            dateValue: data.date,
-            dateType: typeof data.date,
-            parsedDate: data.date ? new Date(data.date as string) : null
-        });
 
         const response = await apiRequest<MasterClassEventDTO>(`/master-classes`, { method: 'POST', body: JSON.stringify(data) });
         if (response.success && response.data) {
@@ -983,6 +983,44 @@ export const masterClassEventsAPI = {
     deleteEvent: async (id: string): Promise<void> => {
         const response = await apiRequest(`/master-classes/${id}`, { method: 'DELETE' });
         if (!response.success) throw new Error(response.error || 'Failed to delete master class event');
+    },
+    // Обновить участника в мастер-классе (для родителей)
+    updateParticipant: async (masterClassId: string, participantId: string, data: { selectedStyles?: unknown[], selectedOptions?: unknown[], notes?: string }): Promise<MasterClassEvent> => {
+        const response = await apiRequest<MasterClassEventDTO>(`/master-classes/${masterClassId}/update-participant-data`, {
+            method: 'PATCH',
+            body: JSON.stringify({ participantId, ...data })
+        });
+        if (response.success && response.data) {
+            const ev = response.data;
+            return {
+                id: ev.id,
+                date: ev.date,
+                time: ev.time,
+                schoolId: ev.school_id,
+                schoolName: ev.school_name || 'Школа не указана',
+                city: ev.school_address ? ev.school_address.split(',')[0].trim() : 'Не указан',
+                classGroup: ev.class_group,
+                serviceId: ev.service_id,
+                serviceName: ev.service_name || 'Услуга не указана',
+                executors: ev.executors,
+                executor_names: ev.executor_names,
+                executors_full: ev.executors_full,
+                notes: ev.notes,
+                participants: ev.participants,
+                statistics: {
+                    totalParticipants: ev.statistics?.totalParticipants || 0,
+                    totalAmount: ev.statistics?.totalAmount || 0,
+                    paidAmount: ev.statistics?.paidAmount || 0,
+                    unpaidAmount: ev.statistics?.unpaidAmount || 0,
+                    stylesStats: ev.statistics?.stylesStats || {},
+                    optionsStats: ev.statistics?.optionsStats || {},
+                },
+                school_data: ev.school_data,
+                createdAt: ev.created_at,
+                updatedAt: ev.updated_at,
+            };
+        }
+        throw new Error(response.error || 'Failed to update participant');
     },
     // Обновить статус оплаты участника
     updateParticipantPaymentStatus: async (masterClassId: string, participantId: string, isPaid: boolean): Promise<void> => {
@@ -1212,6 +1250,7 @@ const invoicesAPI = {
         selected_styles: Array<{ id: string; name: string; price: number }>;
         selected_options: Array<{ id: string; name: string; price: number }>;
         amount: number;
+        notes?: string;
     }): Promise<Invoice> => {
         const response = await fetch(`${API_BASE_URL}/invoices/${id}`, {
             method: 'PATCH',
@@ -1470,6 +1509,59 @@ const offersAPI = {
     }
 };
 
+// API методы для Robokassa
+const robokassaAPI = {
+    // Инициирование возврата
+    initiateRefund: async (invoiceId: string, reason: string, email: string): Promise<{ success: boolean; error?: string }> => {
+        const response = await apiRequest<{ success: boolean; error?: string }>(`/robokassa/invoices/${invoiceId}/refund/initiate`, {
+            method: 'POST',
+            body: JSON.stringify({ reason, email })
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось инициировать возврат');
+    },
+
+    // Проверка возможности возврата
+    checkRefundAvailability: async (invoiceId: string): Promise<{ canRefund: boolean; reason?: string }> => {
+        const response = await apiRequest<{ canRefund: boolean; reason?: string }>(`/robokassa/invoices/${invoiceId}/refund/check`);
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось проверить возможность возврата');
+    },
+
+    // Получение статуса возврата
+    getRefundStatus: async (requestId: string): Promise<{ status: string; amount?: number; date?: string }> => {
+        const response = await apiRequest<{ status: string; amount?: number; date?: string }>(`/robokassa/refunds/${requestId}/status`);
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось получить статус возврата');
+    },
+
+    // Создание возврата
+    createRefund: async (invoiceId: string, amount?: number): Promise<{ success: boolean; requestId?: string; error?: string }> => {
+        const response = await apiRequest<{ success: boolean; requestId?: string; error?: string }>(`/robokassa/invoices/${invoiceId}/refund`, {
+            method: 'POST',
+            body: JSON.stringify({ amount }),
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Не удалось создать возврат');
+    }
+};
+
 // API методы для контактов
 const contactsAPI = {
     // Получение контактных данных
@@ -1618,6 +1710,37 @@ const privacyPolicyAPI = {
     }
 };
 
+const paymentSettingsAPI = {
+    get: async (): Promise<{ isEnabled: boolean; updatedAt: string | null }> => {
+        const response = await apiRequest<{ isEnabled: boolean; updatedAt: string | null }>('/payment-settings');
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || 'Не удалось получить настройки оплаты');
+        }
+
+        return {
+            isEnabled: response.data.isEnabled,
+            updatedAt: response.data.updatedAt
+        };
+    },
+
+    update: async (payload: { isEnabled: boolean }): Promise<{ isEnabled: boolean; updatedAt: string | null }> => {
+        const response = await apiRequest<{ isEnabled: boolean; updatedAt: string | null }>('/payment-settings', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || 'Не удалось обновить настройки оплаты');
+        }
+
+        return {
+            isEnabled: response.data.isEnabled,
+            updatedAt: response.data.updatedAt
+        };
+    }
+};
+
 // Экспорт всех API методов
 export const api = {
     auth: authAPI,
@@ -1631,6 +1754,20 @@ export const api = {
     offers: offersAPI,
     privacyPolicy: privacyPolicyAPI,
     contacts: contactsAPI,
+    robokassa: robokassaAPI,
+    paymentSettings: paymentSettingsAPI,
+    admin: {
+        // Получение списка возвратов
+        getRefunds: async (): Promise<{ success: boolean; data?: unknown[]; error?: string }> => {
+            const response = await apiRequest<unknown[]>(`/admin/refunds`);
+
+            if (response.success && response.data) {
+                return { success: true, data: response.data };
+            }
+
+            throw new Error(response.error || 'Не удалось загрузить возвраты');
+        }
+    },
 
     // HTTP методы для прямых запросов
     get: async <T>(endpoint: string): Promise<ApiResponse<T>> => {

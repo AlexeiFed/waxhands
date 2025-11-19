@@ -34,6 +34,7 @@ export interface WorkshopRequestsFilters {
 export interface UsersFilters {
     role: string;
     school: string;
+    class: string;
 }
 
 export interface SchoolsFilters {
@@ -85,7 +86,8 @@ const initialFilters: AdminFiltersState = {
     },
     users: {
         role: 'all',
-        school: 'all'
+        school: 'all',
+        class: 'all'
     },
     schools: {
         city: '',

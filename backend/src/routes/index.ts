@@ -21,6 +21,11 @@ import offersPdfRoutes from './offers-pdf.js';
 import contactsRoutes from './contacts.js';
 import bonusesRoutes from './bonuses.js';
 import robokassaRoutes from './robokassa.js';
+import robokassaSyncRoutes from './robokassa-sync.js';
+import adminRoutes from './admin.js';
+import privacyPolicyRoutes from './privacy-policy.js';
+import paymentRoutes from './payment.js';
+import paymentSettingsRoutes from './paymentSettings.js';
 
 const router = Router();
 
@@ -47,6 +52,11 @@ router.use('/offers-pdf', offersPdfRoutes);
 router.use('/contacts', contactsRoutes);
 router.use('/bonuses', bonusesRoutes);
 router.use('/robokassa', robokassaRoutes);
+router.use('/robokassa-sync', robokassaSyncRoutes);
+router.use('/admin', adminRoutes);
+router.use('/privacy-policy', privacyPolicyRoutes);
+router.use('/payment', paymentRoutes);
+router.use('/payment-settings', paymentSettingsRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
@@ -76,6 +86,7 @@ router.get('/', (req, res) => {
             payments: '/payments',
             'payment-check': '/payment-check',
             'payment-poller': '/payment-poller',
+            'payment-settings': '/payment-settings',
             offers: '/offers',
             'privacy-policy': '/privacy-policy',
             contacts: '/contacts',

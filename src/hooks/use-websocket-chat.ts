@@ -32,7 +32,7 @@ export const useWebSocketChat = (
 
         // Подписываемся на канал чата
         unsubscribeRef.current = subscribe(channel, (data) => {
-            console.log('📨 WebSocket сообщение получено:', data);
+
             options.onMessage?.(data);
         });
 

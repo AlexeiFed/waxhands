@@ -41,7 +41,6 @@ interface FormData {
     shortDescription: string;
     fullDescription: string;
     price: number;
-    avatar?: string;
     images?: string[];
     videos?: string[];
 }
@@ -59,7 +58,6 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
         shortDescription: data?.shortDescription || '',
         fullDescription: data?.fullDescription || '',
         price: data?.price || 0,
-        avatar: data?.avatar || undefined,
         images: data?.images || [],
         videos: data?.videos || []
     });
@@ -70,19 +68,18 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
 
     // Обновляем данные формы при изменении входящих данных
     useEffect(() => {
-        console.log('StyleOptionModal: useEffect triggered with data:', data);
+
         if (data) {
-            console.log('StyleOptionModal: updating form data with:', data);
+
             const newFormData = {
                 name: data.name || '',
                 shortDescription: data.shortDescription || '',
                 fullDescription: data.fullDescription || '',
                 price: data.price || 0,
-                avatar: data.avatar || undefined,
                 images: data.images || [],
                 videos: data.videos || []
             };
-            console.log('StyleOptionModal: new form data:', newFormData);
+
             setFormData(newFormData);
         } else {
             // Очищаем форму если данных нет (новый элемент)
@@ -91,16 +88,14 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                 shortDescription: '',
                 fullDescription: '',
                 price: 0,
-                avatar: undefined,
                 images: [],
                 videos: []
             };
-            console.log('StyleOptionModal: clearing form with:', emptyFormData);
+
             setFormData(emptyFormData);
         }
     }, [data]);
 
-    const avatarInputRef = useRef<HTMLInputElement>(null);
     const imagesInputRef = useRef<HTMLInputElement>(null);
     const videosInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,13 +105,13 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
         : `Добавить ${isStyle ? 'стиль' : 'опцию'}`;
 
     const handleInputChange = (field: keyof FormData, value: string | number) => {
-        console.log('StyleOptionModal: изменение поля', field, 'на значение', value);
+
         setFormData(prev => {
             const newData = {
                 ...prev,
                 [field]: value
             };
-            console.log('StyleOptionModal: новые данные формы', newData);
+
             return newData;
         });
 
@@ -147,7 +142,7 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleFileUpload = async (files: FileList, type: 'avatar' | 'images' | 'videos') => {
+    const handleFileUpload = async (files: FileList, type: 'images' | 'videos') => {
         setUploading(true);
 
         try {
@@ -184,34 +179,18 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                 }
             }
 
-            const uploadData: { avatar?: File; images?: File[]; videos?: File[] } = {};
+            const uploadData: { images?: File[]; videos?: File[] } = {};
 
-            if (type === 'avatar') {
-                uploadData.avatar = fileArray[0];
-            } else if (type === 'images') {
+            if (type === 'images') {
                 uploadData.images = fileArray;
             } else if (type === 'videos') {
                 uploadData.videos = fileArray;
             }
 
-            console.log('StyleOptionModal: загружаем файлы на сервер:', uploadData);
-            console.log('StyleOptionModal: количество файлов по типам:', {
-                avatar: uploadData.avatar ? 1 : 0,
-                images: uploadData.images?.length || 0,
-                videos: uploadData.videos?.length || 0
-            });
             const uploadedFiles = await uploadAPI.uploadServiceFiles(uploadData);
-            console.log('StyleOptionModal: файлы загружены:', uploadedFiles);
-            console.log('StyleOptionModal: количество загруженных файлов:', {
-                avatar: uploadedFiles.avatar ? 1 : 0,
-                images: uploadedFiles.images?.length || 0,
-                videos: uploadedFiles.videos?.length || 0
-            });
 
             // Обновляем данные формы с серверными ссылками
-            if (type === 'avatar' && uploadedFiles.avatar) {
-                setFormData(prev => ({ ...prev, avatar: uploadedFiles.avatar }));
-            } else if (type === 'images' && uploadedFiles.images) {
+            if (type === 'images' && uploadedFiles.images) {
                 setFormData(prev => ({
                     ...prev,
                     images: [...(prev.images || []), ...uploadedFiles.images!]
@@ -235,7 +214,7 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
     };
 
     const removeFile = (type: 'images' | 'videos', index: number) => {
-        console.log('StyleOptionModal: удаление файла', type, 'индекс', index);
+
         setFormData(prev => {
             const currentFiles = prev[type] || [];
             const fileToRemove = currentFiles[index];
@@ -246,7 +225,7 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
             }
 
             const newFiles = currentFiles.filter((_, i) => i !== index);
-            console.log('StyleOptionModal: новый массив файлов', type, newFiles);
+
             return {
                 ...prev,
                 [type]: newFiles
@@ -254,21 +233,9 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
         });
     };
 
-    const removeAvatar = () => {
-        console.log('StyleOptionModal: удаление аватара');
-        setFormData(prev => {
-            // Освобождаем blob URL если это blob
-            if (prev.avatar && prev.avatar.startsWith('blob:')) {
-                URL.revokeObjectURL(prev.avatar);
-            }
-            return { ...prev, avatar: undefined };
-        });
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        console.log('StyleOptionModal: отправка формы с данными:', formData);
 
         if (!validateForm()) {
             return;
@@ -283,9 +250,6 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
 
             // При редактировании: не отправляем пустые медиа поля, чтобы не затереть существующие
             if (data) { // Это редактирование
-                if (!submitData.avatar) {
-                    delete submitData.avatar;
-                }
                 if (!submitData.images || submitData.images.length === 0) {
                     delete submitData.images;
                 }
@@ -293,13 +257,6 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                     delete submitData.videos;
                 }
             }
-
-            console.log('StyleOptionModal: данные для отправки с обработанной ценой:', submitData);
-            console.log('StyleOptionModal: проверка медиафайлов в submitData:', {
-                avatar: submitData.avatar,
-                images: submitData.images?.length || 0,
-                videos: submitData.videos?.length || 0
-            });
 
             await onSubmit(submitData);
             handleClose();
@@ -314,7 +271,6 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
             shortDescription: '',
             fullDescription: '',
             price: 0,
-            avatar: undefined,
             images: [],
             videos: []
         });
@@ -360,7 +316,7 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                                 value={formData.price}
                                 onChange={(e) => {
                                     const value = e.target.value;
-                                    console.log('StyleOptionModal: изменение цены, новое значение:', value);
+
                                     handleInputChange('price', value === '' ? 0 : parseFloat(value) || 0);
                                 }}
                                 placeholder="0"
@@ -400,109 +356,6 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                         />
                     </div>
 
-                    {/* Аватар */}
-                    <div className="space-y-2">
-                        <Label>Аватар</Label>
-                        <div className="flex items-center gap-4">
-                            {formData.avatar ? (
-                                <div className="relative">
-                                    <img
-                                        src={getFileUrl(formData.avatar || '')}
-                                        alt="Avatar"
-                                        className="w-20 h-20 object-cover rounded-lg border cursor-pointer"
-                                        onClick={() => window.open(getFileUrl(formData.avatar || ''), '_blank')}
-                                        title="Кликните для просмотра в полном размере"
-                                        onError={async (e) => {
-                                            const target = e.target as HTMLImageElement;
-                                            const avatarUrl = getFileUrl(formData.avatar || '');
-                                            
-                                            // Проверяем существование файла перед показом ошибки
-                                            try {
-                                                const response = await fetch(avatarUrl, { 
-                                                    method: 'HEAD',
-                                                    mode: 'cors',
-                                                    cache: 'no-cache'
-                                                });
-                                                
-                                                if (response.ok) {
-                                                    // Файл существует, возможно проблема с отображением
-                                                    target.style.display = 'none';
-                                                    const placeholder = document.createElement('div');
-                                                    placeholder.className = 'w-20 h-20 bg-yellow-100 rounded-lg border flex items-center justify-center';
-                                                    placeholder.innerHTML = `
-                                                        <div class="text-center text-yellow-600">
-                                                            <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                                            </svg>
-                                                            <div class="text-xs">Проблема</div>
-                                                        </div>
-                                                    `;
-                                                    target.parentNode?.appendChild(placeholder);
-                                                } else {
-                                                    // Файл действительно недоступен
-                                                    target.style.display = 'none';
-                                                    const placeholder = document.createElement('div');
-                                                    placeholder.className = 'w-20 h-20 bg-red-100 rounded-lg border flex items-center justify-center';
-                                                    placeholder.innerHTML = `
-                                                        <div class="text-center text-red-600">
-                                                            <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                            </svg>
-                                                            <div class="text-xs">Ошибка</div>
-                                                        </div>
-                                                    `;
-                                                    target.parentNode?.appendChild(placeholder);
-                                                }
-                                            } catch (error) {
-                                                // Ошибка сети или CORS
-                                                target.style.display = 'none';
-                                                const placeholder = document.createElement('div');
-                                                placeholder.className = 'w-20 h-20 bg-orange-100 rounded-lg border flex items-center justify-center';
-                                                placeholder.innerHTML = `
-                                                    <div class="text-center text-orange-600">
-                                                        <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                                        </svg>
-                                                        <div class="text-xs">Сеть</div>
-                                                    </div>
-                                                `;
-                                                target.parentNode?.appendChild(placeholder);
-                                            }
-                                        }}
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="destructive"
-                                        size="sm"
-                                        className="absolute -top-2 -right-2 w-6 h-6 p-0"
-                                        onClick={removeAvatar}
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="w-20 h-20 border border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                                    <ImageIcon className="w-6 h-6 text-gray-400" />
-                                </div>
-                            )}
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => avatarInputRef.current?.click()}
-                                disabled={uploading}
-                            >
-                                <Upload className="w-4 h-4 mr-2" />
-                                Загрузить аватар
-                            </Button>
-                            <input
-                                ref={avatarInputRef}
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => e.target.files && handleFileUpload(e.target.files, 'avatar')}
-                                className="hidden"
-                            />
-                        </div>
-                    </div>
 
                     {/* Изображения */}
                     <div className="space-y-2">
@@ -540,15 +393,15 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                                                     onError={async (e) => {
                                                         const target = e.target as HTMLImageElement;
                                                         const imageUrl = getFileUrl(image);
-                                                        
+
                                                         // Проверяем существование файла перед показом ошибки
                                                         try {
-                                                            const response = await fetch(imageUrl, { 
+                                                            const response = await fetch(imageUrl, {
                                                                 method: 'HEAD',
                                                                 mode: 'cors',
                                                                 cache: 'no-cache'
                                                             });
-                                                            
+
                                                             if (response.ok) {
                                                                 // Файл существует, возможно проблема с отображением
                                                                 target.style.display = 'none';
@@ -655,15 +508,15 @@ export const StyleOptionModal: React.FC<StyleOptionModalProps> = ({
                                                     onError={async (e) => {
                                                         const target = e.target as HTMLVideoElement;
                                                         const videoUrl = getFileUrl(video);
-                                                        
+
                                                         // Проверяем существование файла перед показом ошибки
                                                         try {
-                                                            const response = await fetch(videoUrl, { 
+                                                            const response = await fetch(videoUrl, {
                                                                 method: 'HEAD',
                                                                 mode: 'cors',
                                                                 cache: 'no-cache'
                                                             });
-                                                            
+
                                                             if (response.ok) {
                                                                 // Файл существует, возможно проблема с воспроизведением
                                                                 // Показываем предупреждение вместо ошибки

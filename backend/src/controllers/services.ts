@@ -258,6 +258,24 @@ export const addStyleToService = async (req: Request, res: Response): Promise<vo
 
         console.log('Style added successfully');
 
+        // Отправляем WebSocket уведомление
+        try {
+            const { wsManager } = await import('../websocket-server.js');
+            if (wsManager) {
+                wsManager.broadcastEvent({
+                    type: 'service_style_updated',
+                    data: {
+                        serviceId: id,
+                        styleId: newStyle.id,
+                        message: 'Новый стиль добавлен к услуге'
+                    },
+                    timestamp: Date.now()
+                });
+            }
+        } catch (wsError) {
+            console.warn('⚠️ Ошибка отправки WebSocket уведомления:', wsError);
+        }
+
         res.status(201).json({
             success: true,
             data: newStyle
@@ -308,6 +326,24 @@ export const addOptionToService = async (req: Request, res: Response): Promise<v
         );
 
         console.log('Option added successfully');
+
+        // Отправляем WebSocket уведомление
+        try {
+            const { wsManager } = await import('../websocket-server.js');
+            if (wsManager) {
+                wsManager.broadcastEvent({
+                    type: 'service_option_updated',
+                    data: {
+                        serviceId: id,
+                        optionId: newOption.id,
+                        message: 'Новая опция добавлена к услуге'
+                    },
+                    timestamp: Date.now()
+                });
+            }
+        } catch (wsError) {
+            console.warn('⚠️ Ошибка отправки WebSocket уведомления:', wsError);
+        }
 
         res.status(201).json({
             success: true,
@@ -362,7 +398,6 @@ export const updateServiceStyle = async (req: Request, res: Response): Promise<v
             ...styleData,
             price: typeof styleData.price === 'string' ? parseFloat(styleData.price) : styleData.price,
             // Сохраняем медиафайлы: заменяем только если пришли новые непустые данные
-            avatar: styleData.avatar !== undefined ? styleData.avatar : existingStyle.avatar,
             images: (styleData.images !== undefined && styleData.images.length > 0) ?
                 styleData.images : existingStyle.images,
             videos: (styleData.videos !== undefined && styleData.videos.length > 0) ?
@@ -376,6 +411,24 @@ export const updateServiceStyle = async (req: Request, res: Response): Promise<v
         );
 
         console.log('Style updated successfully. Updated style:', styles[styleIndex]);
+
+        // Отправляем WebSocket уведомление
+        try {
+            const { wsManager } = await import('../websocket-server.js');
+            if (wsManager) {
+                wsManager.broadcastEvent({
+                    type: 'service_style_updated',
+                    data: {
+                        serviceId: id,
+                        styleId: styleId,
+                        message: 'Стиль услуги обновлен'
+                    },
+                    timestamp: Date.now()
+                });
+            }
+        } catch (wsError) {
+            console.warn('⚠️ Ошибка отправки WebSocket уведомления:', wsError);
+        }
 
         res.json({
             success: true,
@@ -430,7 +483,6 @@ export const updateServiceOption = async (req: Request, res: Response): Promise<
             ...optionData,
             price: typeof optionData.price === 'string' ? parseFloat(optionData.price) : optionData.price,
             // Сохраняем медиафайлы: заменяем только если пришли новые непустые данные
-            avatar: optionData.avatar !== undefined ? optionData.avatar : existingOption.avatar,
             images: (optionData.images !== undefined && optionData.images.length > 0) ?
                 optionData.images : existingOption.images,
             videos: (optionData.videos !== undefined && optionData.videos.length > 0) ?
@@ -444,6 +496,24 @@ export const updateServiceOption = async (req: Request, res: Response): Promise<
         );
 
         console.log('Option updated successfully. Updated option:', options[optionIndex]);
+
+        // Отправляем WebSocket уведомление
+        try {
+            const { wsManager } = await import('../websocket-server.js');
+            if (wsManager) {
+                wsManager.broadcastEvent({
+                    type: 'service_option_updated',
+                    data: {
+                        serviceId: id,
+                        optionId: optionId,
+                        message: 'Опция услуги обновлена'
+                    },
+                    timestamp: Date.now()
+                });
+            }
+        } catch (wsError) {
+            console.warn('⚠️ Ошибка отправки WebSocket уведомления:', wsError);
+        }
 
         res.json({
             success: true,

@@ -128,4 +128,3 @@ const ChildProfile = () => {
 
 export default ChildProfile;
 
-

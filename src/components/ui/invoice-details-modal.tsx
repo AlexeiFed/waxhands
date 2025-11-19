@@ -5,23 +5,52 @@
  * @created: 2024-12-19
  */
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Invoice } from '@/hooks/use-invoices';
-import { Calendar, MapPin, Users, CreditCard, CheckCircle, Clock } from 'lucide-react';
+import { Invoice } from '@/types';
+import { Calendar, MapPin, Users, CreditCard, CheckCircle, Clock, Trash2 } from 'lucide-react';
 import { RobokassaPayment } from '@/components/payment/RobokassaPayment';
+import { useDeleteInvoice } from '@/hooks/use-invoices';
+import { useToast } from '@/hooks/use-toast';
+import { MobileBottomSheet } from '@/components/ui/mobile-bottom-sheet';
 
 interface InvoiceDetailsModalProps {
     invoice: Invoice | null;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
     onPaymentClick?: (invoiceId: string) => void;
+    onInvoiceDeleted?: (invoiceId: string) => void;
 }
 
-const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: InvoiceDetailsModalProps) => {
+const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick, onInvoiceDeleted }: InvoiceDetailsModalProps) => {
+    const { toast } = useToast();
+    const deleteInvoiceMutation = useDeleteInvoice();
+
     if (!invoice) return null;
+
+    const handleDeleteInvoice = async () => {
+        if (!confirm('Вы уверены, что хотите удалить этот счет? Это действие нельзя отменить.')) {
+            return;
+        }
+
+        try {
+            await deleteInvoiceMutation.mutateAsync(invoice.id);
+            toast({
+                title: "Счет удален",
+                description: "Счет успешно удален",
+                variant: "default",
+            });
+            onInvoiceDeleted?.(invoice.id);
+            onOpenChange(false);
+        } catch (error) {
+            toast({
+                title: "Ошибка",
+                description: "Не удалось удалить счет",
+                variant: "destructive",
+            });
+        }
+    };
 
     const getStatusInfo = (status: string) => {
         switch (status) {
@@ -55,14 +84,15 @@ const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: 
     const statusInfo = getStatusInfo(invoice.status);
 
     return (
-        <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50 border-0 shadow-2xl p-6">
-                <DialogHeader>
-                    <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-orange-600 via-purple-600 to-blue-600 bg-clip-text text-transparent">
-                        Детали участия
-                    </DialogTitle>
-                </DialogHeader>
-
+        <MobileBottomSheet
+            open={isOpen}
+            onOpenChange={onOpenChange}
+            title="Детали участия"
+            description="Информация по счету и оплате"
+            className="bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50"
+            dialogClassName="bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50 border-0 shadow-2xl p-6"
+        >
+            <div className="space-y-6">
                 {/* Информация о мастер-классе */}
                 <Card className="bg-white/90 backdrop-blur-sm border-orange-200 shadow-card mb-6">
                     <CardHeader className="pb-3">
@@ -169,7 +199,7 @@ const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: 
 
                 {/* Компонент оплаты Robokassa */}
                 <RobokassaPayment
-                    invoice={invoice}
+                    invoiceId={invoice.id}
                     onPaymentSuccess={() => {
                         onOpenChange(false);
                         // Обновляем страницу для отображения нового статуса
@@ -194,9 +224,21 @@ const InvoiceDetailsModal = ({ invoice, isOpen, onOpenChange, onPaymentClick }: 
                     >
                         Закрыть
                     </Button>
+                    
+                    {invoice.status !== 'paid' && (
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteInvoice}
+                            disabled={deleteInvoiceMutation.isPending}
+                            className="w-full sm:w-auto min-w-[140px] py-3 px-6 text-lg bg-red-500 hover:bg-red-600 text-white border-0 transition-all duration-300 flex items-center justify-center space-x-2"
+                        >
+                            <Trash2 className="w-5 h-5" />
+                            <span>{deleteInvoiceMutation.isPending ? 'Удаление...' : 'Удалить счет'}</span>
+                        </Button>
+                    )}
                 </div>
-            </DialogContent>
-        </Dialog>
+            </div>
+        </MobileBottomSheet>
     );
 };
 

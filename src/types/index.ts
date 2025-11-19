@@ -14,6 +14,7 @@ export interface User {
     class?: string;
     parentId?: string; // ID родителя для детей
     children?: User[]; // Дети для родителей
+    parent?: User; // Родитель для детей
     createdAt?: string;
     updatedAt?: string;
 }
@@ -45,7 +46,6 @@ export interface ServiceStyle {
     shortDescription: string;
     fullDescription: string;
     price: number;
-    avatar?: string;
     images?: string[];
     videos?: string[];
 }
@@ -56,7 +56,6 @@ export interface ServiceOption {
     shortDescription: string;
     fullDescription: string;
     price: number;
-    avatar?: string;
     images?: string[];
     videos?: string[];
 }
@@ -219,6 +218,7 @@ export interface Invoice {
         name: string;
         price: number;
     }>;
+    notes?: string;
     created_at: string;
     updated_at: string;
     master_class_name?: string;
@@ -228,6 +228,11 @@ export interface Invoice {
     payment_date?: string;
     payment_label?: string;
     sender_phone?: string;
+    participant_email?: string;
+    refund_status?: 'none' | 'pending' | 'completed' | 'cancelled' | 'failed';
+    refund_reason?: string;
+    refund_email?: string;
+    refund_request_id?: string;
 }
 
 export interface CreateInvoiceRequest {

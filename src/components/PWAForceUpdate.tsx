@@ -53,7 +53,6 @@ export const PWAForceUpdate: React.FC = () => {
         setIsUpdating(true);
 
         try {
-            console.log('Начинаем обновление PWA...');
 
             // Обновляем версию в localStorage
             localStorage.setItem('pwa-version', '3.0.0');
@@ -63,7 +62,7 @@ export const PWAForceUpdate: React.FC = () => {
             // Очищаем кэш
             if ('caches' in window) {
                 const cacheNames = await caches.keys();
-                console.log('Очищаем кэши:', cacheNames);
+
                 await Promise.all(
                     cacheNames.map(cacheName => caches.delete(cacheName))
                 );
@@ -73,12 +72,10 @@ export const PWAForceUpdate: React.FC = () => {
             if ('serviceWorker' in navigator) {
                 const registration = await navigator.serviceWorker.getRegistration();
                 if (registration) {
-                    console.log('Обновляем Service Worker...');
+
                     await registration.update();
                 }
             }
-
-            console.log('Обновление завершено, перезагружаем страницу...');
 
             // Небольшая задержка перед перезагрузкой
             setTimeout(() => {

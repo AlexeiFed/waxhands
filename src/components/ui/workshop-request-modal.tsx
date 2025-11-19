@@ -50,13 +50,12 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
 
     // Отладочный useEffect для отслеживания изменений citySchools
     useEffect(() => {
-        console.log('🔍 WorkshopRequestModal: citySchools изменился:', citySchools);
-        console.log('🔍 WorkshopRequestModal: citySchools.length:', citySchools.length);
+
     }, [citySchools]);
 
     // Обработчик изменения города
     const handleCityChange = async (city: string) => {
-        console.log('🔍 WorkshopRequestModal: handleCityChange вызван с городом:', city);
+
         setSelectedCity(city);
         setSelectedSchoolId('');
         setFormData(prev => ({
@@ -71,14 +70,11 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
 
         if (city) {
             try {
-                console.log('🔍 WorkshopRequestModal: Загружаем школы для города:', city);
-                console.log('🔍 WorkshopRequestModal: getSchoolsByCity функция:', getSchoolsByCity);
+
                 const schools = await getSchoolsByCity(city);
-                console.log('🔍 WorkshopRequestModal: Получены школы:', schools);
-                console.log('🔍 WorkshopRequestModal: Тип schools:', typeof schools);
-                console.log('🔍 WorkshopRequestModal: schools.length:', schools?.length);
+
                 setCitySchools(schools);
-                console.log('🔍 WorkshopRequestModal: citySchools установлен:', schools);
+
             } catch (error) {
                 console.error('🔍 WorkshopRequestModal: Ошибка загрузки школ по городу:', error);
                 toast({
@@ -88,7 +84,7 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 });
             }
         } else {
-            console.log('🔍 WorkshopRequestModal: Город не выбран, очищаем citySchools');
+
             setCitySchools([]);
         }
     };
@@ -112,7 +108,8 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 other_school_name: '',
                 other_school_address: '',
                 school_name: '',
-                class_group: ''
+                class_group: '',
+                desired_date: ''
             }));
 
             const school = citySchools.find(s => s.id === schoolId);
@@ -200,15 +197,7 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                 other_school_address: formData.is_other_school ? formData.other_school_address : undefined
             };
 
-            console.log('🔍 WorkshopRequestModal.handleSubmit: Отправляем заявку:', requestData);
-
             const result = await createRequest(requestData);
-
-            console.log('📋 WorkshopRequestModal.handleSubmit: Результат создания заявки:', result);
-            console.log('🔍 WorkshopRequestModal.handleSubmit: Проверяем result?.success:', result?.success);
-            console.log('🔍 WorkshopRequestModal.handleSubmit: Тип result:', typeof result);
-            console.log('🔍 WorkshopRequestModal.handleSubmit: result === null:', result === null);
-            console.log('🔍 WorkshopRequestModal.handleSubmit: result === undefined:', result === undefined);
 
             if (result && result.success) {
                 toast({
@@ -280,7 +269,6 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
         }
     };
 
-
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
@@ -290,7 +278,7 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                         Подать заявку на проведение мастер-класса
                     </DialogTitle>
                     <DialogDescription className="text-sm text-gray-600 mt-1">
-                        Заполните форму, и мы рассмотрим возможность проведения мастер-класса в вашем классе
+                        Заполните форму, и мы рассмотрим возможность проведения мастер-класса в вашей школе или саду
                     </DialogDescription>
                 </DialogHeader>
 
@@ -450,8 +438,9 @@ export default function WorkshopRequestModal({ isOpen, onOpenChange, onRequestCr
                             <div className="text-sm text-blue-800">
                                 <p className="font-medium mb-1">Важно знать:</p>
                                 <ul className="space-y-1 text-xs">
-                                    <li>• Мы рассмотрим вашу заявку в течение 2-3 рабочих дней</li>
-                                    <li>• Свяжемся с вами для уточнения деталей и согласования даты</li>
+                                    <li>• Чтобы мы провели наш мастер-класс в вашей школе, нужно всего лишь оставить заявку.</li>
+                                    <li>• Если мы у вас ещё не были, ваша заявка станет сигналом для администрации.</li>
+                                    <li>• Чем больше заявок из одной школы, тем выше вероятность, что мы приедем!</li>
                                     <li>• Если не нашли свою школу, выберите "Другая" и введите данные вручную</li>
                                 </ul>
                             </div>

@@ -101,9 +101,6 @@ export const ChildProfileEditModal = ({ isOpen, onClose }: ChildProfileEditModal
                 });
                 return;
             }
-
-            console.log('📝 Submitting profile update with data:', formData);
-
             // Обновляем профиль
             await updateProfile(formData);
 

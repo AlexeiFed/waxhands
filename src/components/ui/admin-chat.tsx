@@ -13,10 +13,14 @@ import { Badge } from './badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { useAdminChat } from '../../hooks/use-chat';
 import { useAuth } from '../../contexts/AuthContext';
+import { useWebSocketContext } from '../../contexts/WebSocketContext';
 import { Chat, ChatMessage } from '../../types/chat';
 import { MessageCircle, Send, Clock, User, Shield, Filter, MoreHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MessageReadStatusComponent } from '../shared/MessageReadStatusComponent';
+import { useResponsiveLayout } from '../../contexts/ResponsiveLayoutContext';
+import { ResponsiveList } from '../admin/lists/ResponsiveList';
+import { ChatDialogCard } from '../admin/cards/ChatDialogCard';
 
 interface AdminChatProps {
     isOpen: boolean;
@@ -40,22 +44,16 @@ const AdminChat: React.FC<AdminChatProps> = ({ isOpen, onOpenChange }) => {
         isUpdatingStatus,
         _debug
     } = useAdminChat();
+    const { isSmallScreen } = useResponsiveLayout();
 
     const { user } = useAuth();
+    const { isConnected: wsConnected } = useWebSocketContext();
 
     const [message, setMessage] = useState('');
 
     // Временные логи для диагностики
     useEffect(() => {
-        console.log('🔍 AdminChat: Состояние чатов:', {
-            chatsCount: chats?.length,
-            chats,
-            selectedChat,
-            statusFilter,
-            isLoadingChats,
-            isLoadingMessages,
-            _debug
-        });
+
     }, [chats, selectedChat, statusFilter, isLoadingChats, isLoadingMessages, _debug]);
 
     const handleSendMessage = async (e?: React.FormEvent) => {
@@ -64,12 +62,6 @@ const AdminChat: React.FC<AdminChatProps> = ({ isOpen, onOpenChange }) => {
             e.stopPropagation();
         }
         if (!message.trim() || !selectedChat?.id) return;
-
-        console.log('Отправка сообщения:', {
-            chatId: selectedChat.id,
-            message: message.trim(),
-            senderId: user?.id
-        });
 
         try {
             await sendMessage(message.trim());
@@ -138,6 +130,91 @@ const AdminChat: React.FC<AdminChatProps> = ({ isOpen, onOpenChange }) => {
         return chat.unreadCount || 0;
     };
 
+    const renderChatList = () => {
+        if (isLoadingChats) {
+            return (
+                <div className="p-4 text-center text-gray-500">
+                    Загрузка чатов...
+                </div>
+            );
+        }
+
+        if (chats.length === 0) {
+            return (
+                <div className="p-4 text-center text-gray-500">
+                    Нет чатов
+                </div>
+            );
+        }
+
+        if (isSmallScreen) {
+            return (
+                <ResponsiveList
+                    items={chats}
+                    keyExtractor={(chat) => chat.id}
+                    renderItem={(chat) => (
+                        <ChatDialogCard
+                            chat={chat}
+                            isSelected={selectedChat?.id === chat.id}
+                            onSelect={setSelectedChat}
+                        />
+                    )}
+                />
+            );
+        }
+
+        return chats.map((chat) => (
+            <div
+                key={chat.id}
+                onClick={() => setSelectedChat(chat)}
+                className={cn(
+                    "p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors",
+                    selectedChat?.id === chat.id && "bg-blue-50 border-blue-200"
+                )}
+            >
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                        <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            getStatusColor(chat.status)
+                        )} />
+                        <span className="text-sm font-medium text-gray-900">
+                            {getStatusText(chat.status)}
+                        </span>
+                    </div>
+                    {getUnreadCount(chat) > 0 && (
+                        <Badge variant="destructive" className="text-xs">
+                            {getUnreadCount(chat)}
+                        </Badge>
+                    )}
+                </div>
+                <p className={cn(
+                    "text-sm text-gray-900",
+                    getUnreadCount(chat) > 0 ? "font-bold" : "font-medium"
+                )}>
+                    {chat.user?.name && chat.user?.surname
+                        ? `${chat.user.name} ${chat.user.surname}`.trim()
+                        : chat.user?.name || 'Пользователь'
+                    }
+                </p>
+                <div className="text-xs text-gray-500 mt-1">
+                    <div>Школа: {chat.user?.schoolName || 'Не указана'}</div>
+                    <div>Телефон: {chat.user?.phone || 'Не указан'}</div>
+                </div>
+                {chat.lastMessage && (
+                    <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        {chat.lastMessage}
+                    </p>
+                )}
+                <div className="flex items-center justify-end mt-2">
+                    <span className="text-xs text-gray-400">
+                        {formatDateTimeVladivostok(chat.lastMessageAt)}
+                    </span>
+                </div>
+            </div>
+        ));
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -177,9 +254,12 @@ const AdminChat: React.FC<AdminChatProps> = ({ isOpen, onOpenChange }) => {
                     </div>
                 </div>
 
-                <div className="flex-1 flex overflow-hidden">
+                <div className={cn("flex-1 flex overflow-hidden", isSmallScreen && "flex-col")}>
                     {/* Список чатов */}
-                    <div className="w-96 border-r border-gray-200 flex flex-col">
+                    <div className={cn(
+                        "border-gray-200 flex flex-col",
+                        isSmallScreen ? "w-full border-b" : "w-96 border-r"
+                    )}>
                         <div className="p-4 border-b border-gray-200">
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="font-semibold text-gray-900">Чаты</h3>
@@ -190,67 +270,18 @@ const AdminChat: React.FC<AdminChatProps> = ({ isOpen, onOpenChange }) => {
                             <div className="text-sm text-gray-600">
                                 {chats.filter(c => c.status === 'pending').length} ожидают ответа
                             </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                WebSocket: {wsConnected ? 'Подключен' : 'Отключен'}
+                            </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto">
-                            {isLoadingChats ? (
-                                <div className="p-4 text-center text-gray-500">
-                                    Загрузка чатов...
-                                </div>
-                            ) : chats.length === 0 ? (
-                                <div className="p-4 text-center text-gray-500">
-                                    Нет чатов
-                                </div>
-                            ) : (
-                                chats.map((chat) => (
-                                    <div
-                                        key={chat.id}
-                                        onClick={() => setSelectedChat(chat)}
-                                        className={cn(
-                                            "p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors",
-                                            selectedChat?.id === chat.id && "bg-blue-50 border-blue-200"
-                                        )}
-                                    >
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center space-x-2">
-                                                <div className={cn(
-                                                    "w-2 h-2 rounded-full",
-                                                    getStatusColor(chat.status)
-                                                )} />
-                                                <span className="text-sm font-medium text-gray-900">
-                                                    {getStatusText(chat.status)}
-                                                </span>
-                                            </div>
-                                            {getUnreadCount(chat) > 0 && (
-                                                <Badge variant="destructive" className="text-xs">
-                                                    {getUnreadCount(chat)}
-                                                </Badge>
-                                            )}
-                                        </div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                            {chat.user?.name && chat.user?.surname
-                                                ? `${chat.user.name} ${chat.user.surname}`.trim()
-                                                : chat.user?.name || 'Пользователь'
-                                            }
-                                        </p>
-                                        {chat.lastMessage && (
-                                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                                                {chat.lastMessage}
-                                            </p>
-                                        )}
-                                        <div className="flex items-center justify-end mt-2">
-                                            <span className="text-xs text-gray-400">
-                                                {formatDateTimeVladivostok(chat.lastMessageAt)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
+                        <div className={cn("flex-1 overflow-y-auto", isSmallScreen && "max-h-72")}>
+                            {renderChatList()}
                         </div>
                     </div>
 
                     {/* Область сообщений */}
-                    <div className="flex-1 flex flex-col">
+                    <div className={cn("flex-1 flex flex-col", isSmallScreen && "w-full")}>
                         {selectedChat ? (
                             <>
                                 {/* Заголовок чата */}

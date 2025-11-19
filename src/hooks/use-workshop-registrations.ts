@@ -29,7 +29,7 @@ export const useWorkshopRegistrations = (): UseWorkshopRegistrationsReturn => {
     const getUserRegistrations = useCallback(async (userId: string): Promise<WorkshopRegistration[]> => {
         // Проверяем, не выполняется ли уже запрос для этого пользователя
         if (isFetchingRef.current && lastRequestRef.current === userId) {
-            console.log('getUserRegistrations: Skipping call due to debounce');
+
             return [];
         }
 
@@ -44,9 +44,7 @@ export const useWorkshopRegistrations = (): UseWorkshopRegistrationsReturn => {
                     isFetchingRef.current = true;
                     lastRequestRef.current = userId;
 
-                    console.log('getUserRegistrations: Fetching registrations for user:', userId);
                     const response = await api.workshopRegistrations.getUserRegistrations(userId);
-                    console.log('getUserRegistrations: Response:', response);
 
                     resolve(response || []);
                 } catch (error) {

@@ -72,6 +72,15 @@ export class ChatController {
                 [messageId, chatId, userId, 'user', message]
             );
 
+            // Добавляем автоматический ответ от админа
+            const autoReplyId = uuidv4();
+            const autoReplyMessage = 'Спасибо за обращение! Мы получили ваше сообщение и ответим в ближайшее время. Если вам долго не отвечают, напишите в WhatsApp +7 914 547-06-06 или +79145450606';
+
+            await db.query(
+                'INSERT INTO chat_messages (id, chat_id, sender_id, sender_type, message) VALUES ($1, $2, $3, $4, $5)',
+                [autoReplyId, chatId, adminId, 'admin', autoReplyMessage]
+            );
+
             // Обновляем время последнего сообщения
             await db.query(
                 'UPDATE chats SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
@@ -199,20 +208,31 @@ export class ChatController {
 
             // Получаем чаты с информацией о пользователях и последним сообщением
             const { rows: chats } = await db.query(`
-                SELECT 
-                    c.id, c.user_id, c.admin_id, c.status, c.created_at, c.updated_at, c.last_message_at,
-                    u.name as user_name, u.surname as user_surname, u.email as user_email, u.role as user_role,
-                    a.name as admin_name, a.surname as admin_surname, a.email as admin_email, a.role as admin_role,
-                    COALESCE(cn.unread_count, 0) as unread_count,
-                    cm.message as last_message
-                FROM chats c
-                LEFT JOIN users u ON c.user_id = u.id
-                LEFT JOIN users a ON c.admin_id = a.id
-                LEFT JOIN chat_notifications cn ON c.id = cn.chat_id
-                LEFT JOIN chat_messages cm ON c.id = cm.chat_id AND cm.created_at = c.last_message_at
-                ${whereClause}
-                ORDER BY c.last_message_at DESC NULLS LAST
-            `, params);
+            SELECT 
+                c.id, c.user_id, c.admin_id, c.status, c.created_at, c.updated_at, c.last_message_at,
+                u.name as user_name, u.surname as user_surname, u.email as user_email, u.role as user_role,
+                COALESCE(u.school_name, ch.school_name) as user_school_name, u.phone as user_phone,
+                a.name as admin_name, a.surname as admin_surname, a.email as admin_email, a.role as admin_role,
+                (
+                    SELECT COUNT(*) 
+                    FROM chat_messages 
+                    WHERE chat_id = c.id 
+                    AND sender_type = 'user' 
+                    AND is_read = false
+                ) as unread_count,
+                cm.message as last_message
+            FROM chats c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN users a ON c.admin_id = a.id
+            LEFT JOIN chat_messages cm ON c.id = cm.chat_id AND cm.created_at = c.last_message_at
+            LEFT JOIN (
+                SELECT DISTINCT parent_id, school_name 
+                FROM users 
+                WHERE role = 'child' AND school_name IS NOT NULL AND school_name != ''
+            ) ch ON u.id = ch.parent_id
+            ${whereClause}
+            ORDER BY c.last_message_at DESC NULLS LAST
+        `, params);
 
             // Если чатов нет, возвращаем пустой список
             if (chats.length === 0) {
@@ -239,7 +259,9 @@ export class ChatController {
                     name: (chat.user_name as string) || '',
                     surname: (chat.user_surname as string) || '',
                     email: (chat.user_email as string) || '',
-                    role: (chat.user_role as string) || 'user'
+                    role: (chat.user_role as string) || 'user',
+                    schoolName: (chat.user_school_name as string) || 'Не указана',
+                    phone: (chat.user_phone as string) || 'Не указан'
                 },
                 admin: chat.admin_id ? {
                     id: chat.admin_id as string,
@@ -641,6 +663,39 @@ export class ChatController {
 
         } catch (error) {
             console.error('Ошибка получения количества непрочитанных сообщений:', error);
+            res.status(500).json({
+                error: 'Внутренняя ошибка сервера'
+            });
+        }
+    }
+
+    // Удалить чат (только для администраторов)
+    static async deleteChat(req: Request, res: Response): Promise<Response | void> {
+        try {
+            const { chatId } = req.params;
+
+            if (!chatId) {
+                return res.status(400).json({
+                    error: 'Необходим chatId'
+                });
+            }
+
+            // Удаляем все сообщения чата
+            await db.query('DELETE FROM chat_messages WHERE chat_id = $1', [chatId]);
+
+            // Удаляем уведомления чата
+            await db.query('DELETE FROM chat_notifications WHERE chat_id = $1', [chatId]);
+
+            // Удаляем сам чат
+            await db.query('DELETE FROM chats WHERE id = $1', [chatId]);
+
+            res.json({
+                success: true,
+                message: 'Чат успешно удален'
+            });
+
+        } catch (error) {
+            console.error('Ошибка удаления чата:', error);
             res.status(500).json({
                 error: 'Внутренняя ошибка сервера'
             });

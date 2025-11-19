@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardContentCompact, CardDescription, CardHeader, CardHeaderCompact, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,13 +18,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
+import { usePaymentSettings } from '@/hooks/use-payment-settings';
 import { MasterClassEvent, Service } from '@/types/services';
 import { School } from '@/types';
 import { MasterClassesFilters } from '@/contexts/AdminFiltersContext';
-import { Plus, CalendarIcon, Clock, MapPin, Users, DollarSign, Trash2, UserPlus, Filter, BarChart3, FileSpreadsheet, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
+import { Plus, CalendarIcon, Clock, MapPin, Users, DollarSign, Trash2, UserPlus, Filter, BarChart3, FileSpreadsheet, ChevronUp, ChevronDown, RefreshCw, Loader2, CreditCard } from 'lucide-react';
 import { ru } from 'date-fns/locale';
 import { api } from '@/lib/api';
 import * as XLSX from 'xlsx';
+import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
+import { ResponsiveList } from '@/components/admin/lists/ResponsiveList';
+import { MasterClassCard } from '@/components/admin/cards/MasterClassCard';
 
 interface MasterClassesTabProps {
     services: Service[];
@@ -55,6 +60,42 @@ export default function MasterClassesTab({
 }: MasterClassesTabProps) {
     // Используем мастер-классы напрямую из пропсов без локального состояния
     const { toast } = useToast();
+    const { isSmallScreen } = useResponsiveLayout();
+    const {
+        isEnabled: paymentEnabled,
+        isLoading: paymentSettingsLoading,
+        isUpdating: paymentSettingsUpdating,
+        togglePayment
+    } = usePaymentSettings();
+
+    // WebSocket для автоматических обновлений финансовой статистики
+    useMasterClassesWebSocket({
+        userId: 'admin', // Для админ панели используем фиксированный userId
+        enabled: true,
+        onMasterClassUpdate: () => {
+            // Принудительно обновляем данные через родительский компонент
+            onRefreshMasterClasses();
+        }
+    });
+
+    const handleTogglePayments = useCallback(async () => {
+        try {
+            const result = await togglePayment(!paymentEnabled);
+            toast({
+                title: result.isEnabled ? 'Оплата включена' : 'Оплата отключена',
+                description: result.isEnabled
+                    ? 'Родители теперь могут оплачивать мастер-классы через Robokassa.'
+                    : 'Оплата через Robokassa отключена для всех родителей.',
+            });
+        } catch (error) {
+            console.error('Ошибка при переключении оплаты:', error);
+            toast({
+                title: 'Ошибка',
+                description: 'Не удалось изменить статус оплаты. Попробуйте позже.',
+                variant: 'destructive'
+            });
+        }
+    }, [paymentEnabled, togglePayment, toast]);
 
     // Обертка для onEditMasterClass с обновлением через родительский компонент
     const handleEditMasterClass = useCallback(async (id: string, updates: Partial<MasterClassEvent>) => {
@@ -75,11 +116,6 @@ export default function MasterClassesTab({
     }, [onEditMasterClass, onRefreshMasterClasses]);
 
     // Отладка при загрузке компонента
-    console.log('MasterClassesTab: компонент загружен');
-    console.log('MasterClassesTab: props:', { services: services.length, schools: schools.length, masterClasses: initialMasterClasses.length });
-    console.log('MasterClassesTab: masterClasses:', initialMasterClasses);
-
-
 
     // Состояние формы
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -107,7 +143,7 @@ export default function MasterClassesTab({
     const [expandedSchools, setExpandedSchools] = useState<Set<string>>(new Set());
 
     // Состояние для скрытия прошедших мастер-классов
-    const [hidePastClasses, setHidePastClasses] = useState(false);
+    const [hidePastClasses, setHidePastClasses] = useState(true);
 
     // Функция для переключения развернутого состояния школы
     const toggleSchoolExpansion = (schoolId: string) => {
@@ -166,8 +202,6 @@ export default function MasterClassesTab({
     // Получение отфильтрованных мастер-классов
     const getFilteredMasterClasses = useCallback((): MasterClassEvent[] => {
         let filtered = initialMasterClasses || [];
-        console.log('getFilteredMasterClasses: исходные мастер-классы:', filtered.length);
-        console.log('getFilteredMasterClasses: фильтры:', { filterCity, filterSchool, filterClass, filterDateFrom, filterDateTo });
 
         // Фильтр по городу
         if (filterCity !== 'all' && filterCity !== '') {
@@ -179,19 +213,19 @@ export default function MasterClassesTab({
                 }
                 return false;
             });
-            console.log('getFilteredMasterClasses: после фильтра по городу:', filtered.length);
+
         }
 
         // Фильтр по школе
         if (filterSchool !== 'all' && filterSchool !== '') {
             filtered = filtered.filter(mc => mc.schoolId === filterSchool);
-            console.log('getFilteredMasterClasses: после фильтра по школе:', filtered.length);
+
         }
 
         // Фильтр по классу
         if (filterClass !== 'all' && filterClass !== '') {
             filtered = filtered.filter(mc => mc.classGroup === filterClass);
-            console.log('getFilteredMasterClasses: после фильтра по классу:', filtered.length);
+
         }
 
         // Фильтр по дате от
@@ -201,7 +235,7 @@ export default function MasterClassesTab({
                 const mcDate = new Date(mc.date);
                 return mcDate >= fromDate;
             });
-            console.log('getFilteredMasterClasses: после фильтра по дате от:', filtered.length);
+
         }
 
         // Фильтр по дате до
@@ -211,7 +245,7 @@ export default function MasterClassesTab({
                 const mcDate = new Date(mc.date);
                 return mcDate <= toDate;
             });
-            console.log('getFilteredMasterClasses: после фильтра по дате до:', filtered.length);
+
         }
 
         // Фильтр по прошедшим мастер-классам
@@ -222,17 +256,15 @@ export default function MasterClassesTab({
                 const mcDate = new Date(mc.date);
                 return mcDate >= today;
             });
-            console.log('getFilteredMasterClasses: после фильтра прошедших:', filtered.length);
+
         }
 
-        console.log('getFilteredMasterClasses: итоговый результат:', filtered.length);
         return filtered;
     }, [initialMasterClasses, schools, filterCity, filterSchool, filterClass, filterDateFrom, filterDateTo, hidePastClasses]);
 
     // Группировка мастер-классов по школам и датам
     const getGroupedMasterClasses = useCallback(() => {
         const filtered = getFilteredMasterClasses();
-        console.log('getGroupedMasterClasses: отфильтрованные мастер-классы:', filtered.length);
 
         const grouped = filtered.reduce((acc, masterClass) => {
             // Создаем ключ из schoolId + даты
@@ -283,9 +315,11 @@ export default function MasterClassesTab({
             });
         });
 
-        console.log('getGroupedMasterClasses: сгруппированные группы:', sortedGroups.length);
         return sortedGroups;
     }, [getFilteredMasterClasses]);
+
+    const filteredMasterClasses = useMemo(() => getFilteredMasterClasses(), [getFilteredMasterClasses]);
+    const groupedMasterClasses = useMemo(() => getGroupedMasterClasses(), [getGroupedMasterClasses]);
 
     // Получение финансовой статистики по отфильтрованным мастер-классам
     const getFinancialStats = () => {
@@ -297,6 +331,17 @@ export default function MasterClassesTab({
             return sum + paidParticipants.reduce((pSum, p) => pSum + p.totalAmount, 0);
         }, 0);
         const unpaidAmount = totalAmount - paidAmount;
+
+        // Подсчитываем наличные платежи
+        const cashAmount = filteredClasses.reduce((sum, mc) => {
+            // Берем cashAmount из статистики мастер-класса, если есть
+            if (mc.statistics.cashAmount) {
+                return sum + mc.statistics.cashAmount;
+            }
+            // Иначе подсчитываем из участников
+            const cashParticipants = mc.participants.filter(p => p.isPaid && p.paymentMethod === 'cash');
+            return sum + cashParticipants.reduce((pSum, p) => pSum + p.totalAmount, 0);
+        }, 0);
 
         // Подсчитываем количество школ (группируем по школам и датам)
         const grouped = filteredClasses.reduce((acc, masterClass) => {
@@ -320,6 +365,7 @@ export default function MasterClassesTab({
             totalAmount,
             paidAmount,
             unpaidAmount,
+            cashAmount,
             totalClasses: totalSchools // Теперь это количество школ, а не классов
         };
     };
@@ -384,57 +430,31 @@ export default function MasterClassesTab({
 
     // Получение статистики по стилям и опциям
     const getStylesAndOptionsStats = useCallback(() => {
-        console.log('🔍 getStylesAndOptionsStats: ФУНКЦИЯ ВЫЗВАНА!');
+
         const filteredClasses = getFilteredMasterClasses();
         const stylesStats: Record<string, number> = {};
         const optionsStats: Record<string, number> = {};
 
         // Отладочная информация
-        console.log('getStylesAndOptionsStats: начало подсчета статистики');
-        console.log('getStylesAndOptionsStats: отфильтрованных мастер-классов:', filteredClasses.length);
-        console.log('getStylesAndOptionsStats: все мастер-классы:', initialMasterClasses.length);
-        console.log('getStylesAndOptionsStats: все мастер-классы:', initialMasterClasses);
-        console.log('getStylesAndOptionsStats: отфильтрованные мастер-классы:', filteredClasses);
 
         // Детальная отладка участников
         filteredClasses.forEach((mc, index) => {
-            console.log(`getStylesAndOptionsStats: Мастер-класс ${index + 1}:`, {
-                id: mc.id,
-                date: mc.date,
-                participantsCount: mc.participants?.length || 0,
-                participants: mc.participants
-            });
 
             if (mc.participants && mc.participants.length > 0) {
                 mc.participants.forEach((participant, pIndex) => {
-                    console.log(`getStylesAndOptionsStats: Участник ${pIndex + 1} в МК ${index + 1}:`, {
-                        id: participant.id,
-                        selectedStyles: participant.selectedStyles,
-                        selectedOptions: participant.selectedOptions
-                    });
 
                     // Детальная отладка структуры selectedStyles и selectedOptions
                     if (participant.selectedStyles && participant.selectedStyles.length > 0) {
-                        console.log(`getStylesAndOptionsStats: selectedStyles детально:`, participant.selectedStyles);
+
                         participant.selectedStyles.forEach((style, sIndex) => {
-                            console.log(`getStylesAndOptionsStats: style ${sIndex}:`, {
-                                type: typeof style,
-                                value: style,
-                                isObject: typeof style === 'object',
-                                keys: typeof style === 'object' ? Object.keys(style) : 'N/A'
-                            });
+
                         });
                     }
 
                     if (participant.selectedOptions && participant.selectedOptions.length > 0) {
-                        console.log(`getStylesAndOptionsStats: selectedOptions детально:`, participant.selectedOptions);
+
                         participant.selectedOptions.forEach((option, oIndex) => {
-                            console.log(`getStylesAndOptionsStats: option ${oIndex}:`, {
-                                type: typeof option,
-                                value: option,
-                                isObject: typeof option === 'object',
-                                keys: typeof option === 'object' ? Object.keys(option) : 'N/A'
-                            });
+
                         });
                     }
                 });
@@ -442,27 +462,13 @@ export default function MasterClassesTab({
         });
 
         filteredClasses.forEach((mc, mcIndex) => {
-            console.log(`getStylesAndOptionsStats: мастер-класс ${mcIndex + 1}:`, {
-                id: mc.id,
-                date: mc.date,
-                schoolName: mc.schoolName,
-                classGroup: mc.classGroup,
-                participantsCount: mc.participants?.length || 0,
-                participants: mc.participants
-            });
 
             if (!mc.participants || mc.participants.length === 0) {
-                console.log(`getStylesAndOptionsStats: мастер-класс ${mcIndex + 1} не имеет участников`);
+
                 return;
             }
 
             mc.participants.forEach((participant, pIndex) => {
-                console.log(`getStylesAndOptionsStats: участник ${pIndex + 1}:`, {
-                    id: participant.id,
-                    childName: participant.childName,
-                    selectedStyles: participant.selectedStyles,
-                    selectedOptions: participant.selectedOptions
-                });
 
                 // Статистика по стилям
                 if (participant.selectedStyles && participant.selectedStyles.length > 0) {
@@ -471,26 +477,21 @@ export default function MasterClassesTab({
                         const styleId = typeof styleItem === 'string' ? styleItem : styleItem.id;
 
                         if (!styleId) {
-                            console.log(`getStylesAndOptionsStats: не удалось извлечь styleId из:`, styleItem);
+
                             return;
                         }
 
                         const service = services.find(s => s.id === mc.serviceId);
                         if (!service) {
-                            console.log(`getStylesAndOptionsStats: услуга не найдена для serviceId: ${mc.serviceId}`);
+
                             return;
                         }
 
                         const style = service.styles.find(st => st.id === styleId);
                         if (style) {
                             stylesStats[style.name] = (stylesStats[style.name] || 0) + 1;
-                            console.log(`getStylesAndOptionsStats: добавлен стиль "${style.name}" (ID: ${styleId})`);
-                        } else {
-                            console.log(`getStylesAndOptionsStats: стиль не найден для styleId: ${styleId} из ${styleItem}`);
                         }
                     });
-                } else {
-                    console.log(`getStylesAndOptionsStats: участник ${pIndex + 1} не выбрал стили`);
                 }
 
                 // Статистика по опциям
@@ -500,34 +501,28 @@ export default function MasterClassesTab({
                         const optionId = typeof optionItem === 'string' ? optionItem : optionItem.id;
 
                         if (!optionId) {
-                            console.log(`getStylesAndOptionsStats: не удалось извлечь optionId из:`, optionItem);
+
                             return;
                         }
 
                         const service = services.find(s => s.id === mc.serviceId);
                         if (!service) {
-                            console.log(`getStylesAndOptionsStats: услуга не найдена для serviceId: ${mc.serviceId}`);
+
                             return;
                         }
 
                         const option = service.options.find(opt => opt.id === optionId);
                         if (option) {
                             optionsStats[option.name] = (optionsStats[option.name] || 0) + 1;
-                            console.log(`getStylesAndOptionsStats: добавлена опция "${option.name}" (ID: ${optionId})`);
-                        } else {
-                            console.log(`getStylesAndOptionsStats: опция не найдена для optionId: ${optionId} из ${optionItem}`);
+
                         }
                     });
-                } else {
-                    console.log(`getStylesAndOptionsStats: участник ${pIndex + 1} не выбрал опции`);
                 }
             });
         });
 
-        console.log('getStylesAndOptionsStats: итоговая статистика:', { stylesStats, optionsStats });
-
         return { stylesStats, optionsStats };
-    }, [getFilteredMasterClasses, services, initialMasterClasses]);
+    }, [getFilteredMasterClasses, services]);
 
     // Получение количества школ для календаря
     const getSchoolsCountForDate = useCallback((date: Date): number => {
@@ -556,7 +551,6 @@ export default function MasterClassesTab({
         const formatted = `${year}-${month}-${day}`;
 
         // Отладочная информация для проверки корректности форматирования
-        console.log(`formatDateForComparison: ${date.toLocaleDateString()} -> ${formatted}`);
 
         return formatted;
     };
@@ -573,11 +567,10 @@ export default function MasterClassesTab({
             // Применяем фильтр по дате
             onFiltersChange({ dateFrom: dateStr, dateTo: dateStr });
 
-            console.log(`handleDateSelect: применен фильтр по дате:`, dateStr);
         } else {
             // Сбрасываем фильтр по дате
             onFiltersChange({ dateFrom: '', dateTo: '' });
-            console.log(`handleDateSelect: сброшен фильтр по дате`);
+
         }
     };
 
@@ -644,13 +637,6 @@ export default function MasterClassesTab({
 
         // Создаем мастер-классы для всех выбранных классов через новый API
         try {
-            console.log('🎯 Создание мастер-классов для:', {
-                date: formData.date,
-                schoolId: formData.schoolId,
-                classGroups: formData.classGroups.length,
-                serviceId: formData.serviceId,
-                executors: formData.executors.length
-            });
 
             const response = await api.masterClasses.createMultiple({
                 date: formData.date,
@@ -662,11 +648,8 @@ export default function MasterClassesTab({
                 notes: formData.notes
             });
 
-            console.log('✅ Мастер-классы созданы:', response);
-
             // Проверяем структуру ответа и обновляем список мастер-классов
             if (response.success && response.data && Array.isArray(response.data)) {
-                console.log(`Успешно создано ${response.data.length} мастер-классов`);
 
                 // Обновляем список мастер-классов через callback
                 onRefreshMasterClasses();
@@ -720,13 +703,6 @@ export default function MasterClassesTab({
 
     // Отладочная информация
     useEffect(() => {
-        console.log('MasterClassesTab: useEffect сработал');
-        console.log('MasterClassesTab: Получены данные:', {
-            masterClassesCount: initialMasterClasses.length,
-            masterClasses: initialMasterClasses,
-            schoolsCount: schools.length,
-            servicesCount: services.length
-        });
 
         // Загружаем исполнителей при монтировании компонента
         loadExecutors();
@@ -734,17 +710,13 @@ export default function MasterClassesTab({
         // Проверяем участников в каждом мастер-классе
         if (initialMasterClasses.length > 0) {
             initialMasterClasses.forEach((mc, index) => {
-                console.log(`MasterClassesTab: Мастер-класс ${index + 1} (${mc.date}):`, {
-                    id: mc.id,
-                    participantsCount: mc.participants?.length || 0,
-                    participants: mc.participants
-                });
+
             });
         }
 
         // Дополнительная отладка для понимания структуры данных
         if (initialMasterClasses.length > 0) {
-            console.log('MasterClassesTab: Пример мастер-класса:', initialMasterClasses[0]);
+
             console.log('MasterClassesTab: Все даты мастер-классов:', (initialMasterClasses || []).map(mc => mc.date));
 
             // Проверяем, какие даты будут найдены для текущего месяца
@@ -752,14 +724,12 @@ export default function MasterClassesTab({
             const currentMonth = currentDate.getMonth();
             const currentYear = currentDate.getFullYear();
 
-            console.log('MasterClassesTab: Проверяем даты для текущего месяца:', currentMonth + 1, currentYear);
-
             // Проверяем несколько дат месяца
             for (let day = 1; day <= 31; day++) {
                 const testDate = new Date(currentYear, currentMonth, day);
                 const schoolsCount = getSchoolsCountForDate(testDate);
                 if (schoolsCount > 0) {
-                    console.log(`MasterClassesTab: Тест даты ${testDate.toLocaleDateString()}: найдено ${schoolsCount} школ`);
+                    // Есть школы для этой даты
                 }
             }
 
@@ -818,40 +788,51 @@ export default function MasterClassesTab({
             worksheet[contactCell].s = { font: { bold: true, sz: 14 } };
             currentRow += 2;
 
-            // Заголовки таблицы
+            // Заголовки таблицы без цен
             const headers = [
                 'Прим',      // 1. Примечание
-                'Кл',        // 2. Класс/группа
-                '1ОБ',       // 3. Обычная ручка
-                '1СВ',       // 4. Световая ручка
-                '2ОБ',       // 5. Двойные ручка
-                '2СВ',       // 6. Двойные световые ручка
-                'Кор',       // 7. Коробки
-                'Л.ОБ',      // 8. Лакировка
-                'Л.БЛ',      // 9. Лакировка с блестками
-                'Н.ОБ',      // 10. Надпись
-                'Н.СВ',      // 11. Световая надпись
-                'Нак.О',     // 12. Наклейка
-                'Нак.ОБ',    // 13. Наклейка объемная
-                'Сумма'      // 14. Сумма за класс/группу
+                'время',     // 2. Время
+                'Кл',        // 3. Класс/Группа
+                '2об',       // 4. Двойные ручки
+                '2св',       // 5. Двойные световые ручки
+                '1об',       // 6. Обычная ручка
+                '1св',       // 7. Световая ручка
+                'Кор',       // 8. Коробочка
+                'Л.об',      // 9. Лакировка
+                'Л.бл',      // 10. Лакировка с блестками
+                'Н.об',      // 11. Надпись
+                'Н.св',      // 12. Световая надпись
+                'Нак.О',     // 13. Наклейка
+                'Нак.ОБ',    // 14. Наклейка объемная
+                'Сумма'      // 15. Сумма за класс/группу
             ];
 
             XLSX.utils.sheet_add_aoa(worksheet, [headers], { origin: { r: currentRow, c: 0 } });
 
-            // Делаем заголовки таблицы жирными и выравниваем по центру
+            // Делаем заголовки таблицы жирными и выравниваем по центру с переносом текста
             headers.forEach((_, index) => {
                 const cellRef = XLSX.utils.encode_cell({ r: currentRow, c: index });
                 if (!worksheet[cellRef]) worksheet[cellRef] = {};
                 worksheet[cellRef].s = {
                     font: { bold: true },
-                    alignment: { horizontal: 'center', vertical: 'center' }
+                    alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
                 };
             });
             currentRow += 1;
 
             // Данные по классам/группам
             const classData: (string | number)[][] = [];
-            const totalRow = new Array(14).fill(0); // Массив для итогов
+            const totalCounts = {
+                '1об': 0, '1св': 0, '2об': 0, '2св': 0,
+                'Кор': 0, 'Л.об': 0, 'Л.бл': 0, 'Н.об': 0,
+                'Н.св': 0, 'Нак.О': 0, 'Нак.ОБ': 0
+            };
+            const totalAmounts = {
+                '1об': 0, '1св': 0, '2об': 0, '2св': 0,
+                'Кор': 0, 'Л.об': 0, 'Л.бл': 0, 'Н.об': 0,
+                'Н.св': 0, 'Нак.О': 0, 'Нак.ОБ': 0
+            };
+            let totalSum = 0;
 
             // Сортируем мастер-классы по номеру класса
             const sortedClasses = [...schoolClasses].sort((a, b) => {
@@ -866,49 +847,91 @@ export default function MasterClassesTab({
                 const service = (services || []).find(s => s.id === masterClass.serviceId);
                 if (!service) return;
 
-                // Подсчитываем количество по каждому типу
+                // Подсчитываем количество и сумму по каждому типу
                 const counts = {
-                    '1ОБ': 0,   // Обычная ручка
-                    '1СВ': 0,   // Световая ручка
-                    '2ОБ': 0,   // Двойные ручка
-                    '2СВ': 0,   // Двойные световые ручка
-                    'Кор': 0,   // Коробки
-                    'Л.ОБ': 0,  // Лакировка
-                    'Л.БЛ': 0,  // Лакировка с блестками
-                    'Н.ОБ': 0,  // Надпись
-                    'Н.СВ': 0,  // Световая надпись
+                    '1об': 0,   // Обычная ручка
+                    '1св': 0,   // Световая ручка
+                    '2об': 0,   // Двойные ручка
+                    '2св': 0,   // Двойные световые ручка
+                    'Кор': 0,   // Коробочка
+                    'Л.об': 0,  // Лакировка
+                    'Л.бл': 0,  // Лакировка с блестками
+                    'Н.об': 0,  // Надпись
+                    'Н.св': 0,  // Световая надпись
+                    'Нак.О': 0, // Наклейка
+                    'Нак.ОБ': 0 // Наклейка объемная
+                };
+
+                const amounts = {
+                    '1об': 0,   // Обычная ручка
+                    '1св': 0,   // Световая ручка
+                    '2об': 0,   // Двойные ручка
+                    '2св': 0,   // Двойные световые ручка
+                    'Кор': 0,   // Коробочка
+                    'Л.об': 0,  // Лакировка
+                    'Л.бл': 0,  // Лакировка с блестками
+                    'Н.об': 0,  // Надпись
+                    'Н.св': 0,  // Световая надпись
                     'Нак.О': 0, // Наклейка
                     'Нак.ОБ': 0 // Наклейка объемная
                 };
 
                 // Подсчитываем участников по стилям и опциям
                 (masterClass.participants || []).forEach(participant => {
-                    // Стили (ручки)
-                    (participant.selectedStyles || []).forEach(style => {
-                        const styleId = typeof style === 'string' ? style : (style as { id: string })?.id;
+                    // Стили (ручки) - учитываем количество и цену для каждого элемента
+                    (participant.selectedStyles || []).forEach(styleItem => {
+                        if (!styleItem) return;
+                        const styleId = typeof styleItem === 'string' ? styleItem : (styleItem as { id: string, quantity?: number })?.id;
+                        const quantity = typeof styleItem === 'object' && styleItem && 'quantity' in styleItem ? (styleItem as { quantity: number }).quantity : 1;
                         const styleObj = service.styles.find(s => s.id === styleId);
                         if (styleObj) {
                             const styleName = styleObj.name.toLowerCase();
-                            if (styleName.includes('обычная')) counts['1ОБ']++;
-                            else if (styleName.includes('световая') && !styleName.includes('двойная')) counts['1СВ']++;
-                            else if (styleName.includes('двойная') && !styleName.includes('световая')) counts['2ОБ']++;
-                            else if (styleName.includes('двойная') && styleName.includes('световая')) counts['2СВ']++;
+                            if (styleName.includes('обычная')) {
+                                counts['1об'] += quantity;
+                                amounts['1об'] += styleObj.price * quantity;
+                            } else if (styleName.includes('световая') && !styleName.includes('двойные')) {
+                                counts['1св'] += quantity;
+                                amounts['1св'] += styleObj.price * quantity;
+                            } else if (styleName.includes('двойные') && !styleName.includes('световые')) {
+                                counts['2об'] += quantity;
+                                amounts['2об'] += styleObj.price * quantity;
+                            } else if (styleName.includes('двойные') && styleName.includes('световые')) {
+                                counts['2св'] += quantity;
+                                amounts['2св'] += styleObj.price * quantity;
+                            }
                         }
                     });
 
-                    // Опции
-                    (participant.selectedOptions || []).forEach(option => {
-                        const optionId = typeof option === 'string' ? option : (option as { id: string })?.id;
+                    // Опции - учитываем количество и цену для каждого элемента
+                    (participant.selectedOptions || []).forEach(optionItem => {
+                        if (!optionItem) return;
+                        const optionId = typeof optionItem === 'string' ? optionItem : (optionItem as { id: string, quantity?: number })?.id;
+                        const quantity = typeof optionItem === 'object' && optionItem && 'quantity' in optionItem ? (optionItem as { quantity: number }).quantity : 1;
                         const optionObj = service.options.find(o => o.id === optionId);
                         if (optionObj) {
                             const optionName = optionObj.name.toLowerCase();
-                            if (optionName.includes('коробка')) counts['Кор']++;
-                            else if (optionName.includes('лакировка') && !optionName.includes('блестк')) counts['Л.ОБ']++;
-                            else if (optionName.includes('лакировка') && optionName.includes('блестк')) counts['Л.БЛ']++;
-                            else if (optionName.includes('надпись') && !optionName.includes('световая')) counts['Н.ОБ']++;
-                            else if (optionName.includes('надпись') && optionName.includes('световая')) counts['Н.СВ']++;
-                            else if (optionName.includes('наклейка') && !optionName.includes('объемная')) counts['Нак.О']++;
-                            else if (optionName.includes('наклейка') && optionName.includes('объемная')) counts['Нак.ОБ']++;
+                            if (optionName.includes('лакировка') && !optionName.includes('блестк')) {
+                                counts['Л.об'] += quantity;
+                                amounts['Л.об'] += optionObj.price * quantity;
+                            } else if (optionName.includes('лакировка') && optionName.includes('блестк')) {
+                                counts['Л.бл'] += quantity;
+                                amounts['Л.бл'] += optionObj.price * quantity;
+                            } else if (optionName.includes('надпись') && !optionName.includes('световая')) {
+                                counts['Н.об'] += quantity;
+                                amounts['Н.об'] += optionObj.price * quantity;
+                            } else if (optionName.includes('надпись') && optionName.includes('световая')) {
+                                counts['Н.св'] += quantity;
+                                amounts['Н.св'] += optionObj.price * quantity;
+                            } else if (optionName.includes('наклейка') && !optionName.includes('объемная')) {
+                                counts['Нак.О'] += quantity;
+                                amounts['Нак.О'] += optionObj.price * quantity;
+                            } else if (optionName.includes('наклейка') && optionName.includes('объемная')) {
+                                counts['Нак.ОБ'] += quantity;
+                                amounts['Нак.ОБ'] += optionObj.price * quantity;
+                            } else if (optionName.includes('коробочк')) {
+                                counts['Кор'] += quantity;
+                                amounts['Кор'] += optionObj.price * quantity;
+                            }
                         }
                     });
                 });
@@ -916,30 +939,53 @@ export default function MasterClassesTab({
                 // Считаем сумму за класс/группу
                 const classSum = (masterClass.participants || []).reduce((sum, p) => sum + p.totalAmount, 0);
 
-                // Создаем строку данных
+                // Создаем строку данных только с количеством в новом порядке
                 const row = [
                     masterClass.notes || '', // Прим
+                    masterClass.time || '', // время
                     masterClass.classGroup || '', // Кл
-                    counts['1ОБ'], // 1ОБ
-                    counts['1СВ'], // 1СВ
-                    counts['2ОБ'], // 2ОБ
-                    counts['2СВ'], // 2СВ
-                    counts['Кор'], // Кор
-                    counts['Л.ОБ'], // Л.ОБ
-                    counts['Л.БЛ'], // Л.БЛ
-                    counts['Н.ОБ'], // Н.ОБ
-                    counts['Н.СВ'], // Н.СВ
-                    counts['Нак.О'], // Нак.О
-                    counts['Нак.ОБ'], // Нак.ОБ
+                    counts['2об'] > 0 ? counts['2об'].toString() : '', // 2об
+                    counts['2св'] > 0 ? counts['2св'].toString() : '', // 2св
+                    counts['1об'] > 0 ? counts['1об'].toString() : '', // 1об
+                    counts['1св'] > 0 ? counts['1св'].toString() : '', // 1св
+                    counts['Кор'] > 0 ? counts['Кор'].toString() : '', // Кор
+                    counts['Л.об'] > 0 ? counts['Л.об'].toString() : '', // Л.об
+                    counts['Л.бл'] > 0 ? counts['Л.бл'].toString() : '', // Л.бл
+                    counts['Н.об'] > 0 ? counts['Н.об'].toString() : '', // Н.об
+                    counts['Н.св'] > 0 ? counts['Н.св'].toString() : '', // Н.св
+                    counts['Нак.О'] > 0 ? counts['Нак.О'].toString() : '', // Нак.О
+                    counts['Нак.ОБ'] > 0 ? counts['Нак.ОБ'].toString() : '', // Нак.ОБ
                     classSum // Сумма
                 ];
 
                 classData.push(row);
 
-                // Добавляем к итогам (кроме первых двух столбцов)
-                for (let i = 2; i < 14; i++) {
-                    totalRow[i] += row[i] as number;
-                }
+                // Добавляем к итогам
+                totalCounts['1об'] += counts['1об'];
+                totalCounts['1св'] += counts['1св'];
+                totalCounts['2об'] += counts['2об'];
+                totalCounts['2св'] += counts['2св'];
+                totalCounts['Кор'] += counts['Кор'];
+                totalCounts['Л.об'] += counts['Л.об'];
+                totalCounts['Л.бл'] += counts['Л.бл'];
+                totalCounts['Н.об'] += counts['Н.об'];
+                totalCounts['Н.св'] += counts['Н.св'];
+                totalCounts['Нак.О'] += counts['Нак.О'];
+                totalCounts['Нак.ОБ'] += counts['Нак.ОБ'];
+
+                totalAmounts['1об'] += amounts['1об'];
+                totalAmounts['1св'] += amounts['1св'];
+                totalAmounts['2об'] += amounts['2об'];
+                totalAmounts['2св'] += amounts['2св'];
+                totalAmounts['Кор'] += amounts['Кор'];
+                totalAmounts['Л.об'] += amounts['Л.об'];
+                totalAmounts['Л.бл'] += amounts['Л.бл'];
+                totalAmounts['Н.об'] += amounts['Н.об'];
+                totalAmounts['Н.св'] += amounts['Н.св'];
+                totalAmounts['Нак.О'] += amounts['Нак.О'];
+                totalAmounts['Нак.ОБ'] += amounts['Нак.ОБ'];
+
+                totalSum += classSum;
             });
 
             // Добавляем данные
@@ -947,7 +993,7 @@ export default function MasterClassesTab({
 
             // Выравниваем данные по центру
             for (let row = currentRow; row < currentRow + classData.length; row++) {
-                for (let col = 0; col < 14; col++) {
+                for (let col = 0; col < 15; col++) {
                     const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
                     if (!worksheet[cellRef]) worksheet[cellRef] = {};
                     worksheet[cellRef].s = {
@@ -958,11 +1004,29 @@ export default function MasterClassesTab({
 
             currentRow += classData.length;
 
-            // Добавляем строку итогов
-            XLSX.utils.sheet_add_aoa(worksheet, [['Всего', '', ...totalRow.slice(2)]], { origin: { r: currentRow, c: 0 } });
+            // Добавляем строку итогов только с количеством в новом порядке
+            const totalRow = [
+                'Всего',
+                '',
+                '',
+                totalCounts['2об'] > 0 ? totalCounts['2об'].toString() : '',
+                totalCounts['2св'] > 0 ? totalCounts['2св'].toString() : '',
+                totalCounts['1об'] > 0 ? totalCounts['1об'].toString() : '',
+                totalCounts['1св'] > 0 ? totalCounts['1св'].toString() : '',
+                totalCounts['Кор'] > 0 ? totalCounts['Кор'].toString() : '',
+                totalCounts['Л.об'] > 0 ? totalCounts['Л.об'].toString() : '',
+                totalCounts['Л.бл'] > 0 ? totalCounts['Л.бл'].toString() : '',
+                totalCounts['Н.об'] > 0 ? totalCounts['Н.об'].toString() : '',
+                totalCounts['Н.св'] > 0 ? totalCounts['Н.св'].toString() : '',
+                totalCounts['Нак.О'] > 0 ? totalCounts['Нак.О'].toString() : '',
+                totalCounts['Нак.ОБ'] > 0 ? totalCounts['Нак.ОБ'].toString() : '',
+                totalSum
+            ];
+
+            XLSX.utils.sheet_add_aoa(worksheet, [totalRow], { origin: { r: currentRow, c: 0 } });
 
             // Делаем строку итогов жирной и выравниваем по центру
-            for (let i = 0; i < 14; i++) {
+            for (let i = 0; i < 15; i++) {
                 const cellRef = XLSX.utils.encode_cell({ r: currentRow, c: i });
                 if (!worksheet[cellRef]) worksheet[cellRef] = {};
                 worksheet[cellRef].s = {
@@ -971,31 +1035,55 @@ export default function MasterClassesTab({
                 };
             }
 
-            // Настраиваем ширину столбцов
+            // Настраиваем ширину столбцов - автоширина для колонок 4-15
             worksheet['!cols'] = [
                 { wch: 15 }, // Прим
-                { wch: 8 },  // Кл
-                { wch: 8 },  // 1ОБ
-                { wch: 8 },  // 1СВ
-                { wch: 8 },  // 2ОБ
-                { wch: 8 },  // 2СВ
-                { wch: 8 },  // Кор
-                { wch: 8 },  // Л.ОБ
-                { wch: 8 },  // Л.БЛ
-                { wch: 8 },  // Н.ОБ
-                { wch: 8 },  // Н.СВ
-                { wch: 8 },  // Нак.О
-                { wch: 8 },  // Нак.ОБ
+                { wch: 8 },  // время
+                { wch: 6 },  // Кл
+                { wch: 6 },  // 2об - автоширина по минимуму
+                { wch: 6 },  // 2св - автоширина по минимуму
+                { wch: 6 },  // 1об - автоширина по минимуму
+                { wch: 6 },  // 1св - автоширина по минимуму
+                { wch: 6 },  // Кор - автоширина по минимуму
+                { wch: 6 },  // Л.об - автоширина по минимуму
+                { wch: 6 },  // Л.бл - автоширина по минимуму
+                { wch: 6 },  // Н.об - автоширина по минимуму
+                { wch: 6 },  // Н.св - автоширина по минимуму
+                { wch: 6 },  // Нак.О - автоширина по минимуму
+                { wch: 6 },  // Нак.ОБ - автоширина по минимуму
                 { wch: 12 }  // Сумма
             ];
+
+            // Добавляем границы для всех ячеек таблицы
+            const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+            for (let row = range.s.r; row <= range.e.r; row++) {
+                for (let col = range.s.c; col <= range.e.c; col++) {
+                    const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+                    if (!worksheet[cellRef]) worksheet[cellRef] = {};
+                    if (!worksheet[cellRef].s) worksheet[cellRef].s = {};
+                    worksheet[cellRef].s.border = {
+                        top: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        left: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+                }
+            }
 
             // Добавляем лист в книгу
             const sheetName = school.name.length > 31 ? school.name.substring(0, 31) : school.name;
             XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
         });
 
-        // Генерируем имя файла
-        const fileName = `Мастер-классы_${new Date().toLocaleDateString('ru-RU')}.xlsx`;
+        // Генерируем имя файла: название школы + дата из первого мастер-класса
+        const firstSchoolId = Object.keys(classesBySchool)[0];
+        const firstSchool = schools.find(s => s.id === firstSchoolId);
+        const firstSchoolClasses = classesBySchool[firstSchoolId];
+        const firstMasterClass = firstSchoolClasses?.[0];
+
+        const schoolName = firstSchool?.name || 'Неизвестная школа';
+        const masterClassDate = firstMasterClass?.date ? new Date(firstMasterClass.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+        const fileName = `${schoolName}_${masterClassDate}.xlsx`;
 
         // Скачиваем файл
         XLSX.writeFile(workbook, fileName);
@@ -1009,9 +1097,9 @@ export default function MasterClassesTab({
 
     return (
         <div className="space-y-6">
-            {/* Кнопка создания */}
-            <div className="flex justify-between items-center">
-                <div className="flex gap-2">
+            {/* Кнопка создания и управление оплатой */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
                     <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                         <DialogTrigger asChild>
                             <Button className="flex items-center gap-2">
@@ -1036,7 +1124,7 @@ export default function MasterClassesTab({
                                             type="date"
                                             value={formData.date}
                                             onChange={(e) => {
-                                                console.log(`Форма: изменение даты с ${formData.date} на ${e.target.value}`);
+
                                                 setFormData(prev => ({ ...prev, date: e.target.value }));
                                             }}
                                             required
@@ -1216,6 +1304,22 @@ export default function MasterClassesTab({
                         </DialogContent>
                     </Dialog>
 
+                    <Button
+                        variant={paymentEnabled ? 'outline' : 'default'}
+                        className="flex items-center gap-2"
+                        onClick={handleTogglePayments}
+                        disabled={paymentSettingsLoading || paymentSettingsUpdating}
+                    >
+                        {paymentSettingsUpdating || paymentSettingsLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <CreditCard className="h-4 w-4" />
+                        )}
+                        {paymentEnabled ? 'Выключить оплату' : 'Подключить оплату'}
+                    </Button>
+                    <Badge variant={paymentEnabled ? 'default' : 'secondary'} className="hidden sm:inline-flex">
+                        {paymentEnabled ? 'Оплата включена' : 'Оплата отключена'}
+                    </Badge>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1229,7 +1333,7 @@ export default function MasterClassesTab({
                         Обновить
                     </Button>
                     <div className="text-sm text-muted-foreground">
-                        Найдено: {(getGroupedMasterClasses() || []).length} школ
+                        Найдено: {groupedMasterClasses.length} школ
                     </div>
                 </div>
             </div>
@@ -1288,7 +1392,7 @@ export default function MasterClassesTab({
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">Все классы</SelectItem>
-                                        {(getFilteredMasterClasses() || [])
+                                        {(filteredMasterClasses || [])
                                             .map(mc => mc.classGroup)
                                             .filter((value, index, self) => self.indexOf(value) === index)
                                             .map(className => (
@@ -1346,20 +1450,12 @@ export default function MasterClassesTab({
                                 <h4 className="font-semibold text-lg">Статистика по вариантам ручек и дополнительным услугам</h4>
                             </div>
                             {(() => {
-                                console.log('Компонент статистики: начало рендеринга');
+
                                 const { stylesStats, optionsStats } = getStylesAndOptionsStats();
                                 const totalStyles = Object.values(stylesStats).reduce((sum, count) => sum + count, 0);
                                 const totalOptions = Object.values(optionsStats).reduce((sum, count) => sum + count, 0);
 
                                 // Отладочная информация для компонента
-                                console.log('Статистика в компоненте:', {
-                                    stylesStats,
-                                    optionsStats,
-                                    totalStyles,
-                                    totalOptions,
-                                    masterClassesCount: initialMasterClasses.length,
-                                    filteredCount: (getFilteredMasterClasses() || []).length
-                                });
 
                                 return (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1478,7 +1574,7 @@ export default function MasterClassesTab({
                                 }
                             }}
                             onMonthChange={(month) => {
-                                console.log(`Calendar: месяц изменен на ${month.toLocaleDateString()}`);
+
                             }}
                         />
                     </CardContent>
@@ -1520,7 +1616,14 @@ export default function MasterClassesTab({
                             <div className="text-2xl font-bold text-blue-600">
                                 {getFinancialStats().paidAmount.toLocaleString()} ₽
                             </div>
-                            <div className="text-sm text-blue-700 font-medium">Оплатили</div>
+                            <div className="text-sm text-blue-700 font-medium space-y-1">
+                                <div>Оплатили</div>
+                                {getFinancialStats().cashAmount > 0 && (
+                                    <div className="text-xs text-blue-600">
+                                        (в т.ч. наличными: {getFinancialStats().cashAmount.toLocaleString()} ₽)
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="text-center p-4 bg-orange-50 rounded-lg border">
                             <div className="text-2xl font-bold text-orange-600">
@@ -1540,9 +1643,9 @@ export default function MasterClassesTab({
                             <CardTitle>Список мастер-классов</CardTitle>
                             <CardDescription>
                                 Все запланированные мастер-классы, сгруппированные по школам
-                                {(getGroupedMasterClasses() || []).length > 0 && (
+                                {groupedMasterClasses.length > 0 && (
                                     <span className="ml-2 text-blue-600 font-medium">
-                                        ({(getGroupedMasterClasses() || []).length} мастер-классов)
+                                        ({groupedMasterClasses.length} мастер-классов)
                                     </span>
                                 )}
                             </CardDescription>
@@ -1568,8 +1671,34 @@ export default function MasterClassesTab({
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-4">
-                        {(getGroupedMasterClasses() || []).map((group) => {
+                    {isSmallScreen ? (
+                        <ResponsiveList
+                            items={filteredMasterClasses}
+                            keyExtractor={(item) => item.id}
+                            renderItem={(masterClass) => (
+                                <MasterClassCard
+                                    masterClass={masterClass}
+                                    onOpenDetails={onViewMasterClass}
+                                    onDelete={(target) => onDeleteMasterClass(target.id)}
+                                />
+                            )}
+                            emptyState={
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                    <p className="text-lg font-medium mb-2">
+                                        {hidePastClasses ? 'Нет будущих мастер-классов' : 'Нет мастер-классов'}
+                                    </p>
+                                    <p className="text-sm">
+                                        {hidePastClasses
+                                            ? 'Все мастер-классы уже прошли. Нажмите "Показать прошедшие", чтобы увидеть их.'
+                                            : 'Создайте первый мастер-класс, нажав кнопку "Создать мастер-класс"'}
+                                    </p>
+                                </div>
+                            }
+                        />
+                    ) : (
+                        <div className="space-y-4">
+                            {groupedMasterClasses.map((group) => {
                             const school = schools.find(s => s.id === group.schoolId);
                             const schoolName = school?.name || 'Неизвестная школа';
                             const groupKey = `${group.schoolId}_${group.date}`;
@@ -1603,6 +1732,12 @@ export default function MasterClassesTab({
                                                 <Badge variant="outline" className="bg-blue-50 text-blue-700">
                                                     {group.masterClasses.length} класса(ов)
                                                 </Badge>
+                                                <div className="flex items-center gap-2 ml-auto">
+                                                    <Users className="h-4 w-4 text-muted-foreground" />
+                                                    <span className="font-medium text-gray-700">
+                                                        {group.masterClasses.reduce((sum, mc) => sum + (mc.statistics?.totalParticipants || 0), 0)} участников
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <Button
@@ -1657,7 +1792,11 @@ export default function MasterClassesTab({
                                         {isExpanded && (
                                             <div className="mt-4 space-y-3 pl-4 border-l-2 border-gray-200">
                                                 {group.masterClasses.map(masterClass => (
-                                                    <Card key={masterClass.id} className="cursor-pointer hover:shadow-md transition-shadow bg-gray-50">
+                                                    <Card 
+                                                        key={masterClass.id} 
+                                                        className="cursor-pointer hover:shadow-md transition-shadow bg-gray-50"
+                                                        onClick={() => onViewMasterClass(masterClass)}
+                                                    >
                                                         <CardContent className="p-4">
                                                             <div className="flex items-center justify-between">
                                                                 <div className="flex items-center gap-4">
@@ -1708,15 +1847,13 @@ export default function MasterClassesTab({
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
                                                                         <DollarSign className="h-4 w-4 text-muted-foreground" />
-                                                                        <span>{masterClass.statistics.totalAmount} ₽</span>
+                                                                        <span className="font-medium">{masterClass.statistics.totalAmount} ₽</span>
+                                                                        {masterClass.statistics.unpaidAmount > 0 && (
+                                                                            <span className="text-sm text-red-600 font-medium">
+                                                                                (не оплачено: {masterClass.statistics.unpaidAmount} ₽)
+                                                                            </span>
+                                                                        )}
                                                                     </div>
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        size="sm"
-                                                                        onClick={() => onViewMasterClass(masterClass)}
-                                                                    >
-                                                                        Подробнее
-                                                                    </Button>
                                                                     <AlertDialog>
                                                                         <AlertDialogTrigger asChild>
                                                                             <Button
@@ -1759,21 +1896,21 @@ export default function MasterClassesTab({
                         })}
 
                         {/* Сообщение когда нет мастер-классов */}
-                        {(getGroupedMasterClasses() || []).length === 0 && (
-                            <div className="text-center py-8 text-muted-foreground">
-                                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                <p className="text-lg font-medium mb-2">
-                                    {hidePastClasses ? 'Нет будущих мастер-классов' : 'Нет мастер-классов'}
-                                </p>
-                                <p className="text-sm">
-                                    {hidePastClasses
-                                        ? 'Все мастер-классы уже прошли. Нажмите "Показать прошедшие" чтобы увидеть их.'
-                                        : 'Создайте первый мастер-класс, нажав кнопку "Создать мастер-класс"'
-                                    }
-                                </p>
-                            </div>
-                        )}
-                    </div>
+                            {groupedMasterClasses.length === 0 && (
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                    <p className="text-lg font-medium mb-2">
+                                        {hidePastClasses ? 'Нет будущих мастер-классов' : 'Нет мастер-классов'}
+                                    </p>
+                                    <p className="text-sm">
+                                        {hidePastClasses
+                                            ? 'Все мастер-классы уже прошли. Нажмите "Показать прошедшие" чтобы увидеть их.'
+                                            : 'Создайте первый мастер-класс, нажав кнопку "Создать мастер-класс"'}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

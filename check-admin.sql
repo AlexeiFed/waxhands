@@ -1,1 +1,5 @@
-SELECT id, email, role, first_name, last_name FROM users WHERE email = 'admin@waxhands.ru';
+-- Проверка пользователя админа
+SELECT id, username, role, name, surname, phone 
+FROM users 
+WHERE role = 'admin' 
+LIMIT 3;

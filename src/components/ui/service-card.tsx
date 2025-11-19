@@ -11,6 +11,7 @@ import { Badge } from './badge';
 import { Button } from './button';
 import { Service, ServiceStyle, ServiceOption } from '../../types';
 import { Edit, Plus, Eye, Trash2 } from 'lucide-react';
+import { AvatarDisplay } from './avatar-display';
 
 interface ServiceCardProps {
     service: Service;
@@ -39,7 +40,6 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     onReorderOptions,
     onDelete
 }) => {
-    console.log('ServiceCard: отображение услуги:', service);
 
     return (
         <Card className="h-full flex flex-col">
@@ -109,18 +109,27 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                         ) : (
                             service.styles.map((style, index) => (
                                 <div key={style.id} className="flex items-center gap-1">
-                                    <Badge
-                                        variant="secondary"
-                                        className="cursor-pointer hover:bg-secondary/80"
-                                        onClick={() => onViewStyle?.(style, service.id)}
-                                    >
-                                        {style.name}
-                                        {style.price > 0 && (
-                                            <span className="ml-1 text-xs">
-                                                +{style.price}₽
-                                            </span>
-                                        )}
-                                    </Badge>
+                                    <div className="flex items-center gap-2">
+                                        <AvatarDisplay
+                                            images={style.images}
+                                            type="style"
+                                            alt={style.name}
+                                            size="sm"
+                                            onClick={() => onViewStyle?.(style, service.id)}
+                                        />
+                                        <Badge
+                                            variant="secondary"
+                                            className="cursor-pointer hover:bg-secondary/80"
+                                            onClick={() => onViewStyle?.(style, service.id)}
+                                        >
+                                            {style.name}
+                                            {style.price > 0 && (
+                                                <span className="ml-1 text-xs">
+                                                    +{style.price}₽
+                                                </span>
+                                            )}
+                                        </Badge>
+                                    </div>
                                     {/* Кнопки перестановки */}
                                     <div className="flex items-center gap-1">
                                         <Button
@@ -263,18 +272,27 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                         ) : (
                             service.options.map((option, index) => (
                                 <div key={option.id} className="flex items-center gap-1">
-                                    <Badge
-                                        variant="outline"
-                                        className="cursor-pointer hover:bg-accent"
-                                        onClick={() => onViewOption?.(option, service.id)}
-                                    >
-                                        {option.name}
-                                        {option.price > 0 && (
-                                            <span className="ml-1 text-xs">
-                                                +{option.price}₽
-                                            </span>
-                                        )}
-                                    </Badge>
+                                    <div className="flex items-center gap-2">
+                                        <AvatarDisplay
+                                            images={option.images}
+                                            type="option"
+                                            alt={option.name}
+                                            size="sm"
+                                            onClick={() => onViewOption?.(option, service.id)}
+                                        />
+                                        <Badge
+                                            variant="outline"
+                                            className="cursor-pointer hover:bg-accent"
+                                            onClick={() => onViewOption?.(option, service.id)}
+                                        >
+                                            {option.name}
+                                            {option.price > 0 && (
+                                                <span className="ml-1 text-xs">
+                                                    +{option.price}₽
+                                                </span>
+                                            )}
+                                        </Badge>
+                                    </div>
                                     <div className="flex items-center gap-1">
                                         <Button
                                             variant="ghost"

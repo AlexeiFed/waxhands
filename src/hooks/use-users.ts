@@ -14,9 +14,11 @@ interface UseUsersReturn {
         role?: string;
     }) => Promise<void>;
     refreshUsers: () => Promise<void>;
-    createUser: (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    createUser: (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'> & { password?: string }) => Promise<void>;
+    createChild: (childData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
     updateUser: (id: string, userData: Partial<User>) => Promise<void>;
     deleteUser: (id: string) => Promise<void>;
+    deleteChild: (id: string) => Promise<void>;
     getUserById: (id: string) => Promise<User>;
     getChildrenByParentId: (parentId: string) => Promise<User[]>;
 }
@@ -32,15 +34,13 @@ export const useUsers = (): UseUsersReturn => {
         try {
             setLoading(true);
             setError(null);
-            console.log('🔍 fetchUsers called with params:', params);
 
             const response = await api.users.getUsers(params);
-            console.log('📡 API response:', response);
 
             setUsers(response.users);
             setTotal(response.total);
             setLastFetch(new Date());
-            console.log('✅ Users set to state:', response.users.length);
+
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch users');
             console.error('❌ Error fetching users:', err);
@@ -57,17 +57,17 @@ export const useUsers = (): UseUsersReturn => {
 
     // Функция для принудительного обновления данных
     const refreshUsers = useCallback(async () => {
-        console.log('🔄 Force refreshing users...');
+
         await fetchUsers();
     }, [fetchUsers]);
 
-    const createUser = useCallback(async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const createUser = useCallback(async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'> & { password?: string }) => {
         try {
             setLoading(true);
             setError(null);
             await api.users.createUser(userData);
-            // Обновляем список пользователей после создания
-            await fetchUsers();
+            // НЕ обновляем список всех пользователей - это требует админских прав
+            // await fetchUsers();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to create user');
             console.error('Error creating user:', err);
@@ -75,15 +75,31 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    }, [fetchUsers]);
+    }, []);
+
+    const createChild = useCallback(async (childData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => {
+        try {
+            setLoading(true);
+            setError(null);
+            await api.users.createChild(childData);
+            // НЕ обновляем список всех пользователей - это требует админских прав
+            // await fetchUsers();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create child');
+            console.error('Error creating child:', err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     const updateUser = useCallback(async (id: string, userData: Partial<User>) => {
         try {
             setLoading(true);
             setError(null);
             await api.users.updateUser(id, userData);
-            // Обновляем список пользователей после обновления
-            await fetchUsers();
+            // НЕ обновляем список всех пользователей - это требует админских прав
+            // await fetchUsers();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to update user');
             console.error('Error updating user:', err);
@@ -91,15 +107,15 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    }, [fetchUsers]);
+    }, []);
 
     const deleteUser = useCallback(async (id: string) => {
         try {
             setLoading(true);
             setError(null);
             await api.users.deleteUser(id);
-            // Обновляем список пользователей после удаления
-            await fetchUsers();
+            // НЕ обновляем список всех пользователей - это требует админских прав
+            // await fetchUsers();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to delete user');
             console.error('Error deleting user:', err);
@@ -107,7 +123,23 @@ export const useUsers = (): UseUsersReturn => {
         } finally {
             setLoading(false);
         }
-    }, [fetchUsers]);
+    }, []);
+
+    const deleteChild = useCallback(async (id: string) => {
+        try {
+            setLoading(true);
+            setError(null);
+            await api.users.deleteChild(id);
+            // НЕ обновляем список всех пользователей - это требует админских прав
+            // await fetchUsers();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to delete child');
+            console.error('Error deleting child:', err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     const getChildrenByParentId = useCallback(async (parentId: string): Promise<User[]> => {
         try {
@@ -131,7 +163,6 @@ export const useUsers = (): UseUsersReturn => {
         }
     }, []);
 
-
     return {
         users,
         loading,
@@ -141,8 +172,10 @@ export const useUsers = (): UseUsersReturn => {
         fetchUsers,
         refreshUsers,
         createUser,
+        createChild,
         updateUser,
         deleteUser,
+        deleteChild,
         getUserById,
         getChildrenByParentId,
     };

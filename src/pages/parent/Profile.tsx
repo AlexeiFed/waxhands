@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,8 @@ import {
     School as SchoolIcon,
     Users,
     Edit,
-    Plus
+    Plus,
+    X
 } from 'lucide-react';
 import { ParentProfileEditModal } from '@/components/ui/parent-profile-edit-modal';
 import { ParentHeader } from '@/components/ui/parent-header';
@@ -28,7 +29,7 @@ import { User as UserType } from '@/types';
 
 const ParentProfile = () => {
     const { user, logout } = useAuth();
-    const { getChildrenByParentId } = useUsers();
+    const { getChildrenByParentId, deleteUser, deleteChild } = useUsers();
     const { schools } = useSchools();
     const { toast } = useToast();
 
@@ -37,7 +38,7 @@ const ParentProfile = () => {
     const [isLoadingChildren, setIsLoadingChildren] = useState(false);
 
     // Загружаем детей родителя
-    const loadChildren = async () => {
+    const loadChildren = useCallback(async () => {
         if (!user?.id) return;
 
         try {
@@ -54,12 +55,43 @@ const ParentProfile = () => {
         } finally {
             setIsLoadingChildren(false);
         }
-    };
+    }, [user?.id, getChildrenByParentId, toast]);
 
     // Загружаем детей при монтировании компонента
-    useMemo(() => {
+    useEffect(() => {
         loadChildren();
-    }, [user?.id]);
+    }, [loadChildren]);
+
+    // Функция удаления ребенка
+    const handleDeleteChild = async (childId: string, childName: string) => {
+        if (!user?.id) return;
+
+        // Подтверждение удаления
+        if (!confirm(`Вы уверены, что хотите удалить ребенка "${childName}"? Это действие нельзя отменить.`)) {
+            return;
+        }
+
+        try {
+            await deleteChild(childId);
+
+            // Обновляем список детей
+            const updatedChildren = await getChildrenByParentId(user.id);
+            setChildren(updatedChildren);
+
+            toast({
+                title: "Ребенок удален",
+                description: `Профиль "${childName}" был успешно удален`,
+                variant: "default",
+            });
+        } catch (error) {
+            console.error('Error deleting child:', error);
+            toast({
+                title: "Ошибка",
+                description: "Не удалось удалить ребенка. Попробуйте еще раз.",
+                variant: "destructive",
+            });
+        }
+    };
 
     // Функция для получения названия школы
     const getSchoolName = (schoolId?: string) => {
@@ -196,9 +228,19 @@ const ParentProfile = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <Badge variant="secondary" className="capitalize text-xs sm:text-sm w-fit">
-                                            {child.role}
-                                        </Badge>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="secondary" className="capitalize text-xs sm:text-sm">
+                                                {child.role}
+                                            </Badge>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleDeleteChild(child.id, `${child.name} ${child.surname}`)}
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-100 p-1 h-8 w-8"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

@@ -39,24 +39,21 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 
-        console.log('PWA Install Button clicked:', { isIOS, isSafari, isInstallable });
-
         // Для iOS Safari показываем инструкции
         if (isIOS || isSafari) {
-            console.log('Showing modal for iOS/Safari');
+
             setShowModal(true);
             return;
         }
 
         // Для других браузеров пытаемся использовать нативный промпт
-        console.log('Using native prompt for installable PWA');
+
         try {
             const success = await promptInstall();
             if (success) {
-                console.log('PWA установлено успешно через нативный промпт');
+
                 return;
             } else {
-                console.log('User dismissed native prompt or no deferred prompt, showing modal');
 
                 // Показываем модальное окно с инструкциями вместо принудительного обновления
                 setShowModal(true);

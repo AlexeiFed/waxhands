@@ -1,8 +1,9 @@
 /**
  * @file: yandex-payment-button.tsx
- * @description: Компонент для оплаты мастер-классов через Яндекс.Формы и ЮMoney
- * @dependencies: Button, useToast, useAuth
+ * @description: Упрощенная кнопка оплаты через Robokassa (быстрый доступ после записи)
+ * @dependencies: Button, useToast, useAuth, usePaymentSettings
  * @created: 2024-12-19
+ * @updated: 2025-11-09
  */
 
 import React, { useState } from 'react';
@@ -10,6 +11,7 @@ import { Button } from './button';
 import { CreditCard, Loader2, CheckCircle, XCircle, ExternalLink, Users } from 'lucide-react';
 import { useToast } from './use-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePaymentSettings } from '@/hooks/use-payment-settings';
 
 interface Child {
     id: string;
@@ -17,6 +19,16 @@ interface Child {
     age?: number;
     selectedServices: string[];
     totalAmount: number;
+}
+
+interface PaymentResponse {
+    success: boolean;
+    data?: {
+        paymentUrl?: string;
+        invoiceId?: string;
+        formData?: Record<string, string | number | undefined>;
+    };
+    error?: string;
 }
 
 interface YandexPaymentButtonProps {
@@ -41,14 +53,175 @@ interface PaymentStatus {
     message?: string;
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || 'https://waxhands.ru/api';
+
+const openRobokassaWindow = (url: string) => {
+    if (window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as { standalone?: boolean }).standalone === true) {
+        window.location.href = url;
+        return;
+    }
+
+    const paymentWindow = window.open(url, 'robokassa_payment', 'width=800,height=600,scrollbars=yes,resizable=yes');
+
+    if (!paymentWindow) {
+        window.location.href = url;
+        return;
+    }
+
+    const checkClosed = setInterval(() => {
+        if (paymentWindow.closed) {
+            clearInterval(checkClosed);
+            window.location.reload();
+        }
+    }, 1000);
+
+    setTimeout(() => {
+        if (!paymentWindow.closed) {
+            console.log('Окно оплаты Robokassa все еще открыто');
+        }
+    }, 30000);
+};
+
+const submitPaymentForm = (url: string, formData: NonNullable<PaymentResponse['data']>['formData']) => {
+    if (!formData) {
+        console.error('❌ Данные формы Robokassa отсутствуют');
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.target = '_blank';
+    form.style.display = 'none';
+    form.enctype = 'application/x-www-form-urlencoded';
+
+    Object.entries(formData).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = String(value);
+            form.appendChild(input);
+        }
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+};
+
+const showPaymentModal = (htmlContent: string) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    `;
+
+    const content = document.createElement('div');
+    content.style.cssText = `
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        max-width: 400px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+        position: relative;
+    `;
+
+    const closeButton = document.createElement('button');
+    closeButton.innerHTML = '×';
+    closeButton.style.cssText = `
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+        z-index: 10001;
+    `;
+    closeButton.onclick = () => {
+        document.body.removeChild(modal);
+    };
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = `
+        width: 100%;
+        height: 200px;
+        border: none;
+        border-radius: 8px;
+    `;
+    iframe.srcdoc = htmlContent;
+
+    content.appendChild(closeButton);
+    content.appendChild(iframe);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    };
+};
+
+const processHtmlResponse = (rawText: string) => {
+    let htmlText = rawText;
+
+    try {
+        const jsonData = JSON.parse(rawText);
+        if (jsonData.html || jsonData.data) {
+            htmlText = jsonData.html || jsonData.data;
+        }
+    } catch {
+        // Не JSON — используем как HTML
+    }
+
+    const iframeMatch = htmlText.match(/src="([^"]+)"/);
+    if (iframeMatch && iframeMatch[1]) {
+        openRobokassaWindow(iframeMatch[1]);
+        return;
+    }
+
+    if (htmlText.includes('document.write')) {
+        const writeMatch = htmlText.match(/document\.write\("(.*)"\)/);
+        if (writeMatch && writeMatch[1]) {
+            const decodedHtml = writeMatch[1]
+                .replace(/\\"/g, '"')
+                .replace(/\\\//g, '/')
+                .replace(/\\n/g, '')
+                .replace(/\\t/g, '');
+
+            const iframeMatch2 = decodedHtml.match(/src="([^"]+)"/);
+            if (iframeMatch2 && iframeMatch2[1]) {
+                openRobokassaWindow(iframeMatch2[1]);
+                return;
+            }
+
+            showPaymentModal(decodedHtml);
+            return;
+        }
+    }
+
+    showPaymentModal(htmlText);
+};
+
 const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
     invoiceId,
     amount,
-    description,
     children,
-    masterClassName = 'Мастер-класс',
-    eventDate,
-    eventTime,
     onPaymentSuccess,
     onPaymentError,
     className = '',
@@ -60,9 +233,24 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
     const { toast } = useToast();
     const { user } = useAuth();
     const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({ status: 'idle' });
+    const { isEnabled: globalPaymentEnabled, isLoading: paymentSettingsLoading } = usePaymentSettings();
+
+    // Блокируем кнопку только если настройки загружены И оплата выключена
+    // Во время загрузки (paymentSettingsLoading) не блокируем кнопку
+    const paymentDisabled = isPaymentDisabled || (!paymentSettingsLoading && !globalPaymentEnabled);
 
     const handlePaymentClick = async () => {
-        if (isPaymentDisabled) {
+        // Если настройки еще загружаются, показываем сообщение
+        if (paymentSettingsLoading) {
+            toast({
+                title: "Загрузка настроек",
+                description: "Пожалуйста, подождите, идет загрузка настроек оплаты...",
+                variant: "default",
+            });
+            return;
+        }
+
+        if (paymentDisabled) {
             toast({
                 title: "Оплата временно недоступна",
                 description: "Функция оплаты будет доступна в ближайшее время. Спасибо за понимание!",
@@ -83,165 +271,73 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
         setPaymentStatus({ status: 'loading' });
 
         try {
-            // Формируем детализированные данные для Яндекс.Формы
-            const formData: {
-                invoice_id: string;
-                amount: number;
-                description: string;
-                master_class_name: string;
-                event_date: string;
-                event_time: string;
-                customer_name: string;
-                customer_phone: string;
-                children_count: number;
-                children_names: string;
-                children_details: Array<{
-                    name: string;
-                    age: string;
-                    services: string;
-                    amount: number;
-                }>;
-                services_summary: string;
-                timestamp: number;
-                payment_label?: string;
-            } = {
-                // Основная информация о счете
-                invoice_id: invoiceId,
-                amount: amount,
-                description: description,
-                master_class_name: masterClassName,
-                event_date: eventDate || 'Не указана',
-                event_time: eventTime || 'Не указано',
+            const token = localStorage.getItem('authToken');
+            const directUrl = `${API_BASE}/robokassa/invoices/${invoiceId}/pay?t=${Date.now()}&nocache=${Math.random()}`;
 
-                // Информация о плательщике
-                customer_name: user.name || '',
-                customer_phone: user.phone || '',
-
-                // Информация о детях
-                children_count: children.length,
-                children_names: children.map(child => child.name).join(', '),
-                children_details: children.map(child => ({
-                    name: child.name,
-                    age: String(child.age || 'Не указан'),
-                    services: child.selectedServices.join(', '),
-                    amount: child.totalAmount
-                })),
-
-                // Детализация услуг
-                services_summary: children.map(child =>
-                    `${child.name}: ${child.selectedServices.join(', ')} - ${child.totalAmount} ₽`
-                ).join('\n'),
-
-                // Временная метка
-                timestamp: Date.now()
-            };
-
-            // Получаем payment_label для счета
-            let paymentLabel = '';
-            try {
-                console.log('🔍 Запрашиваем данные счета:', invoiceId);
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/invoices/${invoiceId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-                    }
-                });
-
-                console.log('📡 Ответ API:', response.status, response.ok);
-
-                if (response.ok) {
-                    const invoiceData = await response.json();
-                    console.log('📋 Данные счета:', invoiceData);
-
-                    if (invoiceData.success && invoiceData.data && invoiceData.data.payment_label) {
-                        paymentLabel = invoiceData.data.payment_label;
-                        console.log('🏷️ Получена метка платежа:', paymentLabel);
-                    } else {
-                        console.warn('⚠️ payment_label не найден в ответе:', {
-                            success: invoiceData.success,
-                            hasData: !!invoiceData.data,
-                            payment_label: invoiceData.data?.payment_label
-                        });
-                    }
-                } else {
-                    console.error('❌ Ошибка API:', response.status, response.statusText);
-                }
-            } catch (error) {
-                console.error('❌ Ошибка получения метки платежа:', error);
-            }
-
-            // Добавляем payment_label в formData
-            if (paymentLabel) {
-                formData.payment_label = paymentLabel;
-                console.log('✅ payment_label добавлен в formData:', paymentLabel);
-            } else {
-                console.warn('⚠️ payment_label не добавлен - пустой');
-            }
-
-            // Создаем URL для Яндекс.Формы с параметрами
-            const yandexFormUrl = new URL(import.meta.env.VITE_YANDEX_FORM_URL || 'https://forms.yandex.ru/your-form-id');
-
-            console.log('🔗 Базовый URL формы:', yandexFormUrl.toString());
-            console.log('📋 formData для передачи:', formData);
-
-            // Добавляем параметры в URL
-            Object.entries(formData).forEach(([key, value]) => {
-                if (typeof value === 'object') {
-                    // Для объектов (например, children_details) передаем как JSON строку
-                    yandexFormUrl.searchParams.append(key, JSON.stringify(value));
-                    console.log(`📤 Добавлен параметр ${key}:`, JSON.stringify(value));
-                } else {
-                    yandexFormUrl.searchParams.append(key, value.toString());
-                    console.log(`📤 Добавлен параметр ${key}:`, value.toString());
-                }
+            const response = await fetch(directUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                },
+                cache: 'no-store'
             });
 
-            console.log('🔗 Финальный URL с параметрами:', yandexFormUrl.toString());
-
-            // Добавляем параметры для ЮMoney (важно для webhook'ов)
-            yandexFormUrl.searchParams.append('yumoney_metadata', JSON.stringify({
-                invoice_id: invoiceId,
-                participant_name: children.map(child => child.name).join(', '),
-                master_class_name: masterClassName,
-                amount: amount,
-                description: description
-            }));
-
-            console.log('🔗 Открываем Яндекс.Форму с параметрами:', yandexFormUrl.toString());
-
-            // Открываем Яндекс.Форму в новом окне
-            const paymentWindow = window.open(
-                yandexFormUrl.toString(),
-                'yandex_payment',
-                'width=900,height=700,scrollbars=yes,resizable=yes'
-            );
-
-            if (!paymentWindow) {
-                throw new Error('Не удалось открыть окно оплаты. Проверьте блокировщик рекламы.');
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Ошибка сервера: ${response.status} - ${errorText}`);
             }
 
-            // Начинаем проверку статуса оплаты
-            checkPaymentStatus(invoiceId);
+            const contentType = response.headers.get('content-type') || '';
 
+            if (contentType.includes('application/json')) {
+                const result: PaymentResponse = await response.json();
+
+                if (result.success && result.data) {
+                    if (result.data.formData) {
+                        submitPaymentForm(result.data.paymentUrl || 'https://auth.robokassa.ru/Merchant/Index.aspx', result.data.formData);
+                    } else if (result.data.paymentUrl) {
+                        openRobokassaWindow(result.data.paymentUrl);
+                    } else {
+                        throw new Error('Неизвестная структура ответа от сервера');
+                    }
+                } else {
+                    throw new Error(result.error || 'Ошибка создания ссылки на оплату');
+                }
+            } else {
+                const responseText = await response.text();
+                processHtmlResponse(responseText);
+            }
+
+            checkPaymentStatus(invoiceId);
         } catch (error) {
-            console.error('Ошибка открытия формы оплаты:', error);
+            const message = error instanceof Error ? error.message : 'Не удалось открыть форму оплаты';
+            console.error('Ошибка открытия Robokassa:', error);
             setPaymentStatus({
                 status: 'error',
-                message: 'Не удалось открыть форму оплаты'
+                message,
             });
-            onPaymentError?.('Не удалось открыть форму оплаты');
+            toast({
+                title: "Ошибка оплаты",
+                description: message,
+                variant: "destructive",
+            });
+            onPaymentError?.(message);
         }
     };
 
-    // Функция для проверки статуса оплаты
     const checkPaymentStatus = async (invoiceId: string) => {
-        const maxAttempts = 60; // 5 минут с интервалом 5 секунд
+        const maxAttempts = 60;
         let attempts = 0;
 
         const checkInterval = setInterval(async () => {
             attempts++;
 
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/invoices/${invoiceId}`, {
+                const response = await fetch(`${API_BASE}/invoices/${invoiceId}`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -264,10 +360,9 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                     }
                 }
             } catch (error) {
-                console.error('Ошибка проверки статуса:', error);
+                console.error('Ошибка проверки статуса оплаты:', error);
             }
 
-            // Прерываем проверку если превышено количество попыток
             if (attempts >= maxAttempts) {
                 clearInterval(checkInterval);
                 setPaymentStatus({ status: 'idle' });
@@ -277,11 +372,11 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                     variant: "destructive",
                 });
             }
-        }, 5000); // Проверяем каждые 5 секунд
+        }, 5000);
     };
 
     const getButtonContent = () => {
-        if (isPaymentDisabled) {
+        if (paymentDisabled) {
             return (
                 <>
                     <CreditCard className="w-4 h-4 mr-2" />
@@ -295,7 +390,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 return (
                     <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Открываем форму...
+                        Открываем Robokassa...
                     </>
                 );
             case 'success':
@@ -326,7 +421,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
         }
     };
 
-    const isButtonDisabled = disabled || isPaymentDisabled || paymentStatus.status === 'loading' || paymentStatus.status === 'success';
+    const isButtonDisabled = disabled || paymentDisabled || paymentStatus.status === 'loading' || paymentStatus.status === 'success';
 
     return (
         <div className="space-y-2">
@@ -354,10 +449,10 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 </p>
             )}
 
-            {paymentStatus.status === 'idle' && !isPaymentDisabled && (
+            {paymentStatus.status === 'idle' && !paymentDisabled && (
                 <div className="space-y-1">
                     <p className="text-xs text-gray-500">
-                        После нажатия откроется Яндекс.Форма для проверки данных, затем переход в ЮMoney
+                        После нажатия откроется защищенная форма Robokassa. Следуйте инструкции в новом окне.
                     </p>
                     {children.length > 1 && (
                         <p className="text-xs text-blue-600">
@@ -367,7 +462,7 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 </div>
             )}
 
-            {isPaymentDisabled && (
+            {paymentDisabled && (
                 <div className="space-y-1">
                     <p className="text-xs text-amber-600">
                         💳 Система оплаты находится в разработке
@@ -382,3 +477,4 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
 };
 
 export default YandexPaymentButton;
+

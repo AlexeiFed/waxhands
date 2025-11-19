@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useIsSmallScreen } from '@/hooks/use-mobile';
 import { api } from '@/lib/api';
 import { getFileUrl } from '@/lib/config';
+import { AvatarDisplay } from './avatar-display';
 import { Service, ServiceStyle, ServiceOption } from '@/types/services';
 import { WorkshopRegistration, Invoice } from '@/types';
 import YandexPaymentButton from '@/components/ui/yandex-payment-button';
@@ -43,7 +44,8 @@ import {
     Gift,
     Lock,
     CreditCard,
-    FileText
+    FileText,
+    MessageCircle
 } from 'lucide-react';
 
 // Компонент для выбора количества
@@ -120,6 +122,10 @@ interface ChildData {
     age: number;
     schoolId: string;
     classGroup: string;
+    parentId?: string; // ID родителя (для регистрации админом)
+    parentName?: string; // Имя родителя
+    parentSurname?: string; // Фамилия родителя
+    parentPhone?: string; // Телефон родителя
 }
 
 interface MultiChildWorkshopModalProps {
@@ -183,7 +189,6 @@ export default function MultiChildWorkshopModal({
     onRegistrationSuccess,
     masterClasses = []
 }: MultiChildWorkshopModalProps) {
-    console.log('🔄 MODAL: MultiChildWorkshopModal рендерится, onRegistrationSuccess:', !!onRegistrationSuccess);
 
     const { user } = useAuth();
     const { services } = useServices();
@@ -219,12 +224,36 @@ export default function MultiChildWorkshopModal({
     // Флаг для отмены отправки
     const cancelRef = useRef(false);
 
+    // Сброс состояния при закрытии окна
+    useEffect(() => {
+        if (!isOpen) {
+            // Сбрасываем состояние только если окно закрыто
+            setShowPaymentSection(false);
+            setCreatedInvoices([]);
+            setIsSuccess(false);
+        }
+    }, [isOpen]);
+
     // Определяем режим модального окна
     const isViewMode = workshop?.participationStatus && workshop.participationStatus !== 'none';
 
     // Инициализация регистраций для каждого ребенка
     useEffect(() => {
         if (children && children.length > 0) {
+            // Проверяем, есть ли уже данные в childRegistrations
+            const hasExistingData = childRegistrations.length > 0 &&
+                childRegistrations.some(reg =>
+                    reg.selectedStyles.length > 0 ||
+                    reg.selectedOptions.length > 0 ||
+                    reg.totalAmount > 0
+                );
+
+            // Если есть существующие данные, не обнуляем их
+            if (hasExistingData) {
+                console.log('🔒 Сохраняем существующие данные регистрации');
+                return;
+            }
+
             const registrations = children.map(child => ({
                 childId: child.id,
                 childName: child.name,
@@ -236,15 +265,15 @@ export default function MultiChildWorkshopModal({
             }));
             setChildRegistrations(registrations);
         }
-    }, [children]);
+    }, [children, childRegistrations]);
 
-    // Проверка и фильтрация уже записанных детей
+    // Проверка и фильтрация уже записанных детей (только при открытии модального окна)
     useEffect(() => {
         const checkExistingRegistrations = async () => {
-            if (!workshop || !children || children.length === 0) return;
+            if (!workshop || !children || children.length === 0 || !isOpen) return;
 
             try {
-                console.log('🔍 Проверяем существующие регистрации при инициализации...');
+
                 const existingRegistrations = await api.workshopRegistrations.getRegistrations(workshop.id);
                 const existingUserIds = existingRegistrations.map(reg => reg.userId);
 
@@ -278,7 +307,7 @@ export default function MultiChildWorkshopModal({
                         return;
                     }
 
-                    // Обновляем список детей только доступными
+                    // Обновляем список детей только доступными, но сохраняем существующие данные
                     const registrations = availableChildren.map(child => ({
                         childId: child.id,
                         childName: child.name,
@@ -288,7 +317,22 @@ export default function MultiChildWorkshopModal({
                         totalAmount: 0,
                         isCompleted: false
                     }));
-                    setChildRegistrations(registrations);
+
+                    // Проверяем, есть ли уже данные в childRegistrations для этих детей
+                    const existingRegistrationsData = childRegistrations.filter(reg =>
+                        availableChildren.some(child => child.id === reg.childId)
+                    );
+
+                    // Если есть существующие данные, сохраняем их
+                    if (existingRegistrationsData.length > 0) {
+                        const updatedRegistrations = registrations.map(newReg => {
+                            const existing = existingRegistrationsData.find(existing => existing.childId === newReg.childId);
+                            return existing || newReg;
+                        });
+                        setChildRegistrations(updatedRegistrations);
+                    } else {
+                        setChildRegistrations(registrations);
+                    }
                 }
             } catch (error) {
                 console.warn('⚠️ Не удалось проверить существующие регистрации при инициализации:', error);
@@ -297,7 +341,7 @@ export default function MultiChildWorkshopModal({
         };
 
         checkExistingRegistrations();
-    }, [workshop, children, onOpenChange, toast]);
+    }, [workshop?.id, children, toast, isOpen]); // Убрали onOpenChange из зависимостей
 
     // Поиск сервиса по названию мастер-класса
     useEffect(() => {
@@ -401,7 +445,6 @@ export default function MultiChildWorkshopModal({
             const urlObj = new URL(absoluteUrl);
             if (!urlObj.protocol.startsWith('http')) return false;
 
-            console.log(`Проверяем файл: ${absoluteUrl}`);
             const response = await fetch(absoluteUrl, {
                 method: 'HEAD',
                 mode: 'cors',
@@ -409,7 +452,7 @@ export default function MultiChildWorkshopModal({
             });
 
             const exists = response.ok;
-            console.log(`Файл ${absoluteUrl} доступен: ${exists} (статус: ${response.status})`);
+
             return exists;
         } catch (error) {
             console.error(`Ошибка при проверке файла ${url}:`, error);
@@ -424,11 +467,9 @@ export default function MultiChildWorkshopModal({
         const existingFiles: string[] = [];
         const validUrls = urls.filter(url => url && typeof url === 'string');
 
-        console.log('Проверяем файлы:', validUrls);
-
         for (const url of validUrls) {
             const exists = await checkFileExists(url);
-            console.log(`Файл ${url} существует: ${exists}`);
+
             if (exists) {
                 // Возвращаем абсолютный URL для существующих файлов
                 const absoluteUrl = getFileUrl(url);
@@ -436,13 +477,11 @@ export default function MultiChildWorkshopModal({
             }
         }
 
-        console.log('Найдены существующие файлы:', existingFiles);
         return existingFiles;
     };
 
     // Открытие галереи фото
     const openPhotoCarousel = async (images: string[], title: string) => {
-        console.log(`openPhotoCarousel: Получены изображения для "${title}":`, images);
 
         if (!Array.isArray(images) || images.length === 0) {
             toast({
@@ -466,8 +505,6 @@ export default function MultiChildWorkshopModal({
                 return;
             }
 
-            console.log(`openPhotoCarousel: Открываем галерею для "${title}" с существующими изображениями:`, existingImages);
-
             // Плавная анимация открытия
             setCurrentMedia({ type: 'photo', urls: existingImages, currentIndex: 0, title });
 
@@ -487,7 +524,6 @@ export default function MultiChildWorkshopModal({
 
     // Открытие видео плеера
     const openVideoPlayer = async (videos: string[], title: string) => {
-        console.log(`openVideoPlayer: Получены видео для "${title}":`, videos);
 
         if (!Array.isArray(videos) || videos.length === 0) {
             toast({
@@ -510,8 +546,6 @@ export default function MultiChildWorkshopModal({
                 });
                 return;
             }
-
-            console.log(`openVideoPlayer: Открываем видео для "${title}" с существующими видео:`, existingVideos);
 
             // Плавная анимация открытия
             setCurrentMedia({ type: 'video', urls: existingVideos, currentIndex: 0, title });
@@ -751,7 +785,7 @@ export default function MultiChildWorkshopModal({
 
     // Отмена отправки заявок
     const handleCancelSubmit = () => {
-        console.log('⏹️ Пользователь отменил отправку заявок');
+
         cancelRef.current = true;
         setIsSubmitting(false);
         setSubmitProgress(0);
@@ -765,17 +799,10 @@ export default function MultiChildWorkshopModal({
 
     // Отправка заявок с транзакционностью и прогрессом
     const handleSubmit = async () => {
-        console.log('🔄 MODAL: handleSubmit: Начинаем отправку заявок');
+
         if (!workshop || !user) return;
 
         // Логируем начало процесса
-        console.log('🚀 Начинаем отправку заявок для мастер-класса:', {
-            workshopId: workshop.id,
-            workshopTitle: workshop.title,
-            childrenCount: childRegistrations.length,
-            userId: user.id,
-            timestamp: new Date().toISOString()
-        });
 
         // Валидация данных перед отправкой
         const validation = validateRegistrationData();
@@ -790,10 +817,8 @@ export default function MultiChildWorkshopModal({
             return;
         }
 
-        console.log('✅ Валидация пройдена успешно');
-
         // Проверяем существующие регистрации для предотвращения дублирования
-        console.log('🔍 Проверяем существующие регистрации...');
+
         try {
             const existingRegistrations = await api.workshopRegistrations.getRegistrations(workshop.id);
             const existingUserIds = existingRegistrations.map(reg => reg.userId);
@@ -813,34 +838,35 @@ export default function MultiChildWorkshopModal({
                 return; // Прерываем выполнение
             }
 
-            console.log('✅ Проверка существующих регистраций пройдена');
         } catch (checkError) {
             console.warn('⚠️ Не удалось проверить существующие регистрации:', checkError);
             // Продолжаем выполнение, backend все равно проверит
         }
 
-        console.log('🔄 Устанавливаем состояние отправки...');
         setIsSubmitting(true);
         cancelRef.current = false;
         setSubmitProgress(0);
         setCurrentSubmittingChild('');
 
-        console.log('✅ Состояние установлено:', {
-            isSubmitting: true,
-            isCancelled: false,
-            submitProgress: 0,
-            currentSubmittingChild: ''
-        });
-
         try {
             // Создаем групповую регистрацию для всех детей
             const totalChildren = childRegistrations.length;
-            console.log(`📝 Создаем групповую регистрацию для ${totalChildren} детей...`);
 
             // Подготавливаем данные для групповой регистрации
+            // Определяем parentId: если есть дети с parentId, используем его, иначе используем user.id
+            const firstChild = children && children.length > 0 ? children[0] : null;
+            const actualParentId = firstChild?.parentId || user.id;
+
+            console.log('👪 Определяем parentId для групповой регистрации:', {
+                firstChildParentId: firstChild?.parentId,
+                currentUserId: user.id,
+                actualParentId,
+                isAdmin: user.role === 'admin'
+            });
+
             const groupRegistrationData = {
                 workshopId: workshop.id,
-                parentId: user.id,
+                parentId: actualParentId, // Используем parentId из данных ребенка или user.id
                 children: childRegistrations.map(reg => {
                     // Преобразуем новую структуру в старый формат для API
                     const styles = reg.selectedStyles.flatMap(s =>
@@ -861,12 +887,9 @@ export default function MultiChildWorkshopModal({
                 })
             };
 
-            console.log('📤 Отправляем данные групповой регистрации:', groupRegistrationData);
-
             // Используем групповой API
-            console.log('🔄 MODAL: Отправляем запрос на групповую регистрацию...');
+
             const response = await api.workshopRegistrations.createGroupRegistration(groupRegistrationData);
-            console.log('✅ MODAL: Групповой API успешно отработал, ответ:', response);
 
             // Обновляем прогресс
             setSubmitProgress(100);
@@ -883,7 +906,6 @@ export default function MultiChildWorkshopModal({
                 }))
             });
 
-            console.log('🔄 MODAL: Устанавливаем isSuccess = true');
             setIsSuccess(true);
 
             // Сохраняем созданные счета для оплаты
@@ -893,11 +915,11 @@ export default function MultiChildWorkshopModal({
             }
 
             // Вызываем callback для обновления Dashboard
-            console.log('🔄 MODAL: Вызываем callback onRegistrationSuccess');
+
             if (onRegistrationSuccess) {
-                console.log('✅ MODAL: Callback найден, вызываем...');
+
                 onRegistrationSuccess();
-                console.log('✅ MODAL: Callback вызван успешно');
+
             } else {
                 console.warn('⚠️ MODAL: Callback onRegistrationSuccess не найден!');
             }
@@ -938,19 +960,14 @@ export default function MultiChildWorkshopModal({
                 });
             }
         } finally {
-            console.log('🏁 MODAL: Завершение процесса отправки заявок');
+
             setIsSubmitting(false);
             cancelRef.current = false;
             setSubmitProgress(0);
             setCurrentSubmittingChild('');
 
             // Дополнительная проверка состояния
-            console.log('🔍 MODAL: Финальное состояние:', {
-                isSubmitting: false,
-                canCancel: false,
-                submitProgress: 0,
-                currentSubmittingChild: ''
-            });
+
         }
     };
 
@@ -968,7 +985,7 @@ export default function MultiChildWorkshopModal({
     const classGroup = workshop.classGroup;
 
     if (isSuccess) {
-        console.log('🎉 MODAL: Рендерим успешное состояние');
+
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
                 <DialogContent className="max-w-2xl p-6 bg-gradient-wax-hands border-0 shadow-2xl mx-auto">
@@ -1018,42 +1035,147 @@ export default function MultiChildWorkshopModal({
                                         </div>
 
                                         {invoice.status === 'pending' && (
-                                            <div className="w-full max-w-full overflow-hidden">
-                                                <YandexPaymentButton
-                                                    invoiceId={invoice.id}
-                                                    amount={invoice.amount}
-                                                    description={`Участие в мастер-классе "${workshop.title}" для ${invoice.participant_name}`}
-                                                    children={[{
-                                                        id: invoice.participant_id || '',
-                                                        name: invoice.participant_name || '',
-                                                        selectedServices: ['Мастер-класс'],
-                                                        totalAmount: invoice.amount
-                                                    }]}
-                                                    masterClassName={workshop.title}
-                                                    eventDate={workshop.date}
-                                                    eventTime={workshop.time}
-                                                    isPaymentDisabled={true}
-                                                    onPaymentSuccess={() => {
-                                                        toast({
-                                                            title: "Оплата успешна! 🎉",
-                                                            description: "Статус счета обновлен. Спасибо за оплату!",
-                                                        });
-                                                        // Обновляем статус счета локально
-                                                        setCreatedInvoices(prev =>
-                                                            prev.map(inv =>
-                                                                inv.id === invoice.id
-                                                                    ? { ...inv, status: 'paid' as const }
-                                                                    : inv
-                                                            )
-                                                        );
-                                                    }}
-                                                    onPaymentError={(error) => {
-                                                        console.error('Ошибка оплаты:', error);
-                                                    }}
-                                                    className="w-full max-w-full"
-                                                    variant="default"
-                                                    size="lg"
-                                                />
+                                            <div className="w-full max-w-full overflow-hidden space-y-3">
+                                                {/* Кнопки для админа */}
+                                                {user?.role === 'admin' && (
+                                                    <div className="space-y-3">
+                                                        {/* Кнопка ТЕСТ оплаты для админа */}
+                                                        <Button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    console.log('🧪 ТЕСТ: Получаем ссылку Robokassa...');
+                                                                    const response = await api.post(`/payment/invoices/${invoice.id}/pay`);
+
+                                                                    console.log('📦 Ответ API:', response.data);
+
+                                                                    if (response.data?.paymentUrl) {
+                                                                        console.log('✅ Ссылка Robokassa:', response.data.paymentUrl);
+                                                                        console.log('📋 FormData:', response.data.formData);
+
+                                                                        // Открываем ссылку в новой вкладке для теста
+                                                                        window.open(response.data.paymentUrl, '_blank');
+
+                                                                        toast({
+                                                                            title: "ТЕСТ: Ссылка создана! 🔗",
+                                                                            description: `Открыта ссылка: ${response.data.paymentUrl}`,
+                                                                        });
+                                                                    } else {
+                                                                        toast({
+                                                                            title: "ТЕСТ: Нет ссылки ⚠️",
+                                                                            description: "API не вернул paymentUrl",
+                                                                            variant: "destructive"
+                                                                        });
+                                                                    }
+                                                                } catch (error) {
+                                                                    console.error('❌ Ошибка при создании ссылки:', error);
+                                                                    toast({
+                                                                        title: "ТЕСТ: Ошибка ❌",
+                                                                        description: error instanceof Error ? error.message : 'Неизвестная ошибка',
+                                                                        variant: "destructive"
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-full bg-blue-600 hover:bg-blue-700"
+                                                            size="lg"
+                                                        >
+                                                            <CreditCard className="w-5 h-5 mr-2" />
+                                                            ТЕСТ: Оплатить (открыть Robokassa)
+                                                        </Button>
+
+                                                        {/* Кнопка отправки в WhatsApp */}
+                                                        <Button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    console.log('📱 Создаем ссылку Robokassa для WhatsApp...');
+
+                                                                    let paymentUrl = `${window.location.origin}/parent`; // Fallback
+
+                                                                    try {
+                                                                        const response = await api.post(`/payment/invoices/${invoice.id}/pay`);
+
+                                                                        if (response.data?.paymentUrl) {
+                                                                            paymentUrl = response.data.paymentUrl;
+                                                                            console.log('✅ Получена ссылка Robokassa:', paymentUrl);
+                                                                        } else {
+                                                                            console.warn('⚠️ Не удалось получить ссылку Robokassa, используем fallback');
+                                                                        }
+                                                                    } catch (apiError) {
+                                                                        console.error('❌ Ошибка API при создании ссылки:', apiError);
+                                                                        console.log('📌 Используем fallback ссылку на ЛК');
+                                                                    }
+
+                                                                    // Формируем сообщение для WhatsApp
+                                                                    const message = `🎨 Счет на оплату мастер-класса\n\n` +
+                                                                        `📋 Счет №${invoice.id.slice(-8)}\n` +
+                                                                        `👤 Участник: ${invoice.participant_name}\n` +
+                                                                        `📅 Дата: ${new Date(invoice.workshop_date || '').toLocaleDateString('ru-RU')}\n` +
+                                                                        `🎯 Мастер-класс: ${workshop.title}\n` +
+                                                                        `💰 Сумма: ${invoice.amount} ₽\n\n` +
+                                                                        `Для оплаты перейдите по ссылке:\n${paymentUrl}`;
+
+                                                                    const encodedMessage = encodeURIComponent(message);
+                                                                    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+                                                                    window.open(whatsappUrl, '_blank');
+
+                                                                    toast({
+                                                                        title: "Счет отправлен! 📱",
+                                                                        description: "Откройте WhatsApp и отправьте счет родителю",
+                                                                    });
+                                                                } catch (error) {
+                                                                    console.error('Ошибка при отправке ссылки:', error);
+                                                                    toast({
+                                                                        title: "Ошибка",
+                                                                        description: "Не удалось отправить ссылку",
+                                                                        variant: "destructive"
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-full bg-green-600 hover:bg-green-700"
+                                                            size="lg"
+                                                        >
+                                                            <MessageCircle className="w-5 h-5 mr-2" />
+                                                            Отправить счет в WhatsApp
+                                                        </Button>
+                                                    </div>
+                                                )}
+
+                                                {/* Кнопка оплаты - только для родителя */}
+                                                {user?.role === 'parent' && (
+                                                    <YandexPaymentButton
+                                                        invoiceId={invoice.id}
+                                                        amount={invoice.amount}
+                                                        description={`Участие в мастер-классе "${workshop.title}" для ${invoice.participant_name}`}
+                                                        children={[{
+                                                            id: invoice.participant_id || '',
+                                                            name: invoice.participant_name || '',
+                                                            selectedServices: ['Мастер-класс'],
+                                                            totalAmount: invoice.amount
+                                                        }]}
+                                                        masterClassName={workshop.title}
+                                                        eventDate={workshop.date}
+                                                        eventTime={workshop.time}
+                                                        onPaymentSuccess={() => {
+                                                            toast({
+                                                                title: "Оплата успешна! 🎉",
+                                                                description: "Статус счета обновлен. Спасибо за оплату!",
+                                                            });
+                                                            // Обновляем статус счета локально
+                                                            setCreatedInvoices(prev =>
+                                                                prev.map(inv =>
+                                                                    inv.id === invoice.id
+                                                                        ? { ...inv, status: 'paid' as const }
+                                                                        : inv
+                                                                )
+                                                            );
+                                                        }}
+                                                        onPaymentError={(error) => {
+                                                            console.error('Ошибка оплаты:', error);
+                                                        }}
+                                                        className="w-full max-w-full"
+                                                        variant="default"
+                                                        size="lg"
+                                                    />
+                                                )}
                                             </div>
                                         )}
 
@@ -1071,7 +1193,15 @@ export default function MultiChildWorkshopModal({
 
                     <div className="flex justify-center space-x-4">
                         <Button
-                            onClick={() => onOpenChange(false)}
+                            onClick={() => {
+                                // Сбрасываем состояние при закрытии
+                                setShowPaymentSection(false);
+                                setCreatedInvoices([]);
+                                setIsSuccess(false);
+                                setCurrentStep(0);
+                                setChildRegistrations([]);
+                                onOpenChange(false);
+                            }}
                             variant="outline"
                             className="px-6"
                         >
@@ -1098,12 +1228,10 @@ export default function MultiChildWorkshopModal({
         );
     }
 
-    console.log('🔄 MODAL: Рендерим основную форму');
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
                 <DialogContent className={`w-[98vw] max-w-[98vw] sm:w-[95vw] sm:max-w-[95vw] md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto bg-gradient-wax-hands border-0 shadow-2xl mx-auto ${isSmallScreen ? 'p-1 px-4 pt-8 pb-8 scrollbar-hide' : 'p-2 sm:p-4 md:p-6 pt-12 pb-12'} animate-in fade-in-0 zoom-in-95 duration-300`}>
-
 
                     {/* Анимированные звездочки */}
                     <AnimatedStars count={15} className="opacity-40" />
@@ -1220,15 +1348,7 @@ export default function MultiChildWorkshopModal({
                                         // Если данные не найдены в API, пробуем получить из workshop.childrenWithStatus
                                         if (selectedStyleIds.length === 0 && selectedOptionIds.length === 0 && totalAmount === 0) {
                                             // TODO: В будущем можно получать эти данные из workshop.childrenWithStatus
-                                            console.log(`🔍 Данные для ребенка ${child.name} не найдены в API, используем заглушки`);
-                                        } else {
-                                            console.log(`✅ Найдены данные для ребенка ${child.name}:`, {
-                                                styleIds: selectedStyleIds,
-                                                styleNames: selectedStyles,
-                                                optionIds: selectedOptionIds,
-                                                optionNames: selectedOptions,
-                                                amount: totalAmount
-                                            });
+                                            console.warn('Данные о выборе стилей и опций не найдены для ребенка:', childStatus.childId);
                                         }
 
                                         return (
@@ -1386,12 +1506,6 @@ export default function MultiChildWorkshopModal({
 
                                             // Отладочная информация для аватаров
                                             const avatarUrl = getFileUrl(style.avatar || '');
-                                            console.log(`Стиль "${style.name}":`, {
-                                                id: style.id,
-                                                avatar: style.avatar,
-                                                avatarUrl: avatarUrl,
-                                                hasAvatar: !!style.avatar
-                                            });
 
                                             return (
                                                 <div
@@ -1419,24 +1533,13 @@ export default function MultiChildWorkshopModal({
                                                         <div className="flex items-start justify-between">
                                                             <div className="flex items-start space-x-2 sm:space-x-3 flex-1 min-w-0">
                                                                 {/* Аватар стиля */}
-                                                                <div className={`flex-shrink-0 ${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} rounded-xl overflow-hidden shadow-md`}>
-                                                                    {style.avatar ? (
-                                                                        <img
-                                                                            src={getFileUrl(style.avatar || '')}
-                                                                            alt={style.name}
-                                                                            className="w-full h-full object-cover"
-                                                                            onError={(e) => {
-                                                                                // Fallback к иконке если изображение не загрузилось
-                                                                                const target = e.target as HTMLImageElement;
-                                                                                target.style.display = 'none';
-                                                                                target.nextElementSibling?.classList.remove('hidden');
-                                                                            }}
-                                                                        />
-                                                                    ) : null}
-                                                                    <div className={`${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center ${style.avatar ? 'hidden' : ''}`}>
-                                                                        <Palette className={`${isSmallScreen ? 'w-5 h-5' : 'w-7 h-7'} text-white`} />
-                                                                    </div>
-                                                                </div>
+                                                                <AvatarDisplay
+                                                                    images={style.images}
+                                                                    type="style"
+                                                                    alt={style.name}
+                                                                    size={isSmallScreen ? 'sm' : 'md'}
+                                                                    className={`${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'}`}
+                                                                />
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className={`font-bold text-gray-900 ${isSmallScreen ? 'text-base' : 'text-lg'} mb-2`}>
                                                                         {style.name}
@@ -1557,12 +1660,6 @@ export default function MultiChildWorkshopModal({
 
                                             // Отладочная информация для аватаров
                                             const avatarUrl = getFileUrl(option.avatar || '');
-                                            console.log(`Опция "${option.name}":`, {
-                                                id: option.id,
-                                                avatar: option.avatar,
-                                                avatarUrl: avatarUrl,
-                                                hasAvatar: !!option.avatar
-                                            });
 
                                             return (
                                                 <div
@@ -1574,30 +1671,18 @@ export default function MultiChildWorkshopModal({
                                                     onClick={() => handleOptionQuantityChange(option.id, isSelected ? 0 : 1)}
                                                 >
 
-
                                                     <div className={`${isSmallScreen ? 'space-y-2' : 'space-y-3'}`}>
                                                         {/* Заголовок и чекбокс */}
                                                         <div className="flex items-start justify-between">
                                                             <div className="flex items-start space-x-2 sm:space-x-3 flex-1 min-w-0">
                                                                 {/* Аватар опции */}
-                                                                <div className={`flex-shrink-0 ${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} rounded-xl overflow-hidden shadow-md`}>
-                                                                    {option.avatar ? (
-                                                                        <img
-                                                                            src={getFileUrl(option.avatar || '')}
-                                                                            alt={option.name}
-                                                                            className="w-full h-full object-cover"
-                                                                            onError={(e) => {
-                                                                                // Fallback к иконке если изображение не загрузилось
-                                                                                const target = e.target as HTMLImageElement;
-                                                                                target.style.display = 'none';
-                                                                                target.nextElementSibling?.classList.remove('hidden');
-                                                                            }}
-                                                                        />
-                                                                    ) : null}
-                                                                    <div className={`${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'} bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center ${option.avatar ? 'hidden' : ''}`}>
-                                                                        <Gift className={`${isSmallScreen ? 'w-5 h-5' : 'w-7 h-7'} text-white`} />
-                                                                    </div>
-                                                                </div>
+                                                                <AvatarDisplay
+                                                                    images={option.images}
+                                                                    type="option"
+                                                                    alt={option.name}
+                                                                    size={isSmallScreen ? 'sm' : 'md'}
+                                                                    className={`${isSmallScreen ? 'w-10 h-12' : 'w-14 h-18'}`}
+                                                                />
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className={`font-bold text-gray-900 ${isSmallScreen ? 'text-base' : 'text-lg'} mb-2`}>
                                                                         {option.name}
@@ -1769,7 +1854,7 @@ export default function MultiChildWorkshopModal({
                                 </CardHeader>
                                 <CardContent className={`${isSmallScreen ? 'space-y-2' : 'space-y-3 sm:space-y-4'}`}>
                                     <Textarea
-                                        placeholder="Например: Добавить блестки золотого цвета, сделать надпись 'Моя первая ручка', украсить наклейками с животными..."
+                                        placeholder="Пожелания по украшению ручки"
                                         value={childRegistrations[0]?.notes || ''}
                                         onChange={(e) => {
                                             const notes = e.target.value;
@@ -1902,6 +1987,5 @@ export default function MultiChildWorkshopModal({
         </>
     );
 
-    console.log('🔄 MODAL: MultiChildWorkshopModal рендер завершен');
 }
 

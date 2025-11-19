@@ -1,86 +1,62 @@
-# Скрипт для обновления фронтенда с иконками
-# Алексей - 2025-01-25
+# Frontend Update Script for waxhands.ru
+# Usage: .\update-frontend.ps1
 
-Write-Host "Обновление фронтенда с иконками..." -ForegroundColor Yellow
+$ErrorActionPreference = "Stop"
 
-# 1. Очистка всех кэшей
-Write-Host "Очистка кэшей..." -ForegroundColor Cyan
-if (Test-Path "dist") { Remove-Item -Recurse -Force dist }
-if (Test-Path "backend\*.tsbuildinfo") { Remove-Item -Force backend\*.tsbuildinfo }
-if (Test-Path "*.tsbuildinfo") { Remove-Item -Force *.tsbuildinfo }
+Write-Host "`n=== FRONTEND UPDATE STARTED ===" -ForegroundColor Cyan
+Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n" -ForegroundColor Cyan
 
-# 2. Пересборка проекта
-Write-Host "Пересборка проекта..." -ForegroundColor Cyan
-npm run build
-
-# 3. Проверка новых файлов
-Write-Host "Проверка новых файлов..." -ForegroundColor Cyan
-$newJsFile = Get-ChildItem dist\assets\index-*.js | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-Write-Host "Новый JS файл: $($newJsFile.Name)" -ForegroundColor Green
-
-# 4. Проверка иконок
-Write-Host "Проверка иконок..." -ForegroundColor Cyan
-$iconFiles = @("icon-72x72.png", "icon-96x96.png", "icon-128x128.png", "icon-144x144.png", "icon-152x152.png", "icon-180x180.png", "icon-192x192.png", "icon-384x384.png", "icon-512x512.png", "icon-1024x1024.png", "favicon.ico")
-
-foreach ($icon in $iconFiles) {
-    if (Test-Path "public\$icon") {
-        $size = (Get-Item "public\$icon").Length
-        Write-Host "$icon - $([math]::Round($size/1KB, 2)) KB" -ForegroundColor Green
-    }
-    if (-not (Test-Path "public\$icon")) {
-        Write-Host "$icon - НЕ НАЙДЕН" -ForegroundColor Red
-    }
+try {
+    # Step 1: Clean cache
+    Write-Host "Step 1: Cleaning cache..." -ForegroundColor Yellow
+    Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
+    Remove-Item -Force "*.tsbuildinfo" -ErrorAction SilentlyContinue
+    Remove-Item -Force "backend\*.tsbuildinfo" -ErrorAction SilentlyContinue
+    Write-Host "Cache cleaned" -ForegroundColor Green
+    
+    # Step 2: Build frontend
+    Write-Host "`nStep 2: Building frontend..." -ForegroundColor Yellow
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+    Write-Host "Build successful" -ForegroundColor Green
+    
+    # Step 3: Check new files
+    Write-Host "`nStep 3: Checking new files..." -ForegroundColor Yellow
+    $jsFiles = Get-ChildItem -Path "dist\assets" -Filter "index-*.js"
+    if ($jsFiles.Count -eq 0) { throw "No JS files found" }
+    $latestJsFile = $jsFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $jsFileSize = $latestJsFile.Length / 1MB
+    Write-Host "New JS file: $($latestJsFile.Name) ($($jsFileSize.ToString('0.00')) MB)" -ForegroundColor Green
+    
+    # Step 4: Create archive
+    Write-Host "`nStep 4: Creating archive..." -ForegroundColor Yellow
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $archiveName = "frontend-update-$timestamp.zip"
+    Compress-Archive -Path "dist\*" -DestinationPath $archiveName -Force
+    $archiveSize = (Get-Item $archiveName).Length / 1MB
+    Write-Host "Archive created: $archiveName ($($archiveSize.ToString('0.00')) MB)" -ForegroundColor Green
+    
+    # Step 5: Upload to server
+    Write-Host "`nStep 5: Uploading to server..." -ForegroundColor Yellow
+    scp $archiveName root@147.45.161.83:/tmp/frontend-update.zip
+    if ($LASTEXITCODE -ne 0) { throw "Upload failed" }
+    Write-Host "Upload successful" -ForegroundColor Green
+    
+    # Step 6: Update on server
+    Write-Host "`nStep 6: Updating on server (FULL cleanup)..." -ForegroundColor Yellow
+    ssh root@147.45.161.83 "cd /var/www/waxhands-app/frontend && rm -rf * && unzip -q /tmp/frontend-update.zip -d . && systemctl reload nginx && echo 'Frontend updated successfully' && ls -lh assets/index-*.js | tail -1"
+    if ($LASTEXITCODE -ne 0) { throw "Server update failed" }
+    
+    # Step 7: Cleanup old archives
+    Write-Host "`nStep 7: Cleaning up old archives..." -ForegroundColor Yellow
+    Get-ChildItem -Filter "frontend-update-*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Force
+    Write-Host "Cleanup complete" -ForegroundColor Green
+    
+    Write-Host "`n=== FRONTEND UPDATE COMPLETED ===" -ForegroundColor Green
+    Write-Host "Press Ctrl+F5 in browser to refresh" -ForegroundColor Yellow
+    
+} catch {
+    Write-Host "`n=== ERROR ===" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
 }
-
-# 5. Создание архива с timestamp
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$archiveName = "frontend-update-with-icons-$timestamp.zip"
-Write-Host "Создание архива: $archiveName" -ForegroundColor Cyan
-
-# Копируем все файлы из dist и public в временную папку
-$tempDir = "temp-frontend-update"
-if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
-New-Item -ItemType Directory -Name $tempDir | Out-Null
-
-# Копируем файлы из dist
-Copy-Item -Path "dist\*" -Destination $tempDir -Recurse -Force
-
-# Копируем иконки и manifest
-Copy-Item -Path "public\icon-*.png" -Destination $tempDir -Force
-Copy-Item -Path "public\icon-*.svg" -Destination $tempDir -Force
-Copy-Item -Path "public\favicon.ico" -Destination $tempDir -Force
-Copy-Item -Path "public\manifest.json" -Destination $tempDir -Force
-Copy-Item -Path "public\sw.js" -Destination $tempDir -Force
-Copy-Item -Path "public\robots.txt" -Destination $tempDir -Force
-
-# Копируем папки
-Copy-Item -Path "public\icons" -Destination $tempDir -Recurse -Force
-Copy-Item -Path "public\onboarding" -Destination $tempDir -Recurse -Force
-Copy-Item -Path "public\uploads" -Destination $tempDir -Recurse -Force
-Copy-Item -Path "public\lovable-uploads" -Destination $tempDir -Recurse -Force
-
-# Создаем архив
-Compress-Archive -Path "$tempDir\*" -DestinationPath $archiveName -Force
-
-# Очищаем временную папку
-Remove-Item -Recurse -Force $tempDir
-
-Write-Host "Архив создан: $archiveName" -ForegroundColor Green
-
-# 6. Инструкции по деплою
-Write-Host ""
-Write-Host "ИНСТРУКЦИИ ПО ДЕПЛОЮ:" -ForegroundColor Yellow
-Write-Host "1. Загрузите архив на сервер: scp $archiveName root@147.45.161.83:/tmp/" -ForegroundColor White
-Write-Host "2. На сервере выполните:" -ForegroundColor White
-Write-Host "   ssh root@147.45.161.83" -ForegroundColor White
-Write-Host "   cd /var/www/waxhands-app/frontend" -ForegroundColor White
-Write-Host "   rm -rf *" -ForegroundColor White
-Write-Host "   unzip /tmp/$archiveName -d ." -ForegroundColor White
-Write-Host "   systemctl reload nginx" -ForegroundColor White
-Write-Host ""
-Write-Host "3. Проверьте обновление иконок в браузере" -ForegroundColor White
-Write-Host "4. При необходимости очистите кэш браузера (Ctrl+Shift+Delete)" -ForegroundColor White
-
-Write-Host ""
-Write-Host "Готово! Теперь иконки должны обновляться корректно." -ForegroundColor Green
-

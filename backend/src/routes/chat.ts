@@ -37,6 +37,15 @@ router.get('/admin/all', authenticateToken, (req: AuthenticatedRequest, res: Res
     next();
 }, ChatController.getAllChats);
 
+// Удалить чат (только для администраторов) - ДОЛЖЕН БЫТЬ ДО /:chatId/* роутов!
+router.delete('/delete/:chatId', authenticateToken, (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    if (req.user?.role !== 'admin') {
+        res.status(403).json({ error: 'Доступ запрещен' });
+        return;
+    }
+    next();
+}, ChatController.deleteChat);
+
 // Получить сообщения чата
 router.get('/:chatId/messages', authenticateToken, ChatController.getChatMessages);
 
@@ -60,8 +69,6 @@ router.put('/status', authenticateToken, (req: AuthenticatedRequest, res: Respon
 
 // Получить количество непрочитанных сообщений
 router.get('/user/:userId/unread', authenticateToken, ChatController.getUnreadCount);
-
-
 
 export default router;
 

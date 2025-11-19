@@ -26,6 +26,7 @@ import PaymentSuccess from "./pages/PaymentSuccess"; // Страница усп�
 import PolicyPage from "./pages/PolicyPage"; // Страница политики конфиденциальности
 import PaymentSuccessPage from "./pages/payment/SuccessPage"; // Страница успешной оплаты Robokassa
 import PaymentFailPage from "./pages/payment/FailPage"; // Страница неуспешной оплаты Robokassa
+import InstallPage from "./pages/InstallPage"; // Страница установки PWA
 import NotFound from "./pages/NotFound";
 
 // Components
@@ -155,14 +156,17 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                {/* Универсальные роуты для всех платежных систем (без авторизации) */}
                 <Route
                   path="/payment/success"
-                  element={
-                    <ProtectedRoute allowedRoles={["parent"]}>
-                      <PaymentSuccess />
-                    </ProtectedRoute>
-                  }
+                  element={<PaymentSuccessPage />}
                 />
+                <Route
+                  path="/payment/fail"
+                  element={<PaymentFailPage />}
+                />
+
+                {/* Старые роуты Robokassa для совместимости */}
                 <Route
                   path="/payment/robokassa/success"
                   element={<PaymentSuccessPage />}
@@ -170,6 +174,10 @@ function App() {
                 <Route
                   path="/payment/robokassa/fail"
                   element={<PaymentFailPage />}
+                />
+                <Route
+                  path="/install"
+                  element={<InstallPage />}
                 />
 
                 <Route path="*" element={<NotFound />} />

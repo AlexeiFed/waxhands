@@ -32,6 +32,9 @@ import {
     AlertCircle,
     Phone
 } from 'lucide-react';
+import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
+import { ResponsiveList } from '@/components/admin/lists/ResponsiveList';
+import { RequestCard } from '@/components/admin/cards/RequestCard';
 
 interface WorkshopRequestsTabProps {
     filters: WorkshopRequestsFilters;
@@ -39,11 +42,11 @@ interface WorkshopRequestsTabProps {
 }
 
 export default function WorkshopRequestsTab({ filters, onFiltersChange }: WorkshopRequestsTabProps) {
-    console.log('🚀 WorkshopRequestsTab: Инициализация компонента...');
 
     const { getAllRequests, updateRequestStatus, deleteRequest, getRequestsStats, loading, error } = useWorkshopRequests();
     const { getSchoolsWithAddresses } = useSchools();
     const { toast } = useToast();
+    const { isSmallScreen } = useResponsiveLayout();
 
     // WebSocket для автоматических обновлений
     const { isConnected: wsConnected, sendMessage: wsSendMessage } = useWorkshopRequestsWebSocket(
@@ -51,16 +54,15 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
         true,
         (message) => {
             // Обрабатываем WebSocket сообщения для автоматического обновления
-            console.log('🔌 WorkshopRequestsTab: Получено WebSocket сообщение:', message);
 
             if (message.type === 'workshop_request_status_change' || message.type === 'workshop_request_update') {
-                console.log('📋 WorkshopRequestsTab: Обновление заявки через WebSocket, перезагружаем данные...');
+
                 loadData();
             } else if (message.type === 'workshop_request_created' || message.type === 'workshop_request_deleted') {
-                console.log('📋 WorkshopRequestsTab: Изменение заявки через WebSocket, перезагружаем данные...');
+
                 loadData();
             } else {
-                console.log('🔌 WorkshopRequestsTab: Неизвестный тип сообщения:', message.type);
+
             }
         }
     );
@@ -110,12 +112,6 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
     )].sort();
 
     // Отладочная информация для фильтрации
-    console.log('🔍 WorkshopRequestsTab: Отладка фильтрации:', {
-        schoolsWithAddresses: schoolsWithAddresses.length,
-        uniqueCities: uniqueCities,
-        filters: filters,
-        requestsCount: requests.length
-    });
 
     // Получаем классы для выбранной школы
     const getClassesForSchool = useCallback((schoolName: string) => {
@@ -173,17 +169,14 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
     const loadData = useCallback(async () => {
         try {
-            console.log('🔄 WorkshopRequestsTab.loadData: Начинаем загрузку данных...');
+
             console.log('🔍 WorkshopRequestsTab.loadData: Токен авторизации:', !!localStorage.getItem('authToken'));
 
             // Загружаем школы с адресами для фильтрации
             const schoolsResult = await getSchoolsWithAddresses();
-            console.log('🏫 WorkshopRequestsTab.loadData: Результат загрузки школ:', schoolsResult);
 
             if (schoolsResult?.success && schoolsResult.data) {
-                console.log('✅ WorkshopRequestsTab.loadData: Школы с адресами загружены, количество:', schoolsResult.data.length);
-                console.log('🏫 WorkshopRequestsTab.loadData: Первая школа:', schoolsResult.data[0]);
-                console.log('🏫 WorkshopRequestsTab.loadData: Все школы:', schoolsResult.data);
+
                 setSchoolsWithAddresses(schoolsResult.data);
             } else {
                 console.warn('⚠️ WorkshopRequestsTab.loadData: Школы с адресами не загружены');
@@ -193,20 +186,16 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
             // Загружаем заявки
             const requestsResult = await getAllRequests();
-            console.log('📋 WorkshopRequestsTab.loadData: Результат загрузки заявок:', requestsResult);
-            console.log('📋 WorkshopRequestsTab.loadData: Тип результата:', typeof requestsResult);
+
             console.log('📋 WorkshopRequestsTab.loadData: Структура результата:', Object.keys(requestsResult || {}));
 
             if (requestsResult?.success && requestsResult.data) {
-                console.log('✅ WorkshopRequestsTab.loadData: Заявки загружены, количество:', requestsResult.data.length);
-                console.log('📋 WorkshopRequestsTab.loadData: Первая заявка:', requestsResult.data[0]);
-                console.log('📋 WorkshopRequestsTab.loadData: Все заявки:', requestsResult.data);
+
                 setRequests(requestsResult.data);
             } else if (Array.isArray(requestsResult)) {
                 // Fallback для случая, когда API возвращает массив напрямую
                 console.log('✅ WorkshopRequestsTab.loadData: Заявки загружены (массив), количество:', requestsResult.length);
-                console.log('📋 WorkshopRequestsTab.loadData: Первая заявка:', requestsResult[0]);
-                console.log('📋 WorkshopRequestsTab.loadData: Все заявки:', requestsResult);
+
                 setRequests(requestsResult);
             } else {
                 console.warn('⚠️ WorkshopRequestsTab.loadData: Заявки не загружены:', requestsResult);
@@ -216,11 +205,9 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
             // Загружаем статистику
             const statsResult = await getRequestsStats();
-            console.log('📊 WorkshopRequestsTab.loadData: Результат загрузки статистики:', statsResult);
-            console.log('📊 WorkshopRequestsTab.loadData: Тип результата:', typeof statsResult);
 
             if (statsResult?.success && statsResult.data) {
-                console.log('✅ WorkshopRequestsTab.loadData: Статистика загружена:', statsResult.data);
+
                 setStats(statsResult.data);
             } else if (statsResult && typeof statsResult === 'object' && 'total' in statsResult && 'pending' in statsResult && 'approved' in statsResult && 'rejected' in statsResult) {
                 // Fallback для случая, когда API возвращает статистику напрямую
@@ -231,8 +218,6 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
                 console.warn('⚠️ WorkshopRequestsTab.loadData: Устанавливаем нулевую статистику');
                 setStats({ total: 0, pending: 0, approved: 0, rejected: 0 });
             }
-
-            console.log('✅ WorkshopRequestsTab.loadData: Загрузка завершена');
 
             // Очищаем ошибку компонента при успешной загрузке
             if (componentError) {
@@ -254,8 +239,6 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
     // Загружаем данные при монтировании компонента
     useEffect(() => {
-        console.log('🚀 WorkshopRequestsTab: Компонент смонтирован, WebSocket состояние:', wsConnected);
-        console.log('🚀 WorkshopRequestsTab: Проверяем авторизацию пользователя...');
 
         // Проверяем токен авторизации
         const authToken = localStorage.getItem('authToken');
@@ -265,8 +248,6 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
             return;
         }
 
-        console.log('✅ WorkshopRequestsTab: Токен авторизации найден, загружаем данные...');
-        console.log('🔍 WorkshopRequestsTab: Длина токена:', authToken.length);
         console.log('🔍 WorkshopRequestsTab: Начало токена:', authToken.substring(0, 20) + '...');
 
         loadData();
@@ -274,14 +255,10 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
     // Отладка WebSocket состояния
     useEffect(() => {
-        console.log('🔌 WorkshopRequestsTab: WebSocket состояние изменилось:', {
-            isConnected: wsConnected,
-            timestamp: new Date().toISOString()
-        });
 
         // При подключении WebSocket подписываемся на обновления
         if (wsConnected) {
-            console.log('🔌 WorkshopRequestsTab: WebSocket подключен, подписка активна');
+
         }
     }, [wsConnected]);
 
@@ -299,17 +276,12 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
     const handleSaveStatus = async () => {
         if (!selectedRequest) return;
 
-        console.log('🔍 WorkshopRequestsTab.handleSaveStatus: Начинаем обновление статуса');
-        console.log('📋 WorkshopRequestsTab.handleSaveStatus: ID заявки:', selectedRequest.id);
-        console.log('📋 WorkshopRequestsTab.handleSaveStatus: Данные для обновления:', statusData);
-
         try {
             const result = await updateRequestStatus(selectedRequest.id, statusData);
-            console.log('📋 WorkshopRequestsTab.handleSaveStatus: Результат обновления:', result);
 
             // Проверяем успешность обновления
             if (result && (result.success || (result as unknown as WorkshopRequest).id || (result.data && result.data.id))) {
-                console.log('✅ WorkshopRequestsTab.handleSaveStatus: Статус успешно обновлен:', result);
+
                 toast({
                     title: "Статус обновлен! ✅",
                     description: "Заявка успешно обновлена",
@@ -324,7 +296,7 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
 
                 // Отправляем WebSocket уведомление об обновлении
                 if (wsConnected) {
-                    console.log('🔌 WorkshopRequestsTab: Отправляем WebSocket уведомление об обновлении статуса');
+
                     const wsMessage = {
                         type: 'workshop_request_status_change',
                         data: {
@@ -335,10 +307,9 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
                         },
                         timestamp: Date.now()
                     };
-                    console.log('🔌 WorkshopRequestsTab: WebSocket сообщение:', wsMessage);
 
                     const sent = wsSendMessage(wsMessage);
-                    console.log('🔌 WorkshopRequestsTab: WebSocket сообщение отправлено:', sent);
+
                 } else {
                     console.warn('⚠️ WorkshopRequestsTab: WebSocket не подключен, уведомление не отправлено');
                 }
@@ -450,24 +421,8 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
     };
 
     // Рендер компонента
-    console.log('🔄 WorkshopRequestsTab: Рендер компонента', {
-        requestsCount: requests.length,
-        filteredCount: filteredRequests.length,
-        stats: stats,
-        loading: loading,
-        error: error,
-        componentError: componentError,
-        wsConnected: wsConnected
-    });
 
     // Проверяем состояние данных
-    console.log('🔍 WorkshopRequestsTab: Детали состояния:', {
-        requests: requests,
-        filteredRequests: filteredRequests,
-        filters: filters,
-        uniqueSchools: uniqueSchools,
-        uniqueClassGroups: uniqueClassGroups
-    });
 
     // Обработка ошибок
     if (componentError) {
@@ -664,108 +619,121 @@ export default function WorkshopRequestsTab({ filters, onFiltersChange }: Worksh
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="space-y-4">
-                        {(filteredRequests || []).map((request) => (
-                            <Card key={request.id} className="hover:shadow-lg transition-all duration-300 bg-white/80 backdrop-blur-sm">
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="w-4 h-4 text-gray-500" />
-                                                <span className="font-medium">{request.school_name}</span>
+                    isSmallScreen ? (
+                        <ResponsiveList
+                            items={filteredRequests}
+                            keyExtractor={(item) => item.id}
+                            isLoading={loading}
+                            renderItem={(request) => (
+                                <RequestCard
+                                    request={request}
+                                    onChangeStatus={handleStatusChange}
+                                    onDelete={(current) => handleDeleteRequest(current.id)}
+                                />
+                            )}
+                        />
+                    ) : (
+                        <div className="space-y-4">
+                            {(filteredRequests || []).map((request) => (
+                                <Card key={request.id} className="hover:shadow-lg transition-all duration-300 bg-white/80 backdrop-blur-sm">
+                                    <CardHeader className="pb-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="w-4 h-4 text-gray-500" />
+                                                    <span className="font-medium">{request.school_name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <GraduationCap className="w-4 h-4 text-gray-500" />
+                                                    <span className="font-medium">{request.class_group}</span>
+                                                </div>
                                             </div>
+                                            <Badge className={`${getStatusColor(request.status)} border flex items-center gap-1`}>
+                                                {getStatusIcon(request.status)}
+                                                {getStatusText(request.status)}
+                                            </Badge>
+                                        </div>
+                                        <CardDescription className="text-gray-600 flex items-center gap-4">
                                             <div className="flex items-center gap-2">
-                                                <GraduationCap className="w-4 h-4 text-gray-500" />
-                                                <span className="font-medium">{request.class_group}</span>
+                                                <User className="w-4 h-4" />
+                                                <span>
+                                                    {request.parent_name}
+                                                    {request.parent_surname && ` ${request.parent_surname}`}
+                                                </span>
                                             </div>
-                                        </div>
-                                        <Badge className={`${getStatusColor(request.status)} border flex items-center gap-1`}>
-                                            {getStatusIcon(request.status)}
-                                            {getStatusText(request.status)}
-                                        </Badge>
-                                    </div>
-                                    <CardDescription className="text-gray-600 flex items-center gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <User className="w-4 h-4" />
-                                            <span>
-                                                {request.parent_name}
-                                                {request.parent_surname && ` ${request.parent_surname}`}
-                                            </span>
-                                        </div>
-                                        {request.parent_phone && (
+                                            {request.parent_phone && (
+                                                <div className="flex items-center gap-2">
+                                                    <Phone className="w-4 h-4" />
+                                                    <span>{request.parent_phone}</span>
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-2">
-                                                <Phone className="w-4 h-4" />
-                                                <span>{request.parent_phone}</span>
+                                                <Mail className="w-4 h-4" />
+                                                <span>{request.parent_email}</span>
+                                            </div>
+                                            {request.city && (
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="w-4 h-4" />
+                                                    <span>Город: {request.city}</span>
+                                                </div>
+                                            )}
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3">
+                                        {request.is_other_school && (
+                                            <div className="text-sm p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                                <span className="font-medium text-orange-700">Дополнительная школа:</span>
+                                                <div className="text-orange-600 mt-1">
+                                                    <div><strong>Название:</strong> {request.other_school_name}</div>
+                                                    <div><strong>Адрес:</strong> {request.other_school_address}</div>
+                                                </div>
                                             </div>
                                         )}
-                                        <div className="flex items-center gap-2">
-                                            <Mail className="w-4 h-4" />
-                                            <span>{request.parent_email}</span>
-                                        </div>
-                                        {request.city && (
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="w-4 h-4" />
-                                                <span>Город: {request.city}</span>
+                                        {request.notes && (
+                                            <div className="text-sm">
+                                                <span className="font-medium text-gray-700">Примечания:</span>
+                                                <div className="text-gray-600 mt-1">{request.notes}</div>
                                             </div>
                                         )}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    {request.is_other_school && (
-                                        <div className="text-sm p-3 bg-orange-50 rounded-lg border border-orange-200">
-                                            <span className="font-medium text-orange-700">Дополнительная школа:</span>
-                                            <div className="text-orange-600 mt-1">
-                                                <div><strong>Название:</strong> {request.other_school_name}</div>
-                                                <div><strong>Адрес:</strong> {request.other_school_address}</div>
+                                        {request.admin_notes && (
+                                            <div className="text-sm">
+                                                <span className="font-medium text-gray-700">Заметки администратора:</span>
+                                                <div className="text-gray-600 mt-1">{request.admin_notes}</div>
                                             </div>
+                                        )}
+                                        <div className="text-xs text-gray-500 border-t pt-2">
+                                            Создано: {new Date(request.created_at).toLocaleString('ru-RU')}
+                                            {request.updated_at !== request.created_at &&
+                                                ` • Обновлено: ${new Date(request.updated_at).toLocaleString('ru-RU')}`
+                                            }
                                         </div>
-                                    )}
-                                    {request.notes && (
-                                        <div className="text-sm">
-                                            <span className="font-medium text-gray-700">Примечания:</span>
-                                            <div className="text-gray-600 mt-1">{request.notes}</div>
+                                        <div className="flex gap-2 pt-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleStatusChange(request)}
+                                                className="flex items-center gap-1"
+                                            >
+                                                <FileText className="w-4 h-4" />
+                                                Статус
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleDeleteRequest(request.id)}
+                                                className="flex items-center gap-1 text-red-600 hover:text-red-700"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                                Удалить
+                                            </Button>
                                         </div>
-                                    )}
-                                    {request.admin_notes && (
-                                        <div className="text-sm">
-                                            <span className="font-medium text-gray-700">Заметки администратора:</span>
-                                            <div className="text-gray-600 mt-1">{request.admin_notes}</div>
-                                        </div>
-                                    )}
-                                    <div className="text-xs text-gray-500 border-t pt-2">
-                                        Создано: {new Date(request.created_at).toLocaleString('ru-RU')}
-                                        {request.updated_at !== request.created_at &&
-                                            ` • Обновлено: ${new Date(request.updated_at).toLocaleString('ru-RU')}`
-                                        }
-                                    </div>
-                                    <div className="flex gap-2 pt-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleStatusChange(request)}
-                                            className="flex items-center gap-1"
-                                        >
-                                            <FileText className="w-4 h-4" />
-                                            Статус
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleDeleteRequest(request.id)}
-                                            className="flex items-center gap-1 text-red-600 hover:text-red-700"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            Удалить
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    )
                 )}
             </div>
-
-
 
             {/* Модальное окно изменения статуса */}
             <Dialog open={isStatusOpen} onOpenChange={setIsStatusOpen}>

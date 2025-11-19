@@ -25,7 +25,6 @@ const LandingPage: React.FC = () => {
     useEffect(() => {
         // Если пользователь авторизован, перенаправляем на соответствующий dashboard
         if (!loading && isAuthenticated && user) {
-            console.log('🔄 LandingPage: Пользователь авторизован, перенаправляем на dashboard для роли:', user.role);
 
             const redirectPath = user.role === 'admin' ? '/admin' :
                 user.role === 'executor' ? '/executor' :

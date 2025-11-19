@@ -53,19 +53,19 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
 
         // Проверяем глобальный реестр активных запросов
         if (globalFetchingRef.current.has(requestKey) && !params?.forceRefresh) {
-            console.log('fetchMasterClasses: Аналогичный запрос уже выполняется, пропускаем');
+
             return;
         }
 
         // Проверяем, не выполняется ли уже такой же запрос локально
         if (isFetchingRef.current && !params?.forceRefresh) {
-            console.log('fetchMasterClasses: Локальный запрос уже выполняется, пропускаем');
+
             return;
         }
 
         // Проверяем, не повторяем ли мы последний запрос (только если не принудительное обновление)
         if (lastRequestRef.current === requestKey && !params?.forceRefresh) {
-            console.log('fetchMasterClasses: Запрос идентичен последнему, пропускаем');
+
             return;
         }
 
@@ -77,7 +77,6 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
 
             setLoading(true);
             setError(null);
-            console.log('fetchMasterClasses вызван с параметрами:', params);
 
             // Загрузка Событий мастер-классов вместо шаблонов
             const response = await api.masterClassEvents.getEvents({
@@ -85,7 +84,6 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
                 classGroup: params?.classGroup,
                 userId: params?.userId
             });
-            console.log('Получены мастер-классы:', response);
 
             setMasterClasses(response.masterClasses as MasterClassEvent[]);
             setTotal(response.total);
@@ -132,7 +130,7 @@ export const useMasterClasses = (): UseMasterClassesReturn => {
             const response = await api.masterClasses.createMultiple(data);
 
             if (response.success && response.data) {
-                console.log(`Успешно создано ${response.data.length} мастер-классов`);
+
                 // Обновляем список мастер-классов
                 await fetchMasterClasses({ forceRefresh: true });
             } else {

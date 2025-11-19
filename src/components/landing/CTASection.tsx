@@ -15,7 +15,7 @@ import { ExpandableText } from '@/components/ui/expandable-text';
 
 export const CTASection: React.FC = () => {
     const navigate = useNavigate();
-    const { data: contacts, loading: contactsLoading } = useContacts();
+    const { data: contacts, isLoading: contactsLoading } = useContacts();
 
     return (
         <section className="py-20">

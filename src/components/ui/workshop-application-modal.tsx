@@ -132,8 +132,6 @@ const WorkshopApplicationModal = ({ workshop, isOpen, onOpenChange }: WorkshopAp
             // Здесь должен быть API вызов для добавления участника
             // await api.masterClassEvents.addParticipant(workshop.id, participantData);
 
-            console.log('Participant data:', participantData);
-
             // Показываем успешное сообщение
             setIsSuccess(true);
 

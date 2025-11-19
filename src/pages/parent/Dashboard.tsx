@@ -26,6 +26,8 @@ import { useWorkshopParticipation, useParticipantInvoices, useParentInvoices } f
 import { useUsers } from "@/hooks/use-users";
 import { useWorkshopRequestsWebSocket } from "@/hooks/use-workshop-requests-websocket";
 import { useMasterClassesWebSocket } from "@/hooks/use-master-classes-websocket";
+import { useInvoicesWebSocket } from "@/hooks/use-invoices-websocket";
+import { PAYMENT_SETTINGS_QUERY_KEY } from "@/hooks/use-payment-settings";
 import { useAboutContent, useAboutMedia } from "@/hooks/use-about-api";
 import { MasterClass, School, Service, WorkshopRegistration, Invoice, User, WorkshopRequestWithParent } from "@/types";
 
@@ -88,6 +90,21 @@ interface WorkshopCardData {
         registration?: WorkshopRegistration;
         invoice?: Invoice;
     }>;
+    participants?: Array<{
+        id: string;
+        childId: string;
+        childName: string;
+        parentId: string;
+        parentName: string;
+        selectedStyles: Array<{ id: string; name: string }>;
+        selectedOptions: Array<{ id: string; name: string }>;
+        totalAmount: number;
+        isPaid: boolean;
+        hasReceived: boolean;
+        paymentMethod?: string;
+        paymentDate?: string;
+        notes?: string;
+    }>; // Добавляем данные участников
     participantsCount?: number; // Количество участников в мастер-классе
     invoiceStatus?: 'pending' | 'paid' | 'cancelled'; // Статус счета
 }
@@ -98,7 +115,6 @@ interface NewChildData {
     age?: number; // Добавляем поле возраста
     schoolId: string;
     class: string;
-    shift: string;
 }
 
 const ParentDashboard = () => {
@@ -108,15 +124,15 @@ const ParentDashboard = () => {
     const queryClient = useQueryClient();
     const { masterClasses, fetchMasterClasses } = useMasterClasses();
     const { schools } = useSchools();
-    const { services } = useServices();
+    const { services } = useServices(user?.id);
     const { getUserRegistrations } = useWorkshopRegistrations();
     // Получаем счета для всех мастер-классов
     const [workshopInvoices, setWorkshopInvoices] = useState<{ [workshopId: string]: Invoice[] }>({});
-    const { getChildrenByParentId, createUser, updateUser } = useUsers();
+    const { getChildrenByParentId, createUser, createChild, updateUser, deleteUser, deleteChild } = useUsers();
     const { content: aboutContent, loading: aboutContentLoading } = useAboutContent();
     const { media: aboutMedia, loading: aboutMediaLoading } = useAboutMedia();
 
-    const [activeTab, setActiveTab] = useState("about");
+    const [activeTab, setActiveTab] = useState("workshops");
     const [children, setChildren] = useState<ChildData[]>([]);
 
     // Получаем ID всех детей
@@ -159,8 +175,7 @@ const ParentDashboard = () => {
         surname: '',
         age: undefined, // Добавляем поле возраста
         schoolId: '',
-        class: '',
-        shift: ''
+        class: ''
     });
     const [selectedSchoolId, setSelectedSchoolId] = useState<string>("");
     const [availableClasses, setAvailableClasses] = useState<string[]>([]);
@@ -207,7 +222,6 @@ const ParentDashboard = () => {
         userId: user?.id,
         enabled: true,
         onMasterClassUpdate: useCallback(() => {
-            console.log('🔄 WebSocket: обновляем мастер-классы...');
             // Принудительно обновляем мастер-классы
             fetchMasterClasses({ forceRefresh: true });
 
@@ -226,8 +240,46 @@ const ParentDashboard = () => {
                         console.error('❌ Ошибка загрузки регистраций:', error);
                     });
             }
+            queryClient.invalidateQueries({ queryKey: PAYMENT_SETTINGS_QUERY_KEY });
         }, [user?.id, fetchMasterClasses, queryClient, getUserRegistrations])
     });
+
+    // WebSocket для автоматических обновлений счетов
+    const { isConnected: invoicesWsConnected, lastUpdate: invoicesLastUpdate } = useInvoicesWebSocket({
+        userId: user?.id,
+        enabled: true,
+        onInvoiceUpdate: useCallback((invoiceId: string, status: string) => {
+            console.log('📡 Обновление счета получено:', { invoiceId, status });
+            
+            // Показываем уведомление пользователю
+            if (status === 'paid') {
+                toast({
+                    title: "Счет оплачен",
+                    description: `Счет #${invoiceId.slice(-8)} успешно оплачен`,
+                    variant: "default",
+                });
+            } else if (status === 'cancelled') {
+                toast({
+                    title: "Счет отменен",
+                    description: `Счет #${invoiceId.slice(-8)} был отменен`,
+                    variant: "destructive",
+                });
+            }
+        }, [toast])
+    });
+
+    // Автообновление данных каждые 30 секунд (только если нет открытых модальных окон)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (user?.id && !isWorkshopRegistrationOpen && !isWorkshopRequestOpen) {
+                fetchMasterClasses({ forceRefresh: true });
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent', user.id] });
+                queryClient.invalidateQueries({ queryKey: ['workshop-registrations'] });
+            }
+        }, 30000); // 30 секунд
+
+        return () => clearInterval(interval);
+    }, [user?.id, fetchMasterClasses, queryClient, isWorkshopRegistrationOpen, isWorkshopRequestOpen]);
 
     // Функция для правильного склонения слова "записался" (мемоизирована)
     const getParticipantsText = useCallback((count: number): string => {
@@ -240,8 +292,8 @@ const ParentDashboard = () => {
     // Загружаем мастер-классы (оптимизировано)
     useEffect(() => {
         if (user?.id) {
-            // Загружаем все мастер-классы, а не только для конкретного пользователя
-            fetchMasterClasses();
+            // Загружаем мастер-классы для родителя - только те, где зарегистрированы его дети
+            fetchMasterClasses({ userId: user.id });
         }
     }, [user?.id, fetchMasterClasses]);
 
@@ -371,13 +423,53 @@ const ParentDashboard = () => {
         setAvailableClasses(school?.classes || []);
     };
 
+    // Обработчик удаления ребенка
+    const handleDeleteChild = useCallback(async (childId: string, childName: string) => {
+        if (!user?.id) return;
+
+        // Подтверждение удаления
+        if (!confirm(`Вы уверены, что хотите удалить ребенка "${childName}"? Это действие нельзя отменить.`)) {
+            return;
+        }
+
+        try {
+            await deleteChild(childId);
+
+            // Обновляем список детей
+            const updatedChildren = await getChildrenByParentId(user.id);
+            const formattedChildren: ChildData[] = (updatedChildren || []).map(child => ({
+                id: child.id,
+                name: child.name,
+                age: child.age,
+                schoolId: child.schoolId || '',
+                schoolName: schools.find(s => s.id === child.schoolId)?.name,
+                classGroup: child.class || ''
+            }));
+
+            setChildren(formattedChildren);
+
+            toast({
+                title: "Ребенок удален",
+                description: `Профиль "${childName}" был успешно удален`,
+                variant: "default",
+            });
+        } catch (error) {
+            console.error('Error deleting child:', error);
+            toast({
+                title: "Ошибка",
+                description: "Не удалось удалить ребенка. Попробуйте еще раз.",
+                variant: "destructive",
+            });
+        }
+    }, [user?.id, deleteChild, getChildrenByParentId, schools, toast]);
+
     // Обработчик добавления нового ребенка
     const handleAddChild = useCallback(async () => {
         if (!user?.id) return;
 
         try {
             // Валидация
-            if (!newChild.name || !newChild.surname || !newChild.age || !newChild.schoolId || !newChild.class || !newChild.shift) {
+            if (!newChild.name || !newChild.surname || !newChild.age || !newChild.schoolId || !newChild.class) {
                 toast({
                     title: "Ошибка",
                     description: "Заполните все поля",
@@ -394,11 +486,10 @@ const ParentDashboard = () => {
                 role: 'child' as const,
                 schoolId: newChild.schoolId,
                 class: newChild.class,
-                shift: newChild.shift,
                 parentId: user.id
             };
 
-            await createUser(childData);
+            await createChild(childData);
 
             // Перезагружаем список детей после создания
             const updatedChildren = await getChildrenByParentId(user.id);
@@ -429,8 +520,7 @@ const ParentDashboard = () => {
                 surname: '',
                 age: undefined, // Добавляем поле возраста
                 schoolId: '',
-                class: '',
-                shift: ''
+                class: ''
             });
             setSelectedSchoolId("");
             setAvailableClasses([]);
@@ -449,7 +539,7 @@ const ParentDashboard = () => {
                 variant: "destructive",
             });
         }
-    }, [user?.id, newChild, createUser, getChildrenByParentId, toast]);
+    }, [user?.id, newChild, createChild, getChildrenByParentId, toast]);
 
     // Функция для открытия модального окна редактирования ребенка (мемоизирована)
     const handleEditChild = useCallback((child: ChildData) => {
@@ -538,10 +628,8 @@ const ParentDashboard = () => {
         // Фильтруем мастер-классы по дате
         const availableEvents = masterClasses.filter(ev => ev.date >= today);
 
-
         // Создаем карту для группировки по классу (школа + класс)
         const classGroupMap = new Map<string, WorkshopCardData>();
-
 
         const getInvoiceRank = (s?: 'pending' | 'paid' | 'cancelled'): number => {
             if (!s) return -1;
@@ -630,14 +718,25 @@ const ParentDashboard = () => {
                         reg.workshopId === event.id && reg.userId === child.id
                     );
 
-                    // Проверяем в счетах - НЕ фильтруем по master_class_id, так как счет может быть для другого мастер-класса
+                    // Проверяем в счетах - ищем счет для конкретного мастер-класса и родителя
                     // Связь между счетом и ребенком определяется через участников мастер-класса
                     const allInvoices = participantInvoices?.invoices || [];
 
+                    // Ищем счет для конкретного ребенка и мастер-класса
                     const invoice = allInvoices.find(inv => {
+                        // Проверяем, что счет относится к этому мастер-классу
+                        if (inv.master_class_id !== event.id) {
+                            return false;
+                        }
+
+                        // Проверяем, что счет относится к родителю этого ребенка
+                        if (inv.participant_id !== user?.id) {
+                            return false;
+                        }
+
+                        // Проверяем, что ребенок есть в участниках мастер-класса
                         const masterClass = masterClasses.find(mc => mc.id === event.id);
                         if (masterClass && masterClass.participants) {
-                            // Проверяем, есть ли ребенок в участниках мастер-класса для этого счета
                             const hasChild = masterClass.participants.some(participant =>
                                 participant.childId === child.id
                             );
@@ -645,7 +744,6 @@ const ParentDashboard = () => {
                         }
                         return false;
                     });
-
 
                     let status: 'none' | 'pending' | 'paid' | 'cancelled' = 'none';
                     if (registration) {
@@ -662,7 +760,6 @@ const ParentDashboard = () => {
                             status = invoice.status;
                         }
                     }
-
 
                     return {
                         childId: child.id,
@@ -689,8 +786,6 @@ const ParentDashboard = () => {
                     else if (hasCancelledInvoice) invoiceStatus = 'cancelled';
                 }
 
-
-
                 // Создаем или обновляем карточку для этого класса
                 if (classGroupMap.has(classKey)) {
                     // Обновляем существующую карточку, добавляя новых детей
@@ -705,6 +800,27 @@ const ParentDashboard = () => {
                     // Обновляем информацию о детях и их статусах (берем лучший статус для каждого ребенка)
                     existing.eligibleChildren = mergeEligibleChildren(existing.eligibleChildren, eligibleChildren);
                     existing.childrenWithStatus = mergeChildStatusLists(existing.childrenWithStatus, childrenWithStatus);
+
+                    // Обновляем данные участников - преобразуем в нужный формат
+                    existing.participants = (event.participants || []).map((p: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                        id: p.id || '',
+                        childId: p.childId || '',
+                        childName: p.childName || '',
+                        parentId: p.parentId || '',
+                        parentName: p.parentName || '',
+                        selectedStyles: Array.isArray(p.selectedStyles) ? p.selectedStyles.map((s: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                            typeof s === 'string' ? { id: s, name: s } : s
+                        ) : [],
+                        selectedOptions: Array.isArray(p.selectedOptions) ? p.selectedOptions.map((o: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                            typeof o === 'string' ? { id: o, name: o } : o
+                        ) : [],
+                        totalAmount: p.totalAmount || 0,
+                        isPaid: p.isPaid || false,
+                        hasReceived: p.hasReceived || false,
+                        paymentMethod: p.paymentMethod,
+                        paymentDate: p.paymentDate,
+                        notes: p.notes
+                    }));
 
                 } else {
                     // Создаем новую карточку для класса
@@ -722,6 +838,25 @@ const ParentDashboard = () => {
                         serviceId: event.serviceId,
                         eligibleChildren: eligibleChildren,
                         childrenWithStatus: childrenWithStatus,
+                        participants: (event.participants || []).map((p: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                            id: p.id || '',
+                            childId: p.childId || '',
+                            childName: p.childName || '',
+                            parentId: p.parentId || '',
+                            parentName: p.parentName || '',
+                            selectedStyles: Array.isArray(p.selectedStyles) ? p.selectedStyles.map((s: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                                typeof s === 'string' ? { id: s, name: s } : s
+                            ) : [],
+                            selectedOptions: Array.isArray(p.selectedOptions) ? p.selectedOptions.map((o: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                                typeof o === 'string' ? { id: o, name: o } : o
+                            ) : [],
+                            totalAmount: p.totalAmount || 0,
+                            isPaid: p.isPaid || false,
+                            hasReceived: p.hasReceived || false,
+                            paymentMethod: p.paymentMethod,
+                            paymentDate: p.paymentDate,
+                            notes: p.notes
+                        })), // Добавляем данные участников
                         participantsCount: event.participants ? event.participants.length : 0,
                         invoiceStatus
                     };
@@ -737,7 +872,6 @@ const ParentDashboard = () => {
         // Преобразуем в массив для отображения
         const allWorkshops = Array.from(classGroupMap.values());
 
-
         // Сортируем по дате, времени и названию школы
         const sortedWorkshops = allWorkshops.sort((a, b) => {
             // Сначала по дате
@@ -752,7 +886,6 @@ const ParentDashboard = () => {
             return a.schoolName.localeCompare(b.schoolName);
         });
 
-
         return { total: sortedWorkshops.length, workshops: sortedWorkshops };
     }, [masterClasses, schools, services, children, userRegistrations, participantInvoices, user?.id]);
 
@@ -766,7 +899,6 @@ const ParentDashboard = () => {
 
         // Фильтруем прошедшие мастер-классы
         const pastEvents = masterClasses.filter(ev => ev.date < today);
-
 
         // Создаем карту для группировки по классу (школа + класс)
         const classGroupMap = new Map<string, WorkshopCardData>();
@@ -811,6 +943,17 @@ const ParentDashboard = () => {
 
                     const allInvoices = participantInvoices?.invoices || [];
                     const invoice = allInvoices.find(inv => {
+                        // Проверяем, что счет относится к этому мастер-классу
+                        if (inv.master_class_id !== event.id) {
+                            return false;
+                        }
+
+                        // Проверяем, что счет относится к родителю этого ребенка
+                        if (inv.participant_id !== user?.id) {
+                            return false;
+                        }
+
+                        // Проверяем, что ребенок есть в участниках мастер-класса
                         const masterClass = masterClasses.find(mc => mc.id === event.id);
                         if (masterClass && masterClass.participants) {
                             const hasChild = masterClass.participants.some(participant =>
@@ -868,6 +1011,25 @@ const ParentDashboard = () => {
                     serviceId: event.serviceId,
                     eligibleChildren: eligibleChildren,
                     childrenWithStatus: childrenWithStatus,
+                    participants: (event.participants || []).map((p: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                        id: p.id || '',
+                        childId: p.childId || '',
+                        childName: p.childName || '',
+                        parentId: p.parentId || '',
+                        parentName: p.parentName || '',
+                        selectedStyles: Array.isArray(p.selectedStyles) ? p.selectedStyles.map((s: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                            typeof s === 'string' ? { id: s, name: s } : s
+                        ) : [],
+                        selectedOptions: Array.isArray(p.selectedOptions) ? p.selectedOptions.map((o: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
+                            typeof o === 'string' ? { id: o, name: o } : o
+                        ) : [],
+                        totalAmount: p.totalAmount || 0,
+                        isPaid: p.isPaid || false,
+                        hasReceived: p.hasReceived || false,
+                        paymentMethod: p.paymentMethod,
+                        paymentDate: p.paymentDate,
+                        notes: p.notes
+                    })), // Добавляем данные участников
                     participantsCount: event.participants ? event.participants.length : 0,
                     invoiceStatus
                 };
@@ -880,9 +1042,8 @@ const ParentDashboard = () => {
         const allPastWorkshops = Array.from(classGroupMap.values());
         const sortedPastWorkshops = allPastWorkshops.sort((a, b) => b.date.localeCompare(a.date));
 
-
         return { total: sortedPastWorkshops.length, workshops: sortedPastWorkshops };
-    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices]);
+    }, [masterClasses, schools, services, children, userRegistrations, participantInvoices, user?.id]);
 
     const handleApproveOrder = (orderId: string) => {
         toast({
@@ -906,20 +1067,15 @@ const ParentDashboard = () => {
     // Обработчик успешной регистрации на мастер-класс
     const handleWorkshopRegistrationSuccess = useCallback(async () => {
         try {
-            console.log('🔄 Начинаем обновление данных после записи...');
-
             if (user?.id) {
                 // 1. Принудительно обновляем мастер-классы
-                console.log('📋 Обновляем мастер-классы...');
                 await fetchMasterClasses({ forceRefresh: true });
 
                 // 2. Перезагружаем регистрации пользователя
-                console.log('📝 Обновляем регистрации...');
                 const updatedRegistrations = await getUserRegistrations(user.id);
                 setUserRegistrations(updatedRegistrations);
 
                 // 3. Перезагружаем детей (для обновления статистики)
-                console.log('👶 Обновляем данные детей...');
                 const updatedChildren = await getChildrenByParentId(user.id);
                 const formattedChildren: ChildData[] = (updatedChildren || []).map(child => {
                     let age = child.age || 7;
@@ -940,14 +1096,14 @@ const ParentDashboard = () => {
                 setChildren(formattedChildren);
 
                 // 4. Принудительно инвалидируем кэш счетов
-                console.log('💰 Обновляем счета...');
+
                 queryClient.invalidateQueries({ queryKey: ['invoices', 'parent', user.id] });
                 queryClient.invalidateQueries({ queryKey: ['invoices', 'parent'] });
                 queryClient.invalidateQueries({ queryKey: ['masterClasses'] });
 
                 // 5. Небольшая задержка для корректного обновления UI
                 setTimeout(() => {
-                    console.log('✅ Обновление данных завершено');
+
                 }, 500);
             }
 
@@ -985,12 +1141,6 @@ const ParentDashboard = () => {
         setSelectedWorkshop(workshop);
         setIsOrderDetailsOpen(true);
 
-        console.log('Детали заказа:', {
-            workshop: workshop.title,
-            children: workshop.childrenWithStatus,
-            status: workshop.invoiceStatus,
-            invoiceStatus: workshop.invoiceStatus
-        });
     };
 
     // Обработчик оплаты заказа
@@ -1079,17 +1229,13 @@ const ParentDashboard = () => {
             });
         }
 
-
         return childStats;
     }, [children, userRegistrations, participantInvoices?.invoices]);
-
 
     return (
         <div className="min-h-screen bg-gradient-wax-hands relative overflow-hidden">
             {/* Анимированные звездочки */}
             <AnimatedStars count={15} className="opacity-40" />
-
-
 
             {/* Шапка с логотипом и названием студии */}
             <ParentHeader />
@@ -1178,14 +1324,14 @@ const ParentDashboard = () => {
                 {/* Основной контент */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                     <TabsList className="grid w-full grid-cols-4 bg-white/90 backdrop-blur-sm border-2 border-gray-200 shadow-lg p-2 gap-1 h-auto">
-                        <TabsTrigger value="about" className="data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
-                            О нас
+                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
+                            Мастер-классы
                         </TabsTrigger>
                         <TabsTrigger value="children" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
                             Мои дети
                         </TabsTrigger>
-                        <TabsTrigger value="workshops" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
-                            Мастер-классы
+                        <TabsTrigger value="about" className="data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
+                            О нас
                         </TabsTrigger>
                         <TabsTrigger value="history" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-1.5 px-1 text-xs font-medium rounded-md flex items-center justify-center h-10">
                             История
@@ -1343,14 +1489,24 @@ const ParentDashboard = () => {
                                                         <Baby className="w-5 h-5" />
                                                         <span>{child.name}</span>
                                                     </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => handleEditChild(child)}
-                                                        className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
-                                                    >
-                                                        <Edit className="w-4 h-4" />
-                                                    </Button>
+                                                    <div className="flex items-center space-x-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleEditChild(child)}
+                                                            className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
+                                                        >
+                                                            <Edit className="w-4 h-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDeleteChild(child.id, child.name)}
+                                                            className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
                                                 </CardTitle>
                                                 <CardDescription className="text-sm sm:text-base flex items-center space-x-2">
                                                     <GraduationCap className="w-4 h-4" />
@@ -1434,44 +1590,27 @@ const ParentDashboard = () => {
                                                     </Select>
                                                 </div>
 
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="childClass">Класс/группа</Label>
-                                                        <Select
-                                                            onValueChange={(value) => setNewChild(prev => ({ ...prev, class: value }))}
-                                                            value={newChild.class}
-                                                            disabled={!selectedSchoolId}
-                                                        >
-                                                            <SelectTrigger>
-                                                                <SelectValue placeholder="Выберите класс или группу" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {(availableClasses || []).map((className) => (
-                                                                    <SelectItem key={className} value={className}>
-                                                                        {className}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                        {!selectedSchoolId && (
-                                                            <p className="text-sm text-gray-500">Сначала выберите школу</p>
-                                                        )}
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="childShift">Смена</Label>
-                                                        <Select
-                                                            onValueChange={(value) => setNewChild(prev => ({ ...prev, shift: value }))}
-                                                            value={newChild.shift}
-                                                        >
-                                                            <SelectTrigger>
-                                                                <SelectValue placeholder="Выберите смену" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="1">Первая смена</SelectItem>
-                                                                <SelectItem value="2">Вторая смена</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="childClass">Класс/группа</Label>
+                                                    <Select
+                                                        onValueChange={(value) => setNewChild(prev => ({ ...prev, class: value }))}
+                                                        value={newChild.class}
+                                                        disabled={!selectedSchoolId}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Выберите класс или группу" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {(availableClasses || []).map((className) => (
+                                                                <SelectItem key={className} value={className}>
+                                                                    {className}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {!selectedSchoolId && (
+                                                        <p className="text-sm text-gray-500">Сначала выберите школу</p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="flex justify-end space-x-2">
@@ -1516,8 +1655,6 @@ const ParentDashboard = () => {
                                     </p>
                                 </CardContent>
                             </Card>
-
-
 
                         ) : (
                             <div className="space-y-4">
@@ -1592,8 +1729,6 @@ const ParentDashboard = () => {
                                                         </span>
                                                     </div>
                                                 </div>
-
-
 
                                                 {/* Кнопки в зависимости от статуса счета */}
                                                 {!workshop.invoiceStatus || workshop.invoiceStatus === 'cancelled' ? (
@@ -1817,7 +1952,6 @@ const ParentDashboard = () => {
                                                                                 }]}
                                                                                 masterClassName={workshop.title}
                                                                                 eventDate={workshop.date}
-                                                                                isPaymentDisabled={true}
                                                                                 eventTime={workshop.time}
                                                                                 onPaymentSuccess={() => {
                                                                                     toast({
@@ -1919,10 +2053,10 @@ const ParentDashboard = () => {
                         </div>
                     </TabsContent>
 
-
                 </Tabs>
 
-                {/* Секция с заявками на проведение мастер-классов - всегда видна */}
+                {/* Секция с заявками на проведение мастер-классов */}
+                {activeTab === 'workshops' && (groupedWorkshops?.total ?? 0) === 0 && (
                 <div className="mt-6">
                     <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                         <CardHeader className="pb-3">
@@ -2030,10 +2164,10 @@ const ParentDashboard = () => {
                                 <div className="text-center py-8">
                                     <div className="text-4xl mb-4">📝</div>
                                     <div className="text-lg font-semibold text-gray-600 mb-2">
-                                        У вас пока нет заявок
+                                        Мечтаете увидеть наш мастер-класс в стенах вашей школы? Самое время это устроить!
                                     </div>
                                     <p className="text-gray-500 mb-4">
-                                        Хотите провести мастер-класс в классе вашего ребенка? Подайте заявку!
+                                        Оставьте заявку, и мы начнём работу. Чем больше нас поддержат, тем весомее будет наш разговор с администрацией. Помогите нам доказать, что вашей школе это действительно интересно!
                                     </p>
                                     <Button
                                         onClick={() => setIsWorkshopRequestOpen(true)}
@@ -2046,6 +2180,7 @@ const ParentDashboard = () => {
                         </CardContent>
                     </Card>
                 </div>
+                )}
             </div>
 
             {/* Модальное окно записи на мастер-класс или просмотра деталей заказа */}
@@ -2066,6 +2201,23 @@ const ParentDashboard = () => {
                     workshop={selectedWorkshop}
                     isOpen={isOrderDetailsOpen}
                     onOpenChange={setIsOrderDetailsOpen}
+                    onWorkshopUpdate={(updatedWorkshop) => {
+                        console.log('🔄 ParentDashboard: Получено обновление workshop', {
+                            oldWorkshop: selectedWorkshop?.id,
+                            newWorkshop: updatedWorkshop?.id,
+                            participants: updatedWorkshop?.participants
+                        });
+                        setSelectedWorkshop({
+                            ...updatedWorkshop,
+                            eligibleChildren: selectedWorkshop?.eligibleChildren || [],
+                            childrenWithStatus: updatedWorkshop.childrenWithStatus?.map(child => ({
+                                ...child,
+                                status: ('status' in child ? child.status : 'none') as 'pending' | 'paid' | 'cancelled' | 'none'
+                            })) || []
+                        });
+                        // Обновляем данные мастер-классов
+                        fetchMasterClasses({ forceRefresh: true });
+                    }}
                 />
             )}
             {/* Отладочная информация */}
@@ -2085,17 +2237,12 @@ const ParentDashboard = () => {
                 }}
             />
 
-
-
             {/* Модальное окно подачи заявки на проведение мастер-класса */}
             <WorkshopRequestModal
                 isOpen={isWorkshopRequestOpen}
                 onOpenChange={setIsWorkshopRequestOpen}
                 onRequestCreated={loadWorkshopRequests}
             />
-
-
-
 
             {/* Модальное окно редактирования ребенка */}
             <Dialog open={isEditChildDialogOpen} onOpenChange={setIsEditChildDialogOpen}>

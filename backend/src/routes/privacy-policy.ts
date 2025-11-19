@@ -11,7 +11,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import puppeteer from 'puppeteer';
 import { authenticateToken } from '../middleware/auth.js';
-import pool from '../database/connection';
+import pool from '../database/connection.js';
 import { PrivacyPolicy, CreatePrivacyPolicyRequest, UpdatePrivacyPolicyRequest } from '../types';
 
 const router = express.Router();
@@ -34,7 +34,16 @@ router.get('/', authenticateToken, async (req, res) => {
             ORDER BY pp.created_at DESC
         `);
 
-        const policies: PrivacyPolicy[] = result.rows.map((row: any) => ({
+        const policies: PrivacyPolicy[] = result.rows.map((row: {
+            id: number;
+            title: string;
+            content: string;
+            version: string;
+            is_active: boolean;
+            created_by: number;
+            created_at: Date;
+            updated_at: Date;
+        }) => ({
             id: row.id.toString(),
             title: row.title,
             content: row.content,
@@ -123,7 +132,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
     try {
         const { title, content, version }: CreatePrivacyPolicyRequest = req.body;
-        const userId = (req as any).user.id;
+        const userId = (req as unknown as { user: { id: string } }).user.id;
 
         if (!title || !content || !version) {
             return res.status(400).json({ error: 'Все поля обязательны для заполнения' });

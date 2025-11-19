@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useServices } from '@/hooks/use-services';
 import { Service, ServiceStyle, ServiceOption } from '@/types/services';
@@ -47,14 +48,30 @@ const ServicesTab: React.FC = () => {
         name: '',
         shortDescription: '',
         fullDescription: '',
-        price: 0
+        price: 0,
+        visibility: {
+            type: 'all' as 'all' | 'specific_users' | 'specific_surnames' | 'specific_phones',
+            restrictions: {
+                surnames: [] as string[],
+                phones: [] as string[],
+                userIds: [] as string[]
+            }
+        }
     });
 
     const [newOptionData, setNewOptionData] = useState({
         name: '',
         shortDescription: '',
         fullDescription: '',
-        price: 0
+        price: 0,
+        visibility: {
+            type: 'all' as 'all' | 'specific_users' | 'specific_surnames' | 'specific_phones',
+            restrictions: {
+                surnames: [] as string[],
+                phones: [] as string[],
+                userIds: [] as string[]
+            }
+        }
     });
 
     React.useEffect(() => {
@@ -106,17 +123,40 @@ const ServicesTab: React.FC = () => {
         }
 
         try {
-            await addStyleToService(serviceId, {
+            const styleData = {
                 name: newStyleData.name,
                 shortDescription: newStyleData.shortDescription,
                 fullDescription: newStyleData.fullDescription,
-                price: newStyleData.price
-            });
+                price: newStyleData.price,
+                visibility: newStyleData.visibility
+            };
 
-            setNewStyleData({ name: '', shortDescription: '', fullDescription: '', price: 0 });
+            if (editingStyle?.style.id) {
+                // Редактирование существующего стиля
+                await updateServiceStyle(serviceId, editingStyle.style.id, styleData);
+            } else {
+                // Добавление нового стиля
+                await addStyleToService(serviceId, styleData);
+            }
+
+            setNewStyleData({
+                name: '',
+                shortDescription: '',
+                fullDescription: '',
+                price: 0,
+                visibility: {
+                    type: 'all',
+                    restrictions: {
+                        surnames: [],
+                        phones: [],
+                        userIds: []
+                    }
+                }
+            });
+            setEditingStyle(null);
             toast({
                 title: "Успешно",
-                description: "Стиль добавлен",
+                description: editingStyle?.style.id ? "Стиль обновлен" : "Стиль добавлен",
             });
         } catch (error) {
             toast({
@@ -138,17 +178,40 @@ const ServicesTab: React.FC = () => {
         }
 
         try {
-            await addOptionToService(serviceId, {
+            const optionData = {
                 name: newOptionData.name,
                 shortDescription: newOptionData.shortDescription,
                 fullDescription: newOptionData.fullDescription,
-                price: newOptionData.price
-            });
+                price: newOptionData.price,
+                visibility: newOptionData.visibility
+            };
 
-            setNewOptionData({ name: '', shortDescription: '', fullDescription: '', price: 0 });
+            if (editingOption?.option.id) {
+                // Редактирование существующей опции
+                await updateServiceOption(serviceId, editingOption.option.id, optionData);
+            } else {
+                // Добавление новой опции
+                await addOptionToService(serviceId, optionData);
+            }
+
+            setNewOptionData({
+                name: '',
+                shortDescription: '',
+                fullDescription: '',
+                price: 0,
+                visibility: {
+                    type: 'all',
+                    restrictions: {
+                        surnames: [],
+                        phones: [],
+                        userIds: []
+                    }
+                }
+            });
+            setEditingOption(null);
             toast({
                 title: "Успешно",
-                description: "Опция добавлена",
+                description: editingOption?.option.id ? "Опция обновлена" : "Опция добавлена",
             });
         } catch (error) {
             toast({
@@ -288,7 +351,23 @@ const ServicesTab: React.FC = () => {
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => setEditingStyle({ serviceId: service.id, style: { id: '', name: '', shortDescription: '', fullDescription: '', price: 0 } })}
+                                        onClick={() => {
+                                            setEditingStyle({ serviceId: service.id, style: { id: '', name: '', shortDescription: '', fullDescription: '', price: 0 } });
+                                            setNewStyleData({
+                                                name: '',
+                                                shortDescription: '',
+                                                fullDescription: '',
+                                                price: 0,
+                                                visibility: {
+                                                    type: 'all',
+                                                    restrictions: {
+                                                        surnames: [],
+                                                        phones: [],
+                                                        userIds: []
+                                                    }
+                                                }
+                                            });
+                                        }}
                                     >
                                         <Plus className="w-4 h-4 mr-1" />
                                         Добавить стиль
@@ -313,7 +392,23 @@ const ServicesTab: React.FC = () => {
                                                         <Button
                                                             size="sm"
                                                             variant="ghost"
-                                                            onClick={() => setEditingStyle({ serviceId: service.id, style })}
+                                                            onClick={() => {
+                                                                setEditingStyle({ serviceId: service.id, style });
+                                                                setNewStyleData({
+                                                                    name: style.name,
+                                                                    shortDescription: style.shortDescription,
+                                                                    fullDescription: style.fullDescription,
+                                                                    price: style.price,
+                                                                    visibility: style.visibility || {
+                                                                        type: 'all',
+                                                                        restrictions: {
+                                                                            surnames: [],
+                                                                            phones: [],
+                                                                            userIds: []
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }}
                                                         >
                                                             <Edit className="w-4 h-4" />
                                                         </Button>
@@ -356,7 +451,23 @@ const ServicesTab: React.FC = () => {
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => setEditingOption({ serviceId: service.id, option: { id: '', name: '', shortDescription: '', fullDescription: '', price: 0 } })}
+                                        onClick={() => {
+                                            setEditingOption({ serviceId: service.id, option: { id: '', name: '', shortDescription: '', fullDescription: '', price: 0 } });
+                                            setNewOptionData({
+                                                name: '',
+                                                shortDescription: '',
+                                                fullDescription: '',
+                                                price: 0,
+                                                visibility: {
+                                                    type: 'all',
+                                                    restrictions: {
+                                                        surnames: [],
+                                                        phones: [],
+                                                        userIds: []
+                                                    }
+                                                }
+                                            });
+                                        }}
                                     >
                                         <Plus className="w-4 h-4 mr-1" />
                                         Добавить опцию
@@ -381,7 +492,23 @@ const ServicesTab: React.FC = () => {
                                                         <Button
                                                             size="sm"
                                                             variant="ghost"
-                                                            onClick={() => setEditingOption({ serviceId: service.id, option })}
+                                                            onClick={() => {
+                                                                setEditingOption({ serviceId: service.id, option });
+                                                                setNewOptionData({
+                                                                    name: option.name,
+                                                                    shortDescription: option.shortDescription,
+                                                                    fullDescription: option.fullDescription,
+                                                                    price: option.price,
+                                                                    visibility: option.visibility || {
+                                                                        type: 'all',
+                                                                        restrictions: {
+                                                                            surnames: [],
+                                                                            phones: [],
+                                                                            userIds: []
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }}
                                                         >
                                                             <Edit className="w-4 h-4" />
                                                         </Button>
@@ -534,6 +661,77 @@ const ServicesTab: React.FC = () => {
                                     className="mt-1"
                                 />
                             </div>
+
+                            {/* Настройки видимости */}
+                            <div className="border-t pt-4">
+                                <Label className="text-base font-semibold">Настройки видимости</Label>
+                                <div className="space-y-3 mt-2">
+                                    <div>
+                                        <Label>Тип ограничения</Label>
+                                        <Select
+                                            value={newStyleData.visibility.type}
+                                            onValueChange={(value: 'all' | 'specific_users' | 'specific_surnames' | 'specific_phones') =>
+                                                setNewStyleData(prev => ({
+                                                    ...prev,
+                                                    visibility: { ...prev.visibility, type: value }
+                                                }))
+                                            }
+                                        >
+                                            <SelectTrigger className="mt-1">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Для всех пользователей</SelectItem>
+                                                <SelectItem value="specific_surnames">Только для фамилий</SelectItem>
+                                                <SelectItem value="specific_phones">Только для телефонов</SelectItem>
+                                                <SelectItem value="specific_users">Только для пользователей</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {newStyleData.visibility.type === 'specific_surnames' && (
+                                        <div>
+                                            <Label>Фамилии (через запятую)</Label>
+                                            <Input
+                                                value={newStyleData.visibility.restrictions.surnames.join(', ')}
+                                                onChange={(e) => setNewStyleData(prev => ({
+                                                    ...prev,
+                                                    visibility: {
+                                                        ...prev.visibility,
+                                                        restrictions: {
+                                                            ...prev.visibility.restrictions,
+                                                            surnames: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                                        }
+                                                    }
+                                                }))}
+                                                placeholder="Тырин, Иванов"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {newStyleData.visibility.type === 'specific_phones' && (
+                                        <div>
+                                            <Label>Телефоны (через запятую)</Label>
+                                            <Input
+                                                value={newStyleData.visibility.restrictions.phones.join(', ')}
+                                                onChange={(e) => setNewStyleData(prev => ({
+                                                    ...prev,
+                                                    visibility: {
+                                                        ...prev.visibility,
+                                                        restrictions: {
+                                                            ...prev.visibility.restrictions,
+                                                            phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                                        }
+                                                    }
+                                                }))}
+                                                placeholder="+79143131002, +79143131003"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         <div className="flex gap-2 mt-6">
@@ -598,6 +796,77 @@ const ServicesTab: React.FC = () => {
                                     placeholder="0"
                                     className="mt-1"
                                 />
+                            </div>
+
+                            {/* Настройки видимости */}
+                            <div className="border-t pt-4">
+                                <Label className="text-base font-semibold">Настройки видимости</Label>
+                                <div className="space-y-3 mt-2">
+                                    <div>
+                                        <Label>Тип ограничения</Label>
+                                        <Select
+                                            value={newOptionData.visibility.type}
+                                            onValueChange={(value: 'all' | 'specific_users' | 'specific_surnames' | 'specific_phones') =>
+                                                setNewOptionData(prev => ({
+                                                    ...prev,
+                                                    visibility: { ...prev.visibility, type: value }
+                                                }))
+                                            }
+                                        >
+                                            <SelectTrigger className="mt-1">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Для всех пользователей</SelectItem>
+                                                <SelectItem value="specific_surnames">Только для фамилий</SelectItem>
+                                                <SelectItem value="specific_phones">Только для телефонов</SelectItem>
+                                                <SelectItem value="specific_users">Только для пользователей</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {newOptionData.visibility.type === 'specific_surnames' && (
+                                        <div>
+                                            <Label>Фамилии (через запятую)</Label>
+                                            <Input
+                                                value={newOptionData.visibility.restrictions.surnames.join(', ')}
+                                                onChange={(e) => setNewOptionData(prev => ({
+                                                    ...prev,
+                                                    visibility: {
+                                                        ...prev.visibility,
+                                                        restrictions: {
+                                                            ...prev.visibility.restrictions,
+                                                            surnames: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                                        }
+                                                    }
+                                                }))}
+                                                placeholder="Тырин, Иванов"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {newOptionData.visibility.type === 'specific_phones' && (
+                                        <div>
+                                            <Label>Телефоны (через запятую)</Label>
+                                            <Input
+                                                value={newOptionData.visibility.restrictions.phones.join(', ')}
+                                                onChange={(e) => setNewOptionData(prev => ({
+                                                    ...prev,
+                                                    visibility: {
+                                                        ...prev.visibility,
+                                                        restrictions: {
+                                                            ...prev.visibility.restrictions,
+                                                            phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                                        }
+                                                    }
+                                                }))}
+                                                placeholder="+79143131002, +79143131003"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 

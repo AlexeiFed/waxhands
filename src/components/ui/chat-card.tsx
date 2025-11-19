@@ -25,7 +25,7 @@ const ChatCard: React.FC<ChatCardProps> = ({ onOpenChat }) => {
 
     // Принудительно загружаем чаты при монтировании компонента
     React.useEffect(() => {
-        console.log('ChatCard: Принудительная загрузка чатов');
+
         refetchChats();
     }, [refetchChats]);
 

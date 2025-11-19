@@ -237,5 +237,3 @@ export const PrivacyConsentTab: React.FC = () => {
 
 export default PrivacyConsentTab;
 
-
-

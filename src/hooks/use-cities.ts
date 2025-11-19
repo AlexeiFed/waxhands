@@ -28,9 +28,8 @@ export const useCities = (): UseCitiesReturn => {
         try {
             setLoading(true);
             setError(null);
-            console.log('use-cities v2: Начинаем загрузку городов...');
+
             const response = await api.get('/schools/cities');
-            console.log('use-cities v2: Получен ответ:', response);
 
             // Обрабатываем разные форматы ответа API
             let citiesData: string[] = [];
@@ -72,33 +71,31 @@ export const useCities = (): UseCitiesReturn => {
 
     const getSchoolsByCity = useCallback(async (city: string): Promise<School[]> => {
         try {
-            console.log('use-cities: getSchoolsByCity called with city:', city);
+
             setSchoolsError(null);
             const response = await api.get(`/schools/by-city/${encodeURIComponent(city)}`);
-            console.log('use-cities: API response:', response);
-            console.log('use-cities: response.data:', response.data);
 
             // Проверяем успешность ответа - response.data уже содержит {success: true, data: [...]}
             if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
                 const apiResponse = response.data as { success: boolean; data: unknown };
                 if (apiResponse.success && Array.isArray(apiResponse.data)) {
-                    console.log('use-cities: Response data.data:', apiResponse.data);
+
                     setSchoolsError(null); // Сбрасываем ошибку при успешной загрузке
                     const mappedSchools = apiResponse.data.map((school: Record<string, unknown>) => ({
                         ...school,
                         classes: school.classes || [],
                         teacherPhone: school.teacher_phone
                     }));
-                    console.log('use-cities: Mapped schools:', mappedSchools);
+
                     return mappedSchools as School[];
                 } else {
-                    console.log('use-cities: API response not successful or invalid data:', response.data);
+
                     setSchoolsError('Не удалось получить школы по городу');
                     return [];
                 }
             } else if (Array.isArray(response.data)) {
                 // Прямой массив школ (если API возвращает массив напрямую)
-                console.log('use-cities: Direct array response:', response.data);
+
                 setSchoolsError(null);
                 const mappedSchools = response.data.map((school: Record<string, unknown>) => ({
                     ...school,
@@ -108,7 +105,7 @@ export const useCities = (): UseCitiesReturn => {
                 console.log('use-cities: Mapped schools (direct array):', mappedSchools);
                 return mappedSchools as School[];
             } else {
-                console.log('use-cities: API response not successful or invalid data:', response.data);
+
                 setSchoolsError('Не удалось получить школы по городу');
                 return [];
             }

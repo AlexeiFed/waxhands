@@ -43,23 +43,35 @@ export interface RobokassaInvoiceItem {
     NomenclatureCode?: string;
 }
 
+// Позиция для возврата согласно документации vozrat.md
+export interface RobokassaRefundInvoiceItem {
+    Name: string;
+    Quantity: number;
+    Cost: number; // Robokassa требует числа, а не строки
+    Tax: 'none' | 'vat0' | 'vat5' | 'vat7' | 'vat10' | 'vat20' | 'vat110' | 'vat120' | 'vat105' | 'vat107';
+    PaymentMethod: 'full_prepayment' | 'prepayment' | 'advance' | 'full_payment' | 'partial_payment' | 'credit' | 'credit_payment'; // ДОЛЖНО СОВПАДАТЬ с PaymentMethod при создании счета
+    PaymentObject: 'commodity' | 'excise' | 'job' | 'service' | 'gambling_bet' | 'gambling_prize' | 'lottery' | 'lottery_prize' | 'intellectual_activity' | 'payment' | 'agent_commission' | 'composite' | 'resort_fee' | 'another' | 'property_right' | 'non-operating_gain' | 'insurance_premium' | 'sales_tax';
+}
+
 // Ответ от Robokassa при создании счета
 export interface RobokassaCreateInvoiceResponse {
     success: boolean;
     invoiceUrl?: string;
+    paymentUrl?: string; // URL для POST формы оплаты
+    method?: string; // Метод оплаты (GET/POST)
     invoiceId?: string;
     formData?: {
         MerchantLogin: string;
         OutSum: string;
-        InvId: string;
+        InvoiceID: string;
+        InvId: string; // Добавляем для совместимости с фронтендом
         Receipt?: string; // Временно делаем опциональным для тестирования без фискализации
         Description: string;
         SignatureValue: string;
         Culture: string;
         Encoding: string;
-        IsTest?: string;
-        shp_invoice_id?: string;
-        shp_participant?: string;
+        Shp_invoice_id?: string;
+        Shp_participant?: string;
     };
     error?: string;
 }
@@ -96,8 +108,8 @@ export interface RobokassaJWSNotification {
 // Запрос на возврат
 export interface RobokassaRefundRequest {
     OpKey: string;
-    RefundSum?: number;
-    InvoiceItems?: RobokassaInvoiceItem[];
+    RefundSum?: number; // Robokassa требует числа, а не строки
+    InvoiceItems?: RobokassaRefundInvoiceItem[];
 }
 
 // Ответ на запрос возврата
@@ -105,6 +117,7 @@ export interface RobokassaRefundResponse {
     success: boolean;
     message?: string;
     requestId?: string;
+    error?: string;
 }
 
 // Статус возврата
@@ -134,12 +147,13 @@ export interface CreateRobokassaInvoiceData {
     description: string;
     participantName: string;
     masterClassName: string;
-    selectedStyles: Array<{ id: string; name: string; price: number }>;
-    selectedOptions: Array<{ id: string; name: string; price: number }>;
+    selectedStyles: Array<{ id: string; name: string; price: number; nomenclature_code?: string }>;
+    selectedOptions: Array<{ id: string; name: string; price: number; nomenclature_code?: string }>;
     workshopDate: string;
     city: string;
     schoolName: string;
     classGroup: string;
     userEmail?: string; // Email пользователя для JWT API
     notes?: string;
+    nomenclature_code?: string; // Номенклатура товара для основного мастер-класса
 }

@@ -159,7 +159,6 @@ export const deleteMediaFile = async (filename: string): Promise<void> => {
         delete savedFiles[filename];
         localStorage.setItem('aboutMediaFiles', JSON.stringify(savedFiles));
 
-        console.log(`Media file ${filename} deleted from localStorage`);
     } catch (error) {
         console.error('Error deleting media file:', error);
         throw new Error('Не удалось удалить медиа-файл');
@@ -212,7 +211,7 @@ export const clearAllMediaFiles = (): void => {
         });
 
         localStorage.removeItem('aboutMediaFiles');
-        console.log('All media files cleared from localStorage');
+
     } catch (error) {
         console.error('Error clearing media files:', error);
     }
@@ -241,7 +240,7 @@ export const cleanupBlobUrls = (): void => {
             });
 
             localStorage.setItem('aboutMediaFiles', JSON.stringify(recentFiles));
-            console.log(`Cleaned up media files, kept ${recentKeys.length} most recent`);
+
         }
     } catch (error) {
         console.error('Error cleaning up blob URLs:', error);

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection.js';
+import bcrypt from 'bcryptjs';
 
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -40,8 +41,67 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         console.log('📊 Users result rows:', usersResult.rows.length);
         console.log('📊 Count result:', countResult.rows[0]);
 
-        const users = usersResult.rows.map(user => {
+        // Загружаем всех пользователей с их связями
+        const usersWithRelations = await Promise.all(usersResult.rows.map(async user => {
             const { password_hash, ...userWithoutPassword } = user;
+
+            let children: any[] = [];
+            let parent: any = null;
+
+            // Если это родитель, загружаем его детей
+            if (user.role === 'parent') {
+                try {
+                    const childrenResult = await pool.query(`
+                        SELECT id, name, surname, age, school_id, school_name, class, class_group, created_at, updated_at
+                        FROM users 
+                        WHERE role = 'child' AND parent_id = $1
+                        ORDER BY name ASC
+                    `, [user.id]);
+
+                    children = childrenResult.rows.map(child => ({
+                        id: child.id,
+                        name: child.name,
+                        surname: child.surname,
+                        age: child.age,
+                        schoolId: child.school_id,
+                        schoolName: child.school_name,
+                        class: child.class_group || child.class,
+                        role: 'child',
+                        parentId: user.id,
+                        createdAt: child.created_at,
+                        updatedAt: child.updated_at
+                    }));
+                } catch (error) {
+                    console.error('Error loading children for parent:', user.id, error);
+                }
+            }
+
+            // Если это ребенок, загружаем его родителя
+            if (user.role === 'child' && user.parent_id) {
+                try {
+                    const parentResult = await pool.query(`
+                        SELECT id, name, surname, email, phone, role, created_at, updated_at
+                        FROM users 
+                        WHERE id = $1
+                    `, [user.parent_id]);
+
+                    if (parentResult.rows.length > 0) {
+                        const parentData = parentResult.rows[0];
+                        parent = {
+                            id: parentData.id,
+                            name: parentData.name,
+                            surname: parentData.surname,
+                            email: parentData.email,
+                            phone: parentData.phone,
+                            role: parentData.role,
+                            createdAt: parentData.created_at,
+                            updatedAt: parentData.updated_at
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error loading parent for child:', user.id, error);
+                }
+            }
 
             // Преобразуем snake_case в camelCase для фронтенда
             return {
@@ -50,20 +110,23 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
                 schoolName: user.school_name,
                 schoolId: user.school_id,
                 class: user.class_group || user.class, // Приоритет class_group
+                parentId: user.parent_id,
+                children: children,
+                parent: parent,
                 createdAt: user.created_at,
                 updatedAt: user.updated_at
             };
-        });
+        }));
 
-        console.log('✅ Returning users:', users.length);
+        console.log('✅ Returning users with relations:', usersWithRelations.length);
 
         res.json({
             success: true,
             data: {
-                users,
+                users: usersWithRelations,
                 total: parseInt(countResult.rows[0].count),
                 page: Number(page),
-                limit: userLimit || users.length // Если лимит не указан, возвращаем количество полученных записей
+                limit: userLimit || usersWithRelations.length // Если лимит не указан, возвращаем количество полученных записей
             }
         });
     } catch (error) {
@@ -197,7 +260,36 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        const userRole = (req as any).user?.role;
+        const userId = (req as any).user?.userId;
 
+        // Если это родитель, проверяем, что он удаляет своего ребенка
+        if (userRole === 'parent') {
+            const childCheck = await pool.query(
+                'SELECT id FROM users WHERE id = $1 AND parent_id = $2',
+                [id, userId]
+            );
+
+            if (childCheck.rows.length === 0) {
+                res.status(403).json({
+                    success: false,
+                    error: 'You can only delete your own children'
+                });
+                return;
+            }
+        }
+
+        // Удаляем связанные счета перед удалением пользователя
+        const deleteInvoicesResult = await pool.query(
+            'DELETE FROM invoices WHERE participant_id = $1 RETURNING id',
+            [id]
+        );
+
+        if (deleteInvoicesResult.rowCount && deleteInvoicesResult.rowCount > 0) {
+            console.log('✅ Удалены счета для пользователя:', deleteInvoicesResult.rows.map((r: Record<string, unknown>) => r.id));
+        }
+
+        // Удаляем пользователя
         const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
 
         if (result.rows.length === 0) {
@@ -318,9 +410,18 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
             // Получаем название школы, если указан schoolId
             let schoolName = null;
-            if (userData.schoolId) {
-                const schoolResult = await client.query('SELECT name FROM schools WHERE id = $1', [userData.schoolId]);
+            const schoolId = userData.schoolId || userData.school_id;
+            if (schoolId) {
+                const schoolResult = await client.query('SELECT name FROM schools WHERE id = $1', [schoolId]);
                 schoolName = schoolResult.rows[0]?.name || null;
+            }
+
+            // Хешируем пароль, если он передан
+            let passwordHash = null;
+            if (userData.password) {
+                passwordHash = await bcrypt.hash(userData.password, 12);
+            } else if (userData.password_hash) {
+                passwordHash = userData.password_hash;
             }
 
             // Создаем пользователя
@@ -334,13 +435,13 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
                 userData.role,
                 userData.phone || null,
                 userData.email || null,
-                userData.password_hash || null,
+                passwordHash,
                 userData.age || null,
-                userData.school_id || null,
-                userData.school_name || null,
+                userData.schoolId || userData.school_id || null,
+                schoolName, // Используем полученное schoolName из базы данных
                 userData.class || null,
                 userData.class_group || null,
-                userData.parent_id || null
+                userData.parentId || userData.parent_id || null
             ]);
 
             const newUser = result.rows[0];

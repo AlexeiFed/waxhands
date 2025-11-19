@@ -54,12 +54,20 @@ const PaymentStatus: React.FC<PaymentStatusProps> = ({
 
     // Подписываемся на обновления для конкретного счета
     useEffect(() => {
-        subscribe('invoices', invoiceId);
-
-        return () => {
-            unsubscribe('invoices');
+        const handleInvoiceUpdate = (data: { invoiceId: string; status: string }) => {
+            if (data.invoiceId === invoiceId) {
+                // Проверяем, что статус соответствует ожидаемым значениям
+                const validStatus = data.status as 'pending' | 'paid' | 'cancelled';
+                if (['pending', 'paid', 'cancelled'].includes(validStatus)) {
+                    setCurrentStatus(validStatus);
+                }
+            }
         };
-    }, [subscribe, unsubscribe, invoiceId]);
+
+        const unsubscribeFn = subscribe('invoices', handleInvoiceUpdate);
+
+        return unsubscribeFn;
+    }, [subscribe, invoiceId]);
 
     // Обновляем локальный статус при изменении пропса
     useEffect(() => {
@@ -163,9 +171,9 @@ const PaymentStatus: React.FC<PaymentStatusProps> = ({
                 {/* Индикатор WebSocket соединения */}
                 <div className="flex items-center gap-1">
                     {isConnected ? (
-                        <Wifi className="w-3 h-3 text-green-600" title="WebSocket подключен" />
+                        <Wifi className="w-3 h-3 text-green-600" />
                     ) : (
-                        <WifiOff className="w-3 h-3 text-red-600" title="WebSocket отключен" />
+                        <WifiOff className="w-3 h-3 text-red-600" />
                     )}
                 </div>
             </div>

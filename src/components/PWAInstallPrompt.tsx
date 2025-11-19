@@ -7,14 +7,18 @@ export const PWAInstallPrompt: React.FC = () => {
     const { isInstallable, isInstalled, promptInstall } = usePWAInstall();
     const [showPrompt, setShowPrompt] = React.useState(false);
     const [dismissed, setDismissed] = React.useState(false);
+    const isMobile = React.useMemo(() => {
+        if (typeof navigator === 'undefined') {
+            return false;
+        }
+
+        return /Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
+    }, []);
 
     useEffect(() => {
-        console.log('PWA Install Prompt:', { isInstallable, isInstalled, dismissed });
-
         if (isInstallable && !isInstalled && !dismissed) {
             // Показываем промпт через 3 секунды
             const timer = setTimeout(() => {
-                console.log('PWA: Showing install prompt');
                 setShowPrompt(true);
                 // НЕ вызываем автоматически - только по клику пользователя
             }, 3000);
@@ -35,7 +39,7 @@ export const PWAInstallPrompt: React.FC = () => {
         setDismissed(true);
     };
 
-    if (!showPrompt || isInstalled || dismissed) {
+    if (!isMobile || !showPrompt || isInstalled || dismissed) {
         return null;
     }
 

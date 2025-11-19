@@ -71,8 +71,8 @@ export const ProcessSection: React.FC = () => {
                     </h2>
                 </div>
 
-                {/* Процесс мастер-класса */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* Процесс мастер-класса - горизонтально на мобильных */}
+                <div className="grid grid-cols-3 md:grid-cols-3 gap-2 sm:gap-4 md:gap-8">
                     {(displayContent.process_steps || []).map((step, index) => (
                         <Card
                             key={index}
@@ -90,9 +90,9 @@ export const ProcessSection: React.FC = () => {
                                 </svg>
                             </div>
 
-                            <CardContent className="p-8 text-center relative z-10">
+                            <CardContent className="p-2 sm:p-4 md:p-8 text-center relative z-10">
                                 {/* Номер шага */}
-                                <div className={`w-20 h-20 bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-6 shadow-lg ${index === 0 ? 'animate-bounce' :
+                                <div className={`w-8 h-8 sm:w-12 sm:h-12 md:w-20 md:h-20 bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-sm sm:text-xl md:text-3xl font-bold mx-auto mb-2 sm:mb-4 md:mb-6 shadow-lg ${index === 0 ? 'animate-bounce' :
                                     index === 1 ? 'animate-pulse' :
                                         index === 2 ? 'animate-ping' : ''
                                     }`} style={{
@@ -103,19 +103,19 @@ export const ProcessSection: React.FC = () => {
                                 </div>
 
                                 {/* Иконка */}
-                                <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-                                    {index === 0 && <Hand className="w-8 h-8 text-white" />}
-                                    {index === 1 && <Zap className="w-8 h-8 text-white" />}
-                                    {index === 2 && <Clock className="w-8 h-8 text-white" />}
+                                <div className="w-6 h-6 sm:w-10 sm:h-10 md:w-16 md:h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-4 md:mb-6 shadow-lg">
+                                    {index === 0 && <Hand className="w-3 h-3 sm:w-5 sm:h-5 md:w-8 md:h-8 text-white" />}
+                                    {index === 1 && <Zap className="w-3 h-3 sm:w-5 sm:h-5 md:w-8 md:h-8 text-white" />}
+                                    {index === 2 && <Clock className="w-3 h-3 sm:w-5 sm:h-5 md:w-8 md:h-8 text-white" />}
                                 </div>
 
                                 {/* Заголовок */}
-                                <h3 className="text-xl font-bold text-gray-900 mb-4 bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                                <h3 className="text-xs sm:text-sm md:text-xl font-bold text-gray-900 mb-1 sm:mb-2 md:mb-4 bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent line-clamp-2">
                                     {step.title}
                                 </h3>
 
-                                {/* Описание */}
-                                <p className="text-gray-700 leading-relaxed">
+                                {/* Описание - скрываем на мобильных */}
+                                <p className="text-gray-700 leading-relaxed text-xs sm:text-sm hidden sm:block">
                                     {step.description}
                                 </p>
                             </CardContent>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import logoImage from '../../assets/logo.png';
 import { Card, CardContent, CardContentCompact, CardDescription, CardHeader, CardHeaderCompact, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,9 +21,25 @@ import { useAdminChat } from '@/hooks/use-chat';
 import { useWebSocketChat } from '@/hooks/use-websocket-chat';
 import { useWorkshopRequestsWebSocket } from '@/hooks/use-workshop-requests-websocket';
 import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { cn } from '@/lib/utils';
+import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
+import { ResponsiveList } from '@/components/admin/lists/ResponsiveList';
+import { SelectionManagerProvider, useSelectionManager } from '@/contexts/SelectionManagerContext';
+import { BulkActionBar } from '@/components/admin/selection/BulkActionBar';
+import { AdminNavigationProvider } from '@/components/admin/navigation/AdminNavigationContext';
+import { MobileAppBar } from '@/components/admin/navigation/MobileAppBar';
+import { MobileAdminDrawer } from '@/components/admin/navigation/MobileAdminDrawer';
+import { FloatingActionButton } from '@/components/admin/navigation/FloatingActionButton';
+import { StatCardSection } from '@/components/admin/dashboard/StatCardSection';
+import { FilterDrawer } from '@/components/admin/filters/FilterDrawer';
+import { FilterChips, type FilterChip } from '@/components/admin/filters/FilterChips';
+import { UserCard } from '@/components/admin/cards/UserCard';
+import { SchoolCard } from '@/components/admin/cards/SchoolCard';
 import { api } from '@/lib/api';
+import { chatApi } from '@/lib/chat-api';
 import { Chat } from '@/types/chat';
+import { useQueryClient } from '@tanstack/react-query';
 import { SchoolModal } from '@/components/ui/school-modal';
 import { SchoolFilters } from '@/components/ui/school-filters';
 import { AddServiceModal } from '@/components/ui/add-service-modal';
@@ -34,12 +50,12 @@ import MasterClassesTab from '@/components/admin/MasterClassesTab';
 import { MasterClassDetails } from '@/components/admin/MasterClassDetails';
 import WorkshopRequestsTab from '@/components/admin/WorkshopRequestsTab';
 import OffersTab from '@/components/admin/OffersTab';
-import PrivacyPolicyTab from '@/components/admin/PrivacyPolicyTab';
 import ContactsTab from '@/components/admin/ContactsTab';
 import BonusesTab from '@/components/admin/BonusesTab';
 import PrivacyConsentTab from '@/components/admin/PrivacyConsentTab';
-import { Service, ServiceStyle, ServiceOption } from '@/types';
+import { Service, ServiceStyle, ServiceOption, User } from '@/types';
 import { MasterClassEvent, MasterClassParticipant } from '@/types/services';
+import { StatCardDefinition } from '@/types/dashboard';
 import {
     Users,
     Building2,
@@ -48,17 +64,23 @@ import {
     Receipt,
     Search,
     Plus,
+    UserPlus,
     Trash2,
     Edit,
     Filter,
     MessageCircle,
     Shield,
-    User,
+    User as UserIcon,
     Clock,
     Send,
     RefreshCw,
-    FileText
+    FileText,
+    ChevronDown,
+    ChevronUp,
+    ChevronRight,
+    LogOut
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import {
     Table,
     TableBody,
@@ -79,10 +101,9 @@ import {
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import InvoicesTab from "@/components/admin/InvoicesTab";
+import { RefundsTab } from "@/components/admin/RefundsTab";
 import ServicePage from "./ServicePage";
 import AboutTab from "@/components/admin/AboutTab";
-
-
 
 interface School {
     id: string;
@@ -96,16 +117,93 @@ interface School {
     updatedAt: string;
 }
 
+type QuickLinkTone = 'blue' | 'teal' | 'purple' | 'orange';
+
+const QUICK_LINK_TONE_STYLES: Record<QuickLinkTone, { container: string; icon: string; badge: string }> = {
+    blue: {
+        container: 'border border-blue-200 bg-blue-50/80',
+        icon: 'bg-blue-100 text-blue-600',
+        badge: 'bg-blue-600 text-white',
+    },
+    teal: {
+        container: 'border border-teal-200 bg-teal-50/80',
+        icon: 'bg-teal-100 text-teal-600',
+        badge: 'bg-teal-600 text-white',
+    },
+    purple: {
+        container: 'border border-purple-200 bg-purple-50/80',
+        icon: 'bg-purple-100 text-purple-600',
+        badge: 'bg-purple-600 text-white',
+    },
+    orange: {
+        container: 'border border-orange-200 bg-orange-50/80',
+        icon: 'bg-orange-100 text-orange-600',
+        badge: 'bg-orange-500 text-white',
+    },
+};
+
+interface QuickNavigationItem {
+    id: string;
+    label: string;
+    description: string;
+    icon: LucideIcon;
+    tone: QuickLinkTone;
+    onPress: () => void;
+    badge?: number | string | null;
+}
+
+interface QuickActionItem {
+    id: string;
+    label: string;
+    icon: LucideIcon;
+    onPress: () => void;
+    variant?: 'default' | 'outline';
+}
+
 const DashboardContent: React.FC = () => {
     const { user, logout } = useAuth();
     const { toast } = useToast();
     const { filters, updateFilters } = useAdminFilters();
+    const queryClient = useQueryClient();
+    const { isSmallScreen } = useResponsiveLayout();
+
+    // ===== ВСЕ ХУКИ ДАННЫХ В НАЧАЛЕ (ДО ИСПОЛЬЗОВАНИЯ) =====
+    const { users, loading: usersLoading, error: usersError, total: usersTotal, deleteUser, createUser, fetchUsers, lastFetch: usersLastFetch } = useUsers();
+    const { schools, loading: schoolsLoading, error: schoolsError, total: schoolsTotal, deleteSchool, createSchool, updateSchool, fetchSchools } = useSchools();
+    const { data: invoicesData, isLoading: invoicesLoading, error: invoicesError } = useInvoices({});
+    const {
+        services,
+        loading: servicesLoading,
+        error: servicesError,
+        total: servicesTotal,
+        deleteService,
+        createService,
+        addStyleToService,
+        addOptionToService,
+        updateServiceStyle,
+        updateServiceOption,
+        reorderServiceStyles,
+        reorderServiceOptions,
+        fetchServices
+    } = useServices();
+    const {
+        masterClasses,
+        loading: masterClassesLoading,
+        error: masterClassesError,
+        total: masterClassesTotal,
+        fetchMasterClasses,
+        createMasterClass,
+        updateMasterClass,
+        deleteMasterClass,
+        getMasterClassById
+    } = useMasterClasses();
 
     // Отладка импорта логотипа (убрано для оптимизации)
     // console.log('Dashboard: logoImage импортирован:', logoImage);
     const [searchTerm, setSearchTerm] = useState('');
     const [usersSearchTerm, setUsersSearchTerm] = useState('');
     const [schoolsSearchTerm, setSchoolsSearchTerm] = useState('');
+    const [expandedChildRows, setExpandedChildRows] = useState<Set<string>>(new Set());
     // Используем поиск услуг из контекста
     const servicesSearchTerm = filters.services.search;
 
@@ -116,13 +214,34 @@ const DashboardContent: React.FC = () => {
     });
 
     // Функция для обновления выбранной вкладки с сохранением в localStorage
-    const handleTabChange = (newTab: string) => {
+    const handleTabChange = useCallback((newTab: string) => {
         setSelectedTab(newTab);
         localStorage.setItem('adminSelectedTab', newTab);
-    };
+
+        // Отключаем мигание сразу при переходе на вкладку чата
+        if (newTab === 'chat') {
+            console.log('💬 Переход на таб чата - отключаем мигание');
+            setChatTabBlink(false);
+        }
+        if (newTab === 'workshop-requests') {
+            console.log('📋 Переход на таб заявок - отключаем мигание');
+            setRequestsTabBlink(false);
+        }
+    }, []);
+
+    // Состояние для мигания вкладки чата
+    const [chatTabBlink, setChatTabBlink] = useState(false);
+    const [requestsTabBlink, setRequestsTabBlink] = useState(false);
+    const [statsExpanded, setStatsExpanded] = useState(!isSmallScreen);
+
+    useEffect(() => {
+        setStatsExpanded(!isSmallScreen);
+    }, [isSmallScreen]);
+
     const [schoolModalOpen, setSchoolModalOpen] = useState(false);
     const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
     const [addUserModalOpen, setAddUserModalOpen] = useState(false);
+    const [isUserFiltersDrawerOpen, setUserFiltersDrawerOpen] = useState(false);
 
     // Состояние для статистики заявок
     const [workshopRequestsStats, setWorkshopRequestsStats] = useState({
@@ -132,6 +251,83 @@ const DashboardContent: React.FC = () => {
         rejected: 0
     });
 
+    // ===== ФУНКЦИЯ ЗАГРУЗКИ СТАТИСТИКИ (ПЕРЕД WebSocket) =====
+    const loadWorkshopRequestsStats = useCallback(async () => {
+        try {
+            const authToken = localStorage.getItem('authToken');
+            if (!authToken) {
+                console.error('❌ Dashboard: Токен авторизации отсутствует, перенаправляем на логин');
+                window.location.href = '/admin/login';
+                return;
+            }
+
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+            const apiUrl = `${API_BASE_URL}/workshop-requests/stats/overview`;
+
+            try {
+                const healthUrl = `${API_BASE_URL}/health`;
+                const healthCheck = await fetch(healthUrl, {
+                    method: 'HEAD'
+                });
+            } catch (healthError) {
+                console.warn('⚠️ Dashboard: Backend сервер недоступен, используем fallback:', healthError);
+                setWorkshopRequestsStats({
+                    total: 0,
+                    pending: 0,
+                    approved: 0,
+                    rejected: 0
+                });
+                return;
+            }
+
+            const response = await fetch(apiUrl, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+
+            if (response.ok) {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    console.error('❌ Dashboard: Ответ не является JSON. Content-Type:', contentType);
+                    setWorkshopRequestsStats({
+                        total: 0,
+                        pending: 0,
+                        approved: 0,
+                        rejected: 0
+                    });
+                    return;
+                }
+
+                const responseText = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('❌ Dashboard: Ошибка парсинга JSON:', parseError);
+                    return;
+                }
+
+                if (data.success && data.data) {
+                    setWorkshopRequestsStats({
+                        total: data.data.total || 0,
+                        pending: data.data.pending || 0,
+                        approved: data.data.approved || 0,
+                        rejected: data.data.rejected || 0
+                    });
+                } else {
+                    console.error('❌ Dashboard: Некорректный формат данных');
+                }
+            } else {
+                console.error('❌ Dashboard: Ошибка загрузки статистики заявок:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ Dashboard: Ошибка при загрузке статистики заявок:', error);
+        }
+    }, []);
+
     // WebSocket для автоматических обновлений заявок
     const { isConnected: wsRequestsConnected, sendMessage: wsRequestsSendMessage } = useWorkshopRequestsWebSocket(
         'admin',
@@ -139,7 +335,7 @@ const DashboardContent: React.FC = () => {
         (message) => {
             // Обрабатываем WebSocket сообщения для автоматического обновления статистики
             if (message.type === 'workshop_request_status_change' || message.type === 'workshop_request_update') {
-                console.log('📋 Dashboard: Получено WebSocket уведомление о заявке, обновляем статистику');
+
                 loadWorkshopRequestsStats();
             }
         }
@@ -150,7 +346,7 @@ const DashboardContent: React.FC = () => {
         userId: user?.id,
         enabled: true,
         onMasterClassUpdate: () => {
-            console.log('🔄 WebSocket: обновляем мастер-классы...');
+
             fetchMasterClasses({ forceRefresh: true });
         }
     });
@@ -185,7 +381,7 @@ const DashboardContent: React.FC = () => {
     const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
     const [isUpdatingAdminChatStatus, setIsUpdatingAdminChatStatus] = useState(false);
 
-    // Хук для админского чата
+    // Хук для админского чата с callback для мигания вкладки
     const {
         chats: adminChats,
         messages: adminMessages,
@@ -195,17 +391,683 @@ const DashboardContent: React.FC = () => {
         updateChatStatus: adminUpdateChatStatus,
         deleteChat,
         isDeletingChat
-    } = useAdminChat(selectedAdminChat, chatStatusFilter);
+    } = useAdminChat(
+        selectedAdminChat,
+        chatStatusFilter,
+        (data) => {
+            // При получении нового сообщения активируем мигание вкладки, если она не активна
+            if (selectedTab !== 'chat') {
+                console.log('💬 Новое сообщение - активируем мигание вкладки чата');
+                setChatTabBlink(true);
+            }
+        }
+    );
 
     // WebSocket для real-time обновлений чатов
     const { isConnected: wsConnected, isConnecting: wsConnecting } = useWebSocketChat(
         selectedAdminChat?.id,
         user?.id,
-        true // isAdmin = true
+        true, // isAdmin = true
+        {
+            onMessage: (data) => {
+                // При получении нового сообщения активируем мигание вкладки, если она не активна
+                if (data.type === 'chat_message' && selectedTab !== 'chat') {
+                    console.log('💬 Новое сообщение - активируем мигание вкладки чата');
+                    setChatTabBlink(true);
+                }
+            }
+        }
     );
+
+    // Глобальная WebSocket подписка для мигания таба чата при ЛЮБЫХ новых сообщениях
+    const wsContext = useWebSocketContext();
+
+    useEffect(() => {
+        if (!user?.id || !wsContext?.isConnected) return;
+
+        console.log('📡 Админ подписывается на глобальный канал admin:all для мигания таба');
+
+        // Подписываемся на все админские события
+        const unsubscribe = wsContext.subscribe('admin:all', (data) => {
+            console.log('📢 Админ получил глобальное событие для мигания:', data);
+
+            // При любом новом сообщении ВСЕГДА активируем мигание таба
+            // Это привлекает внимание админа к новым сообщениям
+            if (data.type === 'chat_message') {
+                console.log('💬 Новое сообщение - активируем мигание (selectedTab:', selectedTab, ')');
+                // Мигаем ВСЕГДА, независимо от вкладки - для привлечения внимания
+                if (selectedTab !== 'chat') {
+                    setChatTabBlink(true);
+                    console.log('💬 Таб чата будет мигать');
+                } else {
+                    // Даже если на вкладке чат - запускаем кратковременное мигание
+                    setChatTabBlink(true);
+                    setTimeout(() => setChatTabBlink(false), 2000); // 2 секунды мигания
+                    console.log('💬 Кратковременное мигание на 2 сек (уже на вкладке чат)');
+                }
+            }
+        });
+
+        return () => {
+            console.log('📡 Админ отписывается от глобального канала admin:all');
+            unsubscribe();
+        };
+    }, [user?.id, wsContext?.isConnected, selectedTab, wsContext]);
+
+    // Мигание вкладки заявок при наличии pending заявок
+    useEffect(() => {
+        if (workshopRequestsStats && selectedTab !== 'workshop-requests') {
+            if (workshopRequestsStats.pending > 0) {
+                console.log(`📋 Обнаружено ${workshopRequestsStats.pending} заявок со статусом pending - включаем мигание таба`);
+                setRequestsTabBlink(true);
+            } else {
+                console.log('📋 Нет pending заявок - отключаем мигание таба');
+                setRequestsTabBlink(false);
+            }
+        }
+        // Отключаем мигание при переходе на вкладку заявок
+        if (selectedTab === 'workshop-requests') {
+            setRequestsTabBlink(false);
+        }
+    }, [workshopRequestsStats, selectedTab]);
+
+    // WebSocket для автоматического обновления заявок
+    useEffect(() => {
+        if (!user?.id || !wsContext?.isConnected) return;
+
+        console.log('📡 Админ подписывается на события заявок');
+
+        // Подписываемся на события заявок
+        const unsubscribe = wsContext.subscribe('admin:all', (data) => {
+            console.log('📢 Админ получил событие заявки:', data);
+
+            // При создании новой заявки или изменении статуса - обновляем статистику
+            if (data.type === 'workshop_request_created' ||
+                data.type === 'workshop_request_status_change' ||
+                data.type === 'workshop_request_update') {
+                console.log('📋 Событие заявки - обновляем статистику');
+                loadWorkshopRequestsStats();
+            }
+        });
+
+        return () => {
+            console.log('📡 Админ отписывается от событий заявок');
+            unsubscribe();
+        };
+    }, [user?.id, wsContext?.isConnected, wsContext]);
+
+    // Автоматическая пометка сообщений как прочитанных при выборе чата (только если вкладка чата активна)
+    useEffect(() => {
+        const markChatAsRead = async () => {
+            // Помечаем как прочитанное только если вкладка чата активна И выбран конкретный чат
+            if (selectedAdminChat?.id && user?.id && selectedTab === 'chat') {
+                try {
+                    await chatApi.markAsRead({
+                        chatId: selectedAdminChat.id,
+                        userId: user.id
+                    });
+                    // Обновляем список чатов после пометки
+                    // Используем небольшую задержку для обновления на backend
+                    setTimeout(() => {
+                        // Принудительно обновляем чаты
+                        queryClient.invalidateQueries({ queryKey: ['adminChats'] });
+                    }, 500);
+                } catch (error) {
+                    console.error('❌ Ошибка пометки сообщений как прочитанных:', error);
+                }
+            }
+        };
+
+        markChatAsRead();
+    }, [selectedAdminChat?.id, user?.id, selectedTab, queryClient]);
+
+    // Проверка наличия непрочитанных сообщений для мигания таба
+    useEffect(() => {
+        if (!adminChats || selectedTab === 'chat') return;
+
+        // Подсчитываем чаты с непрочитанными сообщениями
+        const chatsWithUnread = adminChats.filter(chat => (chat.unreadCount || 0) > 0);
+
+        if (chatsWithUnread.length > 0) {
+            console.log(`💬 Обнаружено ${chatsWithUnread.length} чатов с непрочитанными - включаем мигание таба`);
+            setChatTabBlink(true);
+        } else {
+            console.log('💬 Нет непрочитанных сообщений - отключаем мигание таба');
+            setChatTabBlink(false);
+        }
+    }, [adminChats, selectedTab]);
 
     // Фильтры для пользователей - используем из контекста
     const userFilters = filters.users;
+    const userFilterChips = useMemo<FilterChip[]>(() => {
+        const chips: FilterChip[] = [];
+        if (userFilters.role && userFilters.role !== 'all') {
+            chips.push({
+                id: 'role',
+                label: 'Роль',
+                value: userFilters.role,
+                onRemove: () => updateFilters('users', { role: 'all' }),
+            });
+        }
+        if (userFilters.school && userFilters.school !== 'all') {
+            chips.push({
+                id: 'school',
+                label: 'Школа',
+                value: userFilters.school,
+                onRemove: () => updateFilters('users', { school: 'all', class: 'all' }),
+            });
+        }
+        if (userFilters.class && userFilters.class !== 'all') {
+            chips.push({
+                id: 'class',
+                label: 'Класс',
+                value: userFilters.class,
+                onRemove: () => updateFilters('users', { class: 'all' }),
+            });
+        }
+        return chips;
+    }, [userFilters.role, userFilters.school, userFilters.class, updateFilters]);
+
+    const unreadChatsCount = useMemo(
+        () => (adminChats || []).reduce((acc, chat) => acc + (chat.unreadCount || 0), 0),
+        [adminChats]
+    );
+    const pendingRequestsCount = workshopRequestsStats.pending || 0;
+
+    const navigationTabs = useMemo(
+        () => [
+            { id: 'overview', label: 'Обзор', emoji: '📊', activeClass: 'data-[state=active]:from-blue-500 data-[state=active]:to-blue-600' },
+            { id: 'users', label: 'Пользователи', emoji: '👥', activeClass: 'data-[state=active]:from-green-500 data-[state=active]:to-green-600' },
+            { id: 'schools', label: 'Школы', emoji: '🏫', activeClass: 'data-[state=active]:from-purple-500 data-[state=active]:to-purple-600' },
+            { id: 'services', label: 'Услуги', emoji: '🎨', activeClass: 'data-[state=active]:from-orange-500 data-[state=active]:to-orange-600' },
+            { id: 'master-classes', label: 'Мастер-классы', emoji: '🎭', activeClass: 'data-[state=active]:from-red-500 data-[state=active]:to-red-600' },
+            { id: 'invoices', label: 'Счета', emoji: '💰', activeClass: 'data-[state=active]:from-teal-500 data-[state=active]:to-teal-600' },
+            {
+                id: 'chat',
+                label: 'Чат',
+                emoji: '💬',
+                activeClass: 'data-[state=active]:from-cyan-500 data-[state=active]:to-cyan-600',
+                animate: chatTabBlink && selectedTab !== 'chat',
+                badge: unreadChatsCount,
+            },
+            { id: 'refunds', label: 'Возвраты', emoji: '🔄', activeClass: 'data-[state=active]:from-red-500 data-[state=active]:to-red-600' },
+            {
+                id: 'workshop-requests',
+                label: 'Заявки',
+                emoji: '📋',
+                activeClass: 'data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600',
+                animate: requestsTabBlink && selectedTab !== 'workshop-requests',
+                badge: pendingRequestsCount,
+            },
+            { id: 'about', label: 'О нас', emoji: 'ℹ️', activeClass: 'data-[state=active]:from-pink-500 data-[state=active]:to-pink-600' },
+            { id: 'offers', label: 'Оферты', emoji: '📄', activeClass: 'data-[state=active]:from-amber-500 data-[state=active]:to-amber-600' },
+            { id: 'contacts', label: 'Контакты', emoji: '📞', activeClass: 'data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600' },
+            { id: 'bonuses', label: 'Бонусы', emoji: '🎁', activeClass: 'data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600' },
+            { id: 'privacy-consent', label: 'Согласия', emoji: '🛡️', activeClass: 'data-[state=active]:from-green-500 data-[state=active]:to-green-600' },
+        ],
+        [chatTabBlink, requestsTabBlink, selectedTab, unreadChatsCount, pendingRequestsCount]
+    );
+
+    const mobileNavigationItems = useMemo(
+        () => navigationTabs.map(tab => ({
+            id: tab.id,
+            label: tab.label,
+            icon: <span className="text-lg">{tab.emoji}</span>,
+            badge: tab.badge,
+            onSelect: () => handleTabChange(tab.id),
+        })),
+        [navigationTabs, handleTabChange]
+    );
+
+    const mobileNotifications = unreadChatsCount + pendingRequestsCount;
+
+    // ===== HANDLERS ДЛЯ useMemo (ПЕРЕД ИСПОЛЬЗОВАНИЕМ) =====
+    const handleAddSchool = useCallback(() => {
+        setSelectedSchool(null);
+        setSchoolModalOpen(true);
+    }, []);
+
+    const handleAddService = useCallback(() => {
+        setAddServiceModalOpen(true);
+    }, []);
+
+    // ===== ФИЛЬТРОВАННЫЕ ДАННЫЕ (ДО ИСПОЛЬЗОВАНИЯ В useMemo) =====
+    const filteredUsers = (() => {
+        if (!users || users.length === 0) return [];
+
+        return users.filter(user => {
+            try {
+                if (!user) return false;
+
+                const searchMatch =
+                    (user.name?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
+                    (user.surname?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
+                    (user.email?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase());
+
+                const roleMatch = userFilters.role === 'all' || user.role === userFilters.role;
+
+                let schoolMatch = true;
+                if (userFilters.school !== 'all') {
+                    try {
+                        const userSchoolName = getUserSchoolName(user);
+                        schoolMatch = userSchoolName === userFilters.school;
+                    } catch (error) {
+                        console.error('Error getting school name for user:', error, user);
+                        schoolMatch = false;
+                    }
+                }
+
+                let classMatch = true;
+                if (userFilters.class !== 'all') {
+                    classMatch = user.class === userFilters.class;
+                }
+
+                return searchMatch && roleMatch && schoolMatch && classMatch;
+            } catch (error) {
+                console.error('Error filtering user:', error, user);
+                return false;
+            }
+        });
+    })();
+
+    const filteredSchools = schools.filter(school => {
+        const searchMatch =
+            (school.name?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase()) ||
+            (school.address?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase()) ||
+            (school.teacher?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase());
+
+        const cityMatch = !filters.schools.city || (school.address && school.address.split(',')[0]?.trim() === filters.schools.city);
+        const schoolMatch = !filters.schools.school || school.name === filters.schools.school;
+        const classMatch = !filters.schools.class || (school.classes && school.classes.includes(filters.schools.class));
+
+        return searchMatch && cityMatch && schoolMatch && classMatch;
+    });
+
+    const filteredServices = services.filter(service =>
+        (service.name?.toLowerCase() || '').includes(servicesSearchTerm.toLowerCase()) ||
+        (service.shortDescription?.toLowerCase() || '').includes(servicesSearchTerm.toLowerCase())
+    );
+
+    // Вспомогательная функция для получения школы пользователя
+    function getUserSchoolName(user: User) {
+        try {
+            if (!user) {
+                return null;
+            }
+
+            // Если это родитель, то ищем школу первого ребенка
+            if (user.role === 'parent' && user.children && user.children.length > 0) {
+                const child = user.children[0];
+                return child?.schoolName || null;
+            }
+
+            // Если это ребенок или другой пользователь со школой
+            if (user.schoolName) {
+                return user.schoolName;
+            }
+
+            if (user.schoolId && schools && Array.isArray(schools) && schools.length > 0) {
+                const school = schools.find(s => s && s.id === user.schoolId);
+                return school ? school.name : null;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Error in getUserSchoolName:', error);
+            return null;
+        }
+    }
+
+    const statCardClass = useMemo(
+        () => cn(
+            "w-full min-w-0 cursor-pointer transition-all duration-200 rounded-xl",
+            isSmallScreen
+                ? "border border-orange-100 bg-white shadow-sm active:scale-[0.99]"
+                : "hover:scale-105 hover:shadow-lg"
+        ),
+        [isSmallScreen]
+    );
+    const uniqueMasterClassesCount = useMemo(() => getUniqueSchoolsCount(), [masterClasses]);
+    const invoicesTotal = invoicesData?.total ?? 0;
+
+    const quickNavigationItems = useMemo<QuickNavigationItem[]>(() => [
+        {
+            id: 'nav-users',
+            label: 'Пользователи',
+            description: 'Управление аккаунтами',
+            icon: Users,
+            tone: 'blue',
+            onPress: () => handleTabChange('users'),
+            badge: usersTotal ?? users.length,
+        },
+        {
+            id: 'nav-invoices',
+            label: 'Счета',
+            description: 'Платежи и статусы',
+            icon: Receipt,
+            tone: 'teal',
+            onPress: () => handleTabChange('invoices'),
+            badge: invoicesTotal,
+        },
+        {
+            id: 'nav-requests',
+            label: 'Заявки',
+            description: 'Статусы запросов школ',
+            icon: FileText,
+            tone: 'purple',
+            onPress: () => handleTabChange('workshop-requests'),
+            badge: pendingRequestsCount,
+        },
+        {
+            id: 'nav-chat',
+            label: 'Чат',
+            description: unreadChatsCount > 0 ? 'Есть непрочитанные сообщения' : 'Все сообщения обработаны',
+            icon: MessageCircle,
+            tone: 'orange',
+            onPress: () => handleTabChange('chat'),
+            badge: unreadChatsCount > 0 ? unreadChatsCount : null,
+        },
+    ], [handleTabChange, invoicesTotal, pendingRequestsCount, unreadChatsCount, users.length, usersTotal]);
+
+    const quickActionButtons = useMemo<QuickActionItem[]>(() => [
+        {
+            id: 'action-add-user',
+            label: 'Добавить пользователя',
+            icon: UserPlus,
+            onPress: () => {
+                if (selectedTab !== 'users') {
+                    handleTabChange('users');
+                }
+                setAddUserModalOpen(true);
+            },
+        },
+        {
+            id: 'action-add-school',
+            label: 'Добавить школу',
+            icon: Building2,
+            variant: 'outline',
+            onPress: () => {
+                if (selectedTab !== 'schools') {
+                    handleTabChange('schools');
+                }
+                handleAddSchool();
+            },
+        },
+        {
+            id: 'action-add-service',
+            label: 'Добавить услугу',
+            icon: Wrench,
+            variant: 'outline',
+            onPress: () => {
+                if (selectedTab !== 'services') {
+                    handleTabChange('services');
+                }
+                handleAddService();
+            },
+        },
+    ], [handleAddSchool, handleAddService, handleTabChange, selectedTab]);
+
+    const statCards = useMemo<StatCardDefinition[]>(() => [
+        {
+            id: 'users',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('users')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Пользователи
+                        </CardTitle>
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        <div className="text-2xl font-bold">{filteredUsers.length}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Всего пользователей
+                        </p>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'schools',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('schools')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Школы
+                        </CardTitle>
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        <div className="text-2xl font-bold">{schoolsTotal}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Всего школ
+                        </p>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'services',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('services')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Услуги
+                        </CardTitle>
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        <div className="text-2xl font-bold">{servicesTotal}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Всего услуг
+                        </p>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'master-classes',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('master-classes')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Мастер-классы
+                        </CardTitle>
+                        <GraduationCap className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        <div className="text-2xl font-bold">{uniqueMasterClassesCount}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Запланированных мастер-классов
+                        </p>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'invoices',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('invoices')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Счета
+                        </CardTitle>
+                        <Receipt className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        {invoicesLoading ? (
+                            <div className="text-2xl font-bold text-muted-foreground">...</div>
+                        ) : invoicesError ? (
+                            <div className="text-2xl font-bold text-red-500">!</div>
+                        ) : (
+                            <div className="text-2xl font-bold">{invoicesTotal}</div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                            Всего счетов
+                        </p>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'chat',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('chat')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Чат
+                        </CardTitle>
+                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        {adminChats && adminChats.length > 0 ? (
+                            <div className="flex items-center space-x-2">
+                                <div className="text-2xl font-bold text-blue-600">
+                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0 ? '🔔' : '✅'}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0
+                                        ? 'Есть непрочитанные'
+                                        : 'Все прочитано'
+                                    }
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex items-center space-x-2">
+                                <div className="text-2xl font-bold text-gray-400">-</div>
+                                <p className="text-xs text-muted-foreground">
+                                    Нет чатов
+                                </p>
+                            </div>
+                        )}
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+        {
+            id: 'workshop-requests',
+            element: (
+                <Card
+                    className={statCardClass}
+                    onClick={() => handleTabChange('workshop-requests')}
+                >
+                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                            Заявки
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <div className={`w-2 h-2 rounded-full ${wsRequestsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        </div>
+                    </CardHeaderCompact>
+                    <CardContentCompact>
+                        <div className="text-2xl font-bold text-blue-600">{workshopRequestsStats.total}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                <span className="text-xs text-yellow-600">{workshopRequestsStats.pending}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                <span className="text-xs text-green-600">{workshopRequestsStats.approved}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                <span className="text-xs text-red-600">{workshopRequestsStats.rejected}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                            <p className="text-xs text-muted-foreground">
+                                {wsRequestsConnected ? 'Автообновление' : 'Ручное обновление'}
+                            </p>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    loadWorkshopRequestsStats();
+                                }}
+                                className="h-6 w-6 p-0 hover:bg-blue-100"
+                            >
+                                <RefreshCw className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    </CardContentCompact>
+                </Card>
+            ),
+        },
+    ], [
+        adminChats,
+        filteredUsers.length,
+        handleTabChange,
+        invoicesTotal,
+        invoicesError,
+        invoicesLoading,
+        loadWorkshopRequestsStats,
+        servicesTotal,
+        statCardClass,
+        uniqueMasterClassesCount,
+        workshopRequestsStats.approved,
+        workshopRequestsStats.pending,
+        workshopRequestsStats.rejected,
+        workshopRequestsStats.total,
+        wsRequestsConnected,
+        schoolsTotal,
+    ]);
+    const mobileFabConfig = useMemo(() => {
+        if (!isSmallScreen) {
+            return null;
+        }
+        switch (selectedTab) {
+            case 'overview':
+                return {
+                    label: 'Добавить пользователя',
+                    icon: <UserPlus className="h-4 w-4" />,
+                    onClick: () => {
+                        handleTabChange('users');
+                        setAddUserModalOpen(true);
+                    },
+                };
+            case 'users':
+                return {
+                    label: 'Добавить',
+                    icon: <UserPlus className="h-4 w-4" />,
+                    onClick: () => setAddUserModalOpen(true),
+                };
+            case 'schools':
+                return {
+                    label: 'Новая школа',
+                    icon: <Building2 className="h-4 w-4" />,
+                    onClick: handleAddSchool,
+                };
+            case 'services':
+                return {
+                    label: 'Новая услуга',
+                    icon: <Wrench className="h-4 w-4" />,
+                    onClick: handleAddService,
+                };
+            default:
+                return null;
+        }
+    }, [isSmallScreen, selectedTab, handleAddSchool, handleAddService, handleTabChange]);
 
     // Состояния для модальных окон услуг
     const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);
@@ -213,77 +1075,37 @@ const DashboardContent: React.FC = () => {
     const [currentServiceId, setCurrentServiceId] = useState<string | null>(null);
     const [styleOptionType, setStyleOptionType] = useState<'style' | 'option'>('style');
     const [selectedStyleOption, setSelectedStyleOption] = useState<ServiceStyle | ServiceOption | null>(null);
+    const tabsListRef = useRef<HTMLDivElement | null>(null);
+    const baseTabTriggerClasses =
+        "flex items-center justify-center text-center px-2 py-1.5 text-[11px] sm:px-3 sm:py-2 sm:text-xs md:px-3 md:py-2.5 md:text-sm rounded-lg font-medium transition-all duration-200 hover:scale-[1.02] hover:shadow-md data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-[1.04] data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100 min-w-0 flex-1 basis-[5.5rem] sm:basis-[6.5rem] md:basis-[7.5rem] lg:basis-[8.5rem] max-w-[11rem] leading-tight";
 
     // Состояния для мастер-классов
     const [selectedMasterClassEvent, setSelectedMasterClassEvent] = useState<MasterClassEvent | null>(null);
     const [masterClassDetailsOpen, setMasterClassDetailsOpen] = useState(false);
 
-    // Хуки для работы с данными
-    const { users, loading: usersLoading, error: usersError, total: usersTotal, deleteUser, createUser, fetchUsers, lastFetch: usersLastFetch } = useUsers();
-    const { schools, loading: schoolsLoading, error: schoolsError, total: schoolsTotal, deleteSchool, createSchool, updateSchool, fetchSchools } = useSchools();
-    const { data: invoicesData, isLoading: invoicesLoading, error: invoicesError } = useInvoices({});
-
-    // Отладочная информация для счетов (убрано для оптимизации)
-    // useEffect(() => {
-    //     console.log('Dashboard: Данные счетов:', {
-    //         invoicesData,
-    //         total: invoicesData?.total,
-    //         invoices: invoicesData?.invoices,
-    //         loading: invoicesLoading,
-    //         error: invoicesError
-    //     });
-    // }, [invoicesData, invoicesLoading, invoicesError]);
-
-    const {
-        services,
-        loading: servicesLoading,
-        error: servicesError,
-        total: servicesTotal,
-        deleteService,
-        createService,
-        addStyleToService,
-        addOptionToService,
-        updateServiceStyle,
-        updateServiceOption,
-        reorderServiceStyles,
-        reorderServiceOptions,
-        fetchServices
-    } = useServices();
-    const {
-        masterClasses,
-        loading: masterClassesLoading,
-        error: masterClassesError,
-        total: masterClassesTotal,
-        fetchMasterClasses,
-        createMasterClass,
-        updateMasterClass,
-        deleteMasterClass,
-        getMasterClassById
-    } = useMasterClasses();
-
     // Автоматическое обновление данных при переключении вкладок
     useEffect(() => {
         if (selectedTab === 'users' && users.length === 0) {
-            console.log('🔄 Switching to users tab, fetching users...');
+
             fetchUsers();
         }
     }, [selectedTab, users.length, fetchUsers]);
 
     useEffect(() => {
         if (selectedTab === 'schools' && schools.length === 0) {
-            console.log('🔄 Switching to schools tab, fetching schools...');
+            // Загрузка школ происходит автоматически через useSchools хук
         }
     }, [selectedTab, schools.length]);
 
     useEffect(() => {
         if (selectedTab === 'services' && services.length === 0) {
-            console.log('🔄 Switching to services tab, fetching services...');
+            // Загрузка услуг происходит автоматически через useServices хук
         }
     }, [selectedTab, services.length]);
 
     useEffect(() => {
         if (selectedTab === 'master-classes' && masterClasses.length === 0) {
-            console.log('🔄 Switching to master-classes tab, fetching master classes...');
+
             fetchMasterClasses();
         }
     }, [selectedTab, masterClasses.length, fetchMasterClasses]);
@@ -321,140 +1143,7 @@ const DashboardContent: React.FC = () => {
 
             // console.log('🔌 Dashboard: WebSocket подключен для заявок, подписка активна');
         }
-    }, [wsRequestsConnected, wsRequestsSendMessage]); // Убираю wsRequestsSendMessage из зависимостей
-
-    // Функция загрузки статистики заявок
-    const loadWorkshopRequestsStats = async () => {
-        try {
-            // console.log('🔄 Dashboard: Загружаем статистику заявок...');
-            // Проверяем токен авторизации
-            const authToken = localStorage.getItem('authToken');
-            // console.log('🔄 Dashboard: Токен авторизации:', authToken ? 'Есть' : 'Нет');
-
-            if (!authToken) {
-                console.error('❌ Dashboard: Токен авторизации отсутствует, перенаправляем на логин');
-                // Перенаправляем на страницу логина
-                window.location.href = '/admin/login';
-                return;
-            }
-
-            // Используем правильный URL для backend API
-            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-            const apiUrl = `${API_BASE_URL}/workshop-requests/stats/overview`;
-
-            // console.log('🔄 Dashboard: API URL для статистики заявок:', apiUrl);
-
-            // Проверяем доступность backend сервера
-            try {
-                const healthUrl = `${API_BASE_URL}/health`;
-                // console.log('🏥 Dashboard: Проверяем health endpoint:', healthUrl);
-
-                const healthCheck = await fetch(healthUrl, {
-                    method: 'HEAD'
-                });
-                // console.log('✅ Dashboard: Backend сервер доступен, статус:', healthCheck.status);
-            } catch (healthError) {
-                console.warn('⚠️ Dashboard: Backend сервер недоступен, используем fallback:', healthError);
-                // Устанавливаем fallback значения
-                setWorkshopRequestsStats({
-                    total: 0,
-                    pending: 0,
-                    approved: 0,
-                    rejected: 0
-                });
-                return;
-            }
-
-            const response = await fetch(apiUrl, {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                }
-            });
-
-            // console.log('📋 Dashboard: Ответ API статистики заявок:', response.status, response.ok);
-            // console.log('📋 Dashboard: Заголовки ответа:', Object.fromEntries(response.headers.entries()));
-            // console.log('📋 Dashboard: Content-Type ответа:', response.headers.get('content-type'));
-
-            if (response.ok) {
-                const contentType = response.headers.get('content-type');
-                // console.log('📋 Dashboard: Content-Type ответа:', contentType);
-
-                // Проверяем, что ответ действительно JSON
-                if (!contentType || !contentType.includes('application/json')) {
-                    console.error('❌ Dashboard: Ответ не является JSON. Content-Type:', contentType);
-                    const responseText = await response.text();
-                    console.error('❌ Dashboard: Сырой ответ (не JSON):', responseText.substring(0, 200) + '...');
-
-                    // Устанавливаем fallback значения
-                    setWorkshopRequestsStats({
-                        total: 0,
-                        pending: 0,
-                        approved: 0,
-                        rejected: 0
-                    });
-                    return;
-                }
-
-                const responseText = await response.text();
-                // console.log('📋 Dashboard: Сырой ответ API:', responseText);
-
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('❌ Dashboard: Ошибка парсинга JSON:', parseError);
-                    console.error('❌ Dashboard: Сырой ответ:', responseText);
-                    return;
-                }
-
-                // console.log('📋 Dashboard: Данные статистики заявок:', data);
-
-                if (data.success && data.data) {
-                    setWorkshopRequestsStats(data.data);
-                    // console.log('✅ Dashboard: Статистика заявок обновлена:', data.data);
-                } else {
-                    console.warn('⚠️ Dashboard: Неожиданный формат ответа статистики заявок:', data);
-                    // Попробуем fallback - если data есть, но не в ожидаемом формате
-                    if (data.data && typeof data.data === 'object') {
-                        const fallbackStats = {
-                            total: data.data.total || 0,
-                            pending: data.data.pending || 0,
-                            approved: data.data.approved || 0,
-                            rejected: data.data.rejected || 0
-                        };
-                        console.log('🔄 Dashboard: Используем fallback статистику:', fallbackStats);
-                        setWorkshopRequestsStats(fallbackStats);
-                    }
-                }
-            } else {
-                console.error('❌ Dashboard: Ошибка API статистики заявок:', response.status, response.statusText);
-                const errorText = await response.text();
-                console.error('❌ Dashboard: Текст ошибки:', errorText);
-
-                // Обрабатываем ошибку 403 (Unauthorized)
-                if (response.status === 403) {
-                    console.error('❌ Dashboard: Токен недействителен, перенаправляем на логин');
-                    // Очищаем недействительный токен
-                    localStorage.removeItem('authToken');
-                    // Перенаправляем на страницу логина
-                    window.location.href = '/admin/login';
-                    return;
-                }
-
-                // Для других ошибок устанавливаем fallback значения
-                setWorkshopRequestsStats({
-                    total: 0,
-                    pending: 0,
-                    approved: 0,
-                    rejected: 0
-                });
-            }
-        } catch (error) {
-            console.error('❌ Dashboard: Ошибка при загрузке статистики заявок:', error);
-        }
-    };
+    }, [wsRequestsConnected, wsRequestsSendMessage]);
 
     // Отладочная информация для мастер-классов (убрано для оптимизации)
     // useEffect(() => {
@@ -517,22 +1206,10 @@ const DashboardContent: React.FC = () => {
     //     });
     // }, [users, usersLoading, usersError]);
 
-
-
     // Функции для работы с модальным окном школы
-    const handleAddSchool = () => {
-        setSelectedSchool(null);
-        setSchoolModalOpen(true);
-    };
-
     const handleEditSchool = (school: School) => {
         setSelectedSchool(school);
         setSchoolModalOpen(true);
-    };
-
-    // Функции для работы с услугами
-    const handleAddService = () => {
-        setAddServiceModalOpen(true);
     };
 
     const handleCreateService = async (serviceData: Omit<Service, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -582,13 +1259,7 @@ const DashboardContent: React.FC = () => {
     };
 
     const handleViewStyle = (style: ServiceStyle, serviceId: string) => {
-        console.log('Dashboard: handleViewStyle called with:', style, 'serviceId:', serviceId);
-        console.log('Dashboard: style price type:', typeof style.price, 'value:', style.price);
-        console.log('Dashboard: style media files:', {
-            avatar: style.avatar,
-            images: style.images,
-            videos: style.videos
-        });
+
         setCurrentServiceId(serviceId);
         setSelectedStyleOption(style);
         setStyleOptionType('style');
@@ -596,7 +1267,7 @@ const DashboardContent: React.FC = () => {
     };
 
     const handleViewOption = (option: ServiceOption, serviceId: string) => {
-        console.log('Dashboard: handleViewOption called with:', option, 'serviceId:', serviceId);
+
         setCurrentServiceId(serviceId);
         setSelectedStyleOption(option);
         setStyleOptionType('option');
@@ -605,7 +1276,6 @@ const DashboardContent: React.FC = () => {
 
     const handleDeleteStyle = async (styleId: string, serviceId: string) => {
         try {
-            console.log('Dashboard: handleDeleteStyle called with:', styleId, 'serviceId:', serviceId);
 
             const response = await fetch(`${import.meta.env.VITE_API_URL}/services/${serviceId}/styles/${styleId}`, {
                 method: 'DELETE',
@@ -638,7 +1308,6 @@ const DashboardContent: React.FC = () => {
 
     const handleDeleteOption = async (optionId: string, serviceId: string) => {
         try {
-            console.log('Dashboard: handleDeleteOption called with:', optionId, 'serviceId:', serviceId);
 
             const response = await fetch(`${import.meta.env.VITE_API_URL}/services/${serviceId}/options/${optionId}`, {
                 method: 'DELETE',
@@ -672,25 +1341,21 @@ const DashboardContent: React.FC = () => {
     const handleCreateStyleOption = async (data: Omit<ServiceStyle | ServiceOption, 'id'>) => {
         if (!currentServiceId) return;
 
-        console.log('Dashboard: handleCreateStyleOption called with:', data);
-        console.log('Dashboard: data price type:', typeof data.price, 'value:', data.price);
-        console.log('Dashboard: selectedStyleOption:', selectedStyleOption?.id, 'type:', styleOptionType);
-
         try {
             if (styleOptionType === 'style') {
                 if (selectedStyleOption) {
-                    console.log('Dashboard: updating style with data:', data);
+
                     await updateServiceStyle(currentServiceId, selectedStyleOption.id, data);
                 } else {
-                    console.log('Dashboard: adding new style with data:', data);
+
                     await addStyleToService(currentServiceId, data);
                 }
             } else {
                 if (selectedStyleOption) {
-                    console.log('Dashboard: updating option with data:', data);
+
                     await updateServiceOption(currentServiceId, selectedStyleOption.id, data);
                 } else {
-                    console.log('Dashboard: adding new option with data:', data);
+
                     await addOptionToService(currentServiceId, data);
                 }
             }
@@ -740,8 +1405,6 @@ const DashboardContent: React.FC = () => {
         }
     };
 
-
-
     const handleSchoolFiltersChange = (filters: { city: string; school: string; class: string }) => {
         updateFilters('schools', filters);
     };
@@ -768,7 +1431,6 @@ const DashboardContent: React.FC = () => {
             await deleteSchool(schoolId);
 
             // Принудительно обновляем ВСЕ данные после удаления школы
-            console.log('🔄 Обновляем все данные после удаления школы...');
 
             // Обновляем список школ
             await fetchSchools();
@@ -778,13 +1440,13 @@ const DashboardContent: React.FC = () => {
 
             // Дополнительное обновление через небольшую задержку
             setTimeout(async () => {
-                console.log('🔄 Дополнительное обновление мастер-классов...');
+
                 await fetchMasterClasses({ forceRefresh: true });
             }, 500);
 
             // Отправляем WebSocket уведомление об удалении школы
             if (masterClassesWsConnected) {
-                console.log('🔌 Отправляем WebSocket уведомление об удалении школы...');
+
                 sendMasterClassMessage('master_class_deleted', {
                     schoolId: schoolId,
                     message: 'Школа удалена, обновляем список мастер-классов'
@@ -826,14 +1488,11 @@ const DashboardContent: React.FC = () => {
 
     const handleDeleteSchoolMasterClasses = async (schoolId: string, date: string) => {
         try {
-            console.log('🗑️ Начинаем удаление мастер-классов школы:', { schoolId, date });
 
             // Получаем все мастер-классы школы за указанную дату
             const schoolMasterClasses = masterClasses.filter(mc =>
                 mc.schoolId === schoolId && mc.date === date
             );
-
-            console.log('🔍 Найдено мастер-классов для удаления:', schoolMasterClasses.length);
 
             if (schoolMasterClasses.length === 0) {
                 toast({
@@ -845,9 +1504,8 @@ const DashboardContent: React.FC = () => {
             }
 
             // Удаляем все мастер-классы школы за дату
-            console.log('🚀 Вызываем API для удаления...');
+
             await api.masterClassEvents.deleteSchoolMasterClasses(schoolId, date);
-            console.log('✅ API вызов успешен');
 
             toast({
                 title: "Мастер-классы удалены",
@@ -855,9 +1513,9 @@ const DashboardContent: React.FC = () => {
             });
 
             // Принудительно обновляем список мастер-классов
-            console.log('🔄 Обновляем список мастер-классов...');
+
             await fetchMasterClasses();
-            console.log('✅ Список обновлен');
+
         } catch (error) {
             console.error('❌ Ошибка при удалении мастер-классов школы:', error);
             toast({
@@ -869,24 +1527,6 @@ const DashboardContent: React.FC = () => {
     };
 
     // Функции для чата
-    const getChatStatusColor = (status: string) => {
-        switch (status) {
-            case 'active': return 'bg-green-500';
-            case 'pending': return 'bg-yellow-500';
-            case 'closed': return 'bg-gray-500';
-            default: return 'bg-gray-500';
-        }
-    };
-
-    const getChatStatusText = (status: string) => {
-        switch (status) {
-            case 'active': return 'Активен';
-            case 'pending': return 'Ожидает';
-            case 'closed': return 'Закрыт';
-            default: return 'Неизвестно';
-        }
-    };
-
     const getChatUnreadCount = (chat: Chat) => {
         return chat.unreadCount || 0;
     };
@@ -980,7 +1620,6 @@ const DashboardContent: React.FC = () => {
 
             // Обновляем список мастер-классов с сервера
             await fetchMasterClasses();
-            console.log('Dashboard: Обновлены данные мастер-классов после изменения');
 
             toast({ title: 'Мастер-класс обновлен', description: 'Изменения сохранены' });
         } catch {
@@ -1004,7 +1643,7 @@ const DashboardContent: React.FC = () => {
 
     const handleRefreshMasterClasses = async () => {
         try {
-            console.log('🔄 Принудительное обновление мастер-классов...');
+
             await fetchMasterClasses({ forceRefresh: true });
             toast({
                 title: "Данные обновлены",
@@ -1048,29 +1687,38 @@ const DashboardContent: React.FC = () => {
         handleEditMasterClassEvent(updatedEvent.id, { participants: updatedEvent.participants, statistics: updatedEvent.statistics });
     };
 
-    // Получение названия школы пользователя - простая функция без useCallback
-    const getUserSchoolName = (user: { schoolName?: string; schoolId?: string }) => {
-        try {
-            if (!user) return null;
 
-            if (user.schoolName) {
-                return user.schoolName;
+    // Переключение раскрытия строки ребенка
+    const toggleChildRow = (userId: string) => {
+        setExpandedChildRows(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(userId)) {
+                newSet.delete(userId);
+            } else {
+                newSet.add(userId);
             }
+            return newSet;
+        });
+    };
 
-            if (user.schoolId && schools && Array.isArray(schools) && schools.length > 0) {
-                const school = schools.find(s => s && s.id === user.schoolId);
-                return school ? school.name : null;
-            }
-
-            return null;
-        } catch (error) {
-            console.error('Error in getUserSchoolName:', error);
+    // Получение школы ребенка для родителя
+    const getChildSchoolName = (user: User) => {
+        if (user.role !== 'parent' || !user.children || user.children.length === 0) {
             return null;
         }
+        return getUserSchoolName(user.children[0]);
+    };
+
+    // Получение родителя для ребенка
+    const getParentForChild = (childUser: User) => {
+        if (childUser.role !== 'child') {
+            return null;
+        }
+        return childUser.parent || null;
     };
 
     // Подсчет уникальных школ в мастер-классах
-    const getUniqueSchoolsCount = () => {
+    function getUniqueSchoolsCount() {
         try {
             if (!masterClasses || masterClasses.length === 0) return 0;
 
@@ -1095,73 +1743,11 @@ const DashboardContent: React.FC = () => {
             console.error('Error counting unique schools:', error);
             return 0;
         }
-    };
-
-    // Фильтрация данных - простая логика без useMemo
-    const filteredUsers = (() => {
-        if (!users || users.length === 0) return [];
-
-        return users.filter(user => {
-            try {
-                if (!user) return false;
-
-                // Поиск по имени, фамилии и email с проверкой на null/undefined
-                const searchMatch =
-                    (user.name?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
-                    (user.surname?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase()) ||
-                    (user.email?.toLowerCase() || '').includes(usersSearchTerm.toLowerCase());
-
-                // Фильтр по роли
-                const roleMatch = userFilters.role === 'all' || user.role === userFilters.role;
-
-                // Фильтр по школе
-                let schoolMatch = true;
-                if (userFilters.school !== 'all') {
-                    try {
-                        const userSchoolName = getUserSchoolName(user);
-                        schoolMatch = userSchoolName === userFilters.school;
-                    } catch (error) {
-                        console.error('Error getting school name for user:', error, user);
-                        schoolMatch = false;
-                    }
-                }
-
-                return searchMatch && roleMatch && schoolMatch;
-            } catch (error) {
-                console.error('Error filtering user:', error, user);
-                return false;
-            }
-        });
-    })();
-
-    const filteredSchools = schools.filter(school => {
-        // Фильтр по поисковому запросу с проверкой на null/undefined
-        const searchMatch =
-            (school.name?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase()) ||
-            (school.address?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase()) ||
-            (school.teacher?.toLowerCase() || '').includes(schoolsSearchTerm.toLowerCase());
-
-        // Фильтр по городу
-        const cityMatch = !filters.schools.city || (school.address && school.address.split(',')[0]?.trim() === filters.schools.city);
-
-        // Фильтр по школе
-        const schoolMatch = !filters.schools.school || school.name === filters.schools.school;
-
-        // Фильтр по классу
-        const classMatch = !filters.schools.class || (school.classes && school.classes.includes(filters.schools.class));
-
-        return searchMatch && cityMatch && schoolMatch && classMatch;
-    });
-
-    const filteredServices = services.filter(service =>
-        (service.name?.toLowerCase() || '').includes(servicesSearchTerm.toLowerCase()) ||
-        (service.shortDescription?.toLowerCase() || '').includes(servicesSearchTerm.toLowerCase())
-    );
-
+    }
 
 
     // Получение роли пользователя для отображения иконки
-    const getRoleIcon = (role: string) => {
+    function getRoleIcon(role: string) {
         switch (role) {
             case 'admin':
                 return <Users className="w-4 h-4" />;
@@ -1174,9 +1760,10 @@ const DashboardContent: React.FC = () => {
             default:
                 return <Users className="w-4 h-4" />;
         }
-    };
+    }
 
-    const getRoleColor = (role: string) => {
+    // Получение цвета роли для Badge
+    function getRoleColor(role: string) {
         switch (role) {
             case 'admin':
                 return 'bg-red-100 text-red-800';
@@ -1189,7 +1776,82 @@ const DashboardContent: React.FC = () => {
             default:
                 return 'bg-gray-100 text-gray-800';
         }
-    };
+    }
+
+    useEffect(() => {
+        const storedTab = localStorage.getItem('adminLastTab');
+        if (storedTab && tabs.includes(storedTab as AdminTab)) {
+            setSelectedTab(storedTab as AdminTab);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!selectedMasterClassEvent) {
+            return;
+        }
+
+        const latest = masterClasses.find(mc => mc.id === selectedMasterClassEvent.id);
+        if (!latest) {
+            return;
+        }
+
+        if (latest.updatedAt !== selectedMasterClassEvent.updatedAt) {
+            setSelectedMasterClassEvent({
+                ...latest,
+                executors: latest.executors
+            });
+        }
+    }, [masterClasses, selectedMasterClassEvent]);
+
+    useEffect(() => {
+        const tabsElement = tabsListRef.current;
+        if (!tabsElement) {
+            return undefined;
+        }
+
+        let isDragging = false;
+        let startX = 0;
+        let scrollLeft = 0;
+
+        const handleMouseDown = (event: MouseEvent) => {
+            isDragging = true;
+            tabsElement.classList.add('cursor-grabbing');
+            startX = event.pageX - tabsElement.offsetLeft;
+            scrollLeft = tabsElement.scrollLeft;
+        };
+
+        const handleMouseLeave = () => {
+            isDragging = false;
+            tabsElement.classList.remove('cursor-grabbing');
+        };
+
+        const handleMouseUp = () => {
+            isDragging = false;
+            tabsElement.classList.remove('cursor-grabbing');
+        };
+
+        const handleMouseMove = (event: MouseEvent) => {
+            if (!isDragging) {
+                return;
+            }
+            event.preventDefault();
+            const x = event.pageX - tabsElement.offsetLeft;
+            const walk = (x - startX) * 1.2;
+            tabsElement.scrollLeft = scrollLeft - walk;
+        };
+
+        tabsElement.addEventListener('mousedown', handleMouseDown);
+        tabsElement.addEventListener('mouseleave', handleMouseLeave);
+        tabsElement.addEventListener('mouseup', handleMouseUp);
+        tabsElement.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+            tabsElement.removeEventListener('mousedown', handleMouseDown);
+            tabsElement.removeEventListener('mouseleave', handleMouseLeave);
+            tabsElement.removeEventListener('mouseup', handleMouseUp);
+            tabsElement.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, []);
 
     if (!user || user.role !== 'admin') {
         return (
@@ -1227,8 +1889,38 @@ const DashboardContent: React.FC = () => {
                 }}
             />*/}
 
+            <MobileAppBar
+                title="Админ-панель"
+                subtitle="Wax Hands"
+                notificationsBadge={mobileNotifications > 0 ? mobileNotifications : undefined}
+                actions={[
+                    {
+                        key: 'logout',
+                        icon: <LogOut className="h-5 w-5 text-orange-500" />,
+                        onClick: logout,
+                        label: 'Выйти',
+                    },
+                ]}
+            />
+
+            <MobileAdminDrawer
+                items={mobileNavigationItems}
+                description="Быстрая навигация по разделам"
+                footer={(
+                    <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2 text-red-600 hover:text-red-700"
+                        onClick={logout}
+                    >
+                        <LogOut className="h-4 w-4" />
+                        Выйти
+                    </Button>
+                )}
+            />
+
             <div className="relative z-10">
                 {/* Фиксированный заголовок и навигация */}
+                {!isSmallScreen && (
                 <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-lg -mx-6 px-6 py-4">
                     <div className="flex justify-between items-center mb-6">
                         <div>
@@ -1246,357 +1938,153 @@ const DashboardContent: React.FC = () => {
 
                     {/* Стильные объемные вкладки */}
                     <Tabs value={selectedTab} onValueChange={handleTabChange} className="space-y-0">
-                        <TabsList className="flex w-full overflow-x-auto gap-2 p-2 bg-transparent rounded-xl scrollbar-hide">
-                            <TabsTrigger
-                                value="overview"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">📊</span>
-                                    <span>Обзор</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="users"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">👥</span>
-                                    <span>Пользователи</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="schools"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🏫</span>
-                                    <span>Школы</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="services"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🎨</span>
-                                    <span>Услуги</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="master-classes"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🎭</span>
-                                    <span>Мастер-классы</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="invoices"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">💰</span>
-                                    <span>Счета</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="workshop-requests"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">📋</span>
-                                    <span>Заявки</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="about"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-pink-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">ℹ️</span>
-                                    <span>О нас</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="offers"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">📄</span>
-                                    <span>Оферты</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="privacy-policy"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🔒</span>
-                                    <span>Политика</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="contacts"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">📞</span>
-                                    <span>Контакты</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="bonuses"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🎁</span>
-                                    <span>Бонусы</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="privacy-consent"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">🛡️</span>
-                                    <span>Согласия</span>
-                                </span>
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="chat"
-                                className="flex items-center justify-center text-center px-3 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-102 hover:shadow-md data-[state=active]:bg-gradient-to-r data-[state=active]:from-cyan-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:scale-105 data-[state=inactive]:bg-white/80 data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-100"
-                            >
-                                <span className="flex items-center justify-center w-full">
-                                    <span className="mr-1">💬</span>
-                                    <span>Чат</span>
-                                </span>
-                            </TabsTrigger>
+                        <TabsList
+                            ref={tabsListRef}
+                            className="flex w-full overflow-x-auto md:overflow-visible gap-1 sm:gap-1.5 md:gap-2 p-1.5 sm:p-2 bg-transparent rounded-xl scrollbar-hide flex-nowrap md:flex-nowrap cursor-grab select-none md:justify-center"
+                        >
+                            {navigationTabs.map((tab) => (
+                                <TabsTrigger
+                                    key={tab.id}
+                                    value={tab.id}
+                                    className={cn(
+                                        baseTabTriggerClasses,
+                                        'data-[state=active]:bg-gradient-to-r',
+                                        tab.activeClass,
+                                        tab.animate && 'animate-pulse-glow'
+                                    )}
+                                >
+                                    <span className="flex items-center justify-center w-full">
+                                        <span className="mr-1">{tab.emoji}</span>
+                                        <span>{tab.label}</span>
+                                    </span>
+                                </TabsTrigger>
+                            ))}
                         </TabsList>
                     </Tabs>
                 </div>
+                )}
 
                 {/* Основной контент с увеличенным отступом сверху */}
-                <div className="pt-12">
+                <div className={cn(isSmallScreen ? 'pt-4' : 'pt-12')}>
                     <Tabs value={selectedTab} onValueChange={handleTabChange} className="space-y-4">
                         <TabsContent value="overview" className="space-y-4 relative">
-                            {/* Секция обзора с кликабельными карточками статистики */}
-                            <div className="relative z-10 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 w-full">
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('users')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Пользователи
-                                        </CardTitle>
-                                        <Users className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        <div className="text-2xl font-bold">{usersTotal}</div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Всего пользователей
-                                        </p>
-                                    </CardContentCompact>
-                                </Card>
+                            <StatCardSection
+                                title="Ключевые показатели"
+                                subtitle="Быстрый обзор состояния платформы"
+                                isSmallScreen={isSmallScreen}
+                                cards={statCards}
+                                statsExpanded={statsExpanded}
+                                onToggle={() => setStatsExpanded(prev => !prev)}
+                            />
 
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('schools')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Школы
-                                        </CardTitle>
-                                        <Building2 className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        <div className="text-2xl font-bold">{schoolsTotal}</div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Всего школ
-                                        </p>
-                                    </CardContentCompact>
-                                </Card>
+                            {isSmallScreen && quickNavigationItems.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="px-1 text-sm font-semibold text-gray-600">Быстрые ссылки</h3>
+                                    <div className="-mx-2 flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory">
+                                        {quickNavigationItems.map((item) => {
+                                            const tone = QUICK_LINK_TONE_STYLES[item.tone];
+                                            const showBadge = item.badge !== null && item.badge !== undefined && item.badge !== 0;
+                                            return (
+                                                <button
+                                                    key={item.id}
+                                                    type="button"
+                                                    onClick={item.onPress}
+                                                    className={cn(
+                                                        "min-w-[220px] snap-start rounded-2xl p-4 text-left shadow-sm transition-transform duration-150 active:scale-[0.98]",
+                                                        tone.container
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={cn("flex h-10 w-10 items-center justify-center rounded-full", tone.icon)}>
+                                                            <item.icon className="h-5 w-5" />
+                                                        </span>
+                                                        <div className="flex-1">
+                                                            <p className="text-sm font-semibold text-gray-900">{item.label}</p>
+                                                            <p className="text-xs text-gray-600">{item.description}</p>
+                                                        </div>
+                                                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                    </div>
+                                                    {showBadge && (
+                                                        <span className={cn("mt-3 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tone.badge)}>
+                                                            {item.badge}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('services')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Услуги
-                                        </CardTitle>
-                                        <Wrench className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        <div className="text-2xl font-bold">{servicesTotal}</div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Всего услуг
-                                        </p>
-                                    </CardContentCompact>
-                                </Card>
-
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('master-classes')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Мастер-классы
-                                        </CardTitle>
-                                        <GraduationCap className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        <div className="text-2xl font-bold">{getUniqueSchoolsCount()}</div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Запланированных мастер-классов
-                                        </p>
-                                    </CardContentCompact>
-                                </Card>
-
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('invoices')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Счета
-                                        </CardTitle>
-                                        <Receipt className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        {invoicesLoading ? (
-                                            <div className="text-2xl font-bold text-muted-foreground">...</div>
-                                        ) : invoicesError ? (
-                                            <div className="text-2xl font-bold text-red-500">!</div>
-                                        ) : (
-                                            <div className="text-2xl font-bold">{invoicesData?.total ?? 0}</div>
-                                        )}
-                                        <p className="text-xs text-muted-foreground">
-                                            Всего счетов
-                                        </p>
-                                    </CardContentCompact>
-                                </Card>
-
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('chat')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Чат
-                                        </CardTitle>
-                                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        {adminChats && adminChats.length > 0 ? (
-                                            <div className="flex items-center space-x-2">
-                                                <div className="text-2xl font-bold text-blue-600">
-                                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0 ? '🔔' : '✅'}
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {adminChats.filter(chat => chat.unreadCount > 0).length > 0
-                                                        ? 'Есть непрочитанные'
-                                                        : 'Все прочитано'
-                                                    }
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center space-x-2">
-                                                <div className="text-2xl font-bold text-gray-400">-</div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    Нет чатов
-                                                </p>
-                                            </div>
-                                        )}
-                                    </CardContentCompact>
-                                </Card>
-
-                                <Card
-                                    className="cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg w-full min-w-0"
-                                    onClick={() => handleTabChange('workshop-requests')}
-                                >
-                                    <CardHeaderCompact className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium">
-                                            Заявки
-                                        </CardTitle>
-                                        <div className="flex items-center gap-2">
-                                            <FileText className="h-4 w-4 text-muted-foreground" />
-                                            <div className={`w-2 h-2 rounded-full ${wsRequestsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                        </div>
-                                    </CardHeaderCompact>
-                                    <CardContentCompact>
-                                        <div className="text-2xl font-bold text-blue-600">{workshopRequestsStats.total}</div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                                <span className="text-xs text-yellow-600">{workshopRequestsStats.pending}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                                <span className="text-xs text-green-600">{workshopRequestsStats.approved}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                                                <span className="text-xs text-red-600">{workshopRequestsStats.rejected}</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center justify-between mt-2">
-                                            <p className="text-xs text-muted-foreground">
-                                                {wsRequestsConnected ? 'Автообновление' : 'Ручное обновление'}
-                                            </p>
+                            {isSmallScreen && quickActionButtons.length > 0 && (
+                                <div className="space-y-2">
+                                    <h3 className="px-1 text-sm font-semibold text-gray-600">Быстрые действия</h3>
+                                    <div className="flex flex-col gap-2">
+                                        {quickActionButtons.map((action) => (
                                             <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    loadWorkshopRequestsStats();
-                                                }}
-                                                className="h-6 w-6 p-0 hover:bg-blue-100"
+                                                key={action.id}
+                                                type="button"
+                                                variant={action.variant ?? 'default'}
+                                                onClick={action.onPress}
+                                                className={cn(
+                                                    "w-full justify-between rounded-xl py-5 px-4 text-sm font-semibold",
+                                                    action.variant === 'outline'
+                                                        ? "bg-white text-gray-900 border-orange-100"
+                                                        : "shadow-md"
+                                                )}
                                             >
-                                                <RefreshCw className="h-3 w-3" />
+                                                <span className="flex items-center gap-3">
+                                                    <action.icon className="h-5 w-5 text-orange-500" />
+                                                    {action.label}
+                                                </span>
+                                                <ChevronRight className="h-4 w-4 text-gray-400" />
                                             </Button>
-                                        </div>
-                                    </CardContentCompact>
-                                </Card>
-                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </TabsContent>
 
                         <TabsContent value="users" className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <div className="relative">
+                            <div className={cn(
+                                "flex justify-between items-center gap-3",
+                                isSmallScreen && "flex-col items-stretch"
+                            )}>
+                                <div className={cn("relative", isSmallScreen && "w-full")}>
                                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                     <Input
                                         placeholder="Поиск пользователей..."
                                         value={usersSearchTerm}
                                         onChange={(e) => setUsersSearchTerm(e.target.value)}
-                                        className="pl-8"
+                                        className={cn("pl-8", isSmallScreen && "w-full")}
                                     />
                                 </div>
-                                <div className="flex gap-2">
+                                <div className={cn("flex gap-2", isSmallScreen && "w-full flex-col")}>
                                     <Button
                                         variant="outline"
                                         onClick={() => {
-                                            console.log('🔄 Manually refreshing users...');
+
                                             fetchUsers();
                                         }}
                                         disabled={usersLoading}
+                                        className={cn(isSmallScreen && "w-full justify-center")}
                                     >
                                         {usersLoading ? 'Обновление...' : '🔄 Обновить'}
                                     </Button>
-                                    <Button
-                                        className="bg-blue-600 hover:bg-blue-700"
-                                        onClick={() => setAddUserModalOpen(true)}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        👤 Добавить пользователя
-                                    </Button>
+                                    {user?.name === 'Admin' && (
+                                        <Button
+                                            className={cn("bg-blue-600 hover:bg-blue-700", isSmallScreen && "w-full justify-center")}
+                                            onClick={() => setAddUserModalOpen(true)}
+                                        >
+                                            <Plus className="w-4 h-4 mr-2" />
+                                            👤 Добавить пользователя
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Карточка фильтров пользователей */}
-                            <Card>
+                            <Card className={cn(isSmallScreen && 'hidden')}>
                                 <CardHeader>
                                     <CardTitle className="flex items-center gap-2">
                                         <Filter className="h-5 w-5" />
@@ -1604,73 +2092,63 @@ const DashboardContent: React.FC = () => {
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label htmlFor="role-filter">Роль</Label>
-                                            <Select value={userFilters.role} onValueChange={(value) => updateFilters('users', { role: value })}>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Выберите роль" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">Все роли</SelectItem>
-                                                    <SelectItem value="admin">Администратор</SelectItem>
-                                                    <SelectItem value="executor">Исполнитель</SelectItem>
-                                                    <SelectItem value="parent">Родитель</SelectItem>
-                                                    <SelectItem value="child">Ребенок</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label htmlFor="school-filter">Школа</Label>
-                                            <Select value={userFilters.school} onValueChange={(value) => updateFilters('users', { school: value })}>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Выберите школу" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">Все школы</SelectItem>
-                                                    {(() => {
-                                                        if (!users || users.length === 0 || !schools || schools.length === 0) return null;
-                                                        try {
-                                                            const schoolNames = users.map(u => {
-                                                                try {
-                                                                    return getUserSchoolName(u);
-                                                                } catch (error) {
-                                                                    console.error('Error getting school name for user:', error, u);
-                                                                    return null;
-                                                                }
-                                                            }).filter(Boolean);
-                                                            console.log('Available school names for filter:', schoolNames);
-                                                            return [...new Set(schoolNames)].map(schoolName => (
-                                                                <SelectItem key={schoolName} value={schoolName!}>
-                                                                    {schoolName}
-                                                                </SelectItem>
-                                                            ));
-                                                        } catch (error) {
-                                                            console.error('Error getting school names:', error);
-                                                            return null;
-                                                        }
-                                                    })()}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4">
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => updateFilters('users', { role: 'all', school: 'all' })}
-                                            className="w-full"
-                                        >
-                                            Сбросить фильтры
-                                        </Button>
-                                    </div>
+                                    <UsersFilterFields
+                                        users={users}
+                                        schools={schools}
+                                        userFilters={userFilters}
+                                        updateFilters={updateFilters}
+                                        getUserSchoolName={getUserSchoolName}
+                                        showResetButton
+                                    />
                                 </CardContent>
                             </Card>
 
+                            {isSmallScreen && (
+                                <>
+                                    <div className="flex items-center justify-between">
+                                        <Button
+                                            variant="outline"
+                                            className="flex items-center gap-2"
+                                            onClick={() => setUserFiltersDrawerOpen(true)}
+                                        >
+                                            <Filter className="h-4 w-4" />
+                                            Фильтры
+                                        </Button>
+                                        <FilterChips
+                                            chips={userFilterChips}
+                                            onClearAll={userFilterChips.length > 0 ? () => updateFilters('users', { role: 'all', school: 'all', class: 'all' }) : undefined}
+                                        />
+                                    </div>
+                                    <FilterDrawer
+                                        open={isUserFiltersDrawerOpen}
+                                        onOpenChange={setUserFiltersDrawerOpen}
+                                        title="Фильтры пользователей"
+                                        onApply={() => setUserFiltersDrawerOpen(false)}
+                                        onReset={() => updateFilters('users', { role: 'all', school: 'all', class: 'all' })}
+                                    >
+                                        <UsersFilterFields
+                                            users={users}
+                                            schools={schools}
+                                            userFilters={userFilters}
+                                            updateFilters={updateFilters}
+                                            getUserSchoolName={getUserSchoolName}
+                                            showResetButton={false}
+                                        />
+                                    </FilterDrawer>
+                                </>
+                            )}
+
+                            {!isSmallScreen && userFilterChips.length > 0 && (
+                                <FilterChips
+                                    chips={userFilterChips}
+                                    onClearAll={() => updateFilters('users', { role: 'all', school: 'all', class: 'all' })}
+                                    className="mt-2"
+                                />
+                            )}
+
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Пользователи ({usersTotal})</CardTitle>
+                                    <CardTitle>Пользователи ({filteredUsers.length})</CardTitle>
                                     <CardDescription>
                                         Управление пользователями системы
                                         {usersLastFetch && (
@@ -1682,9 +2160,24 @@ const DashboardContent: React.FC = () => {
                                 </CardHeader>
                                 <CardContent>
                                     {usersLoading ? (
-                                        <div className="text-center py-4">Загрузка...</div>
+                                        <div className="py-4 text-center">Загрузка...</div>
                                     ) : usersError ? (
-                                        <div className="text-center py-4 text-red-500">{usersError}</div>
+                                        <div className="py-4 text-center text-red-500">{usersError}</div>
+                                    ) : filteredUsers.length === 0 ? (
+                                        <div className="py-4 text-center text-gray-500">
+                                            Нет пользователей для отображения. Попробуйте изменить фильтры или поисковый запрос.
+                                        </div>
+                                    ) : isSmallScreen ? (
+                                        <SelectionManagerProvider>
+                                            <UsersMobileList
+                                                filteredUsers={filteredUsers}
+                                                isLoading={usersLoading}
+                                                error={usersError}
+                                                getParentForChild={getParentForChild}
+                                                getChildSchoolName={getChildSchoolName}
+                                                onDeleteUser={handleDeleteUser}
+                                            />
+                                        </SelectionManagerProvider>
                                     ) : (
                                         <Table>
                                             <TableHeader>
@@ -1698,62 +2191,109 @@ const DashboardContent: React.FC = () => {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {(filteredUsers || []).map((user) => (
-                                                    <TableRow key={user.id}>
-                                                        <TableCell>
-                                                            <div className="flex items-center space-x-2">
-                                                                {getRoleIcon(user.role)}
-                                                                <div>
-                                                                    <div className="font-medium">
-                                                                        {user.name} {user.surname}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Badge className={getRoleColor(user.role)}>
-                                                                {user.role}
-                                                            </Badge>
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {user.phone || user.email || '-'}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {getUserSchoolName(user) || '-'}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {user.class || '-'}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <div className="flex space-x-2">
-                                                                <AlertDialog>
-                                                                    <AlertDialogTrigger asChild>
-                                                                        <Button size="sm" variant="outline" className="text-red-600">
-                                                                            <Trash2 className="w-4 h-4" />
-                                                                        </Button>
-                                                                    </AlertDialogTrigger>
-                                                                    <AlertDialogContent>
-                                                                        <AlertDialogHeader>
-                                                                            <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
-                                                                            <AlertDialogDescription>
-                                                                                Это действие нельзя отменить. Пользователь будет удален навсегда.
-                                                                            </AlertDialogDescription>
-                                                                        </AlertDialogHeader>
-                                                                        <AlertDialogFooter>
-                                                                            <AlertDialogCancel>Отмена</AlertDialogCancel>
-                                                                            <AlertDialogAction
-                                                                                onClick={() => handleDeleteUser(user.id)}
-                                                                                className="bg-red-600 hover:bg-red-700"
+                                                {filteredUsers.map((user) => {
+                                                    const isExpanded = expandedChildRows.has(user.id);
+                                                    const parent = getParentForChild(user);
+                                                    const childSchool = getChildSchoolName(user);
+
+                                                    return (
+                                                        <React.Fragment key={user.id}>
+                                                            <TableRow>
+                                                                <TableCell>
+                                                                    <div className="flex items-center space-x-2">
+                                                                        {user.role === 'child' && parent && (
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={() => toggleChildRow(user.id)}
+                                                                                className="h-6 w-6 p-0"
                                                                             >
-                                                                                Удалить
-                                                                            </AlertDialogAction>
-                                                                        </AlertDialogFooter>
-                                                                    </AlertDialogContent>
-                                                                </AlertDialog>
-                                                            </div>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
+                                                                                {isExpanded ? (
+                                                                                    <ChevronUp className="h-4 w-4" />
+                                                                                ) : (
+                                                                                    <ChevronDown className="h-4 w-4" />
+                                                                                )}
+                                                                            </Button>
+                                                                        )}
+                                                                        {getRoleIcon(user.role)}
+                                                                        <div>
+                                                                            <div className="font-medium">
+                                                                                {user.name} {user.surname}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Badge className={getRoleColor(user.role)}>
+                                                                        {user.role}
+                                                                    </Badge>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    {user.phone || user.email || '-'}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    {user.role === 'parent' && childSchool ? (
+                                                                        <div>
+                                                                            <span className="text-xs text-muted-foreground">Школа ребенка: </span>
+                                                                            {childSchool}
+                                                                        </div>
+                                                                    ) : (
+                                                                        getUserSchoolName(user) || '-'
+                                                                    )}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    {user.class || '-'}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <div className="flex space-x-2">
+                                                                        <AlertDialog>
+                                                                            <AlertDialogTrigger asChild>
+                                                                                <Button size="sm" variant="outline" className="text-red-600">
+                                                                                    <Trash2 className="w-4 h-4" />
+                                                                                </Button>
+                                                                            </AlertDialogTrigger>
+                                                                            <AlertDialogContent>
+                                                                                <AlertDialogHeader>
+                                                                                    <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                                                                                    <AlertDialogDescription>
+                                                                                        Это действие нельзя отменить. Пользователь будет удален навсегда.
+                                                                                    </AlertDialogDescription>
+                                                                                </AlertDialogHeader>
+                                                                                <AlertDialogFooter>
+                                                                                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                                                                    <AlertDialogAction
+                                                                                        onClick={() => handleDeleteUser(user.id)}
+                                                                                        className="bg-red-600 hover:bg-red-700"
+                                                                                    >
+                                                                                        Удалить
+                                                                                    </AlertDialogAction>
+                                                                                </AlertDialogFooter>
+                                                                            </AlertDialogContent>
+                                                                        </AlertDialog>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+
+                                                            {user.role === 'child' && parent && isExpanded && (
+                                                                <TableRow className="bg-muted/50">
+                                                                    <TableCell colSpan={6} className="py-2">
+                                                                        <div className="ml-8 flex items-center space-x-4 text-sm">
+                                                                            <div className="flex items-center space-x-2">
+                                                                                {getRoleIcon(parent.role)}
+                                                                                <span className="font-medium text-muted-foreground">Родитель:</span>
+                                                                                <span>{parent.name} {parent.surname}</span>
+                                                                            </div>
+                                                                            <div className="flex items-center space-x-2">
+                                                                                <span className="text-muted-foreground">Контакт:</span>
+                                                                                <span>{parent.phone || parent.email || '-'}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
                                             </TableBody>
                                         </Table>
                                     )}
@@ -1796,13 +2336,25 @@ const DashboardContent: React.FC = () => {
                                 </CardHeader>
                                 <CardContent>
                                     {schoolsLoading ? (
-                                        <div className="text-center py-4">Загрузка...</div>
+                                        <div className="py-4 text-center">Загрузка...</div>
                                     ) : schoolsError ? (
-                                        <div className="text-center py-4 text-red-500">{schoolsError}</div>
+                                        <div className="py-4 text-center text-red-500">{schoolsError}</div>
                                     ) : filteredSchools.length === 0 ? (
-                                        <div className="text-center py-4 text-gray-500">
+                                        <div className="py-4 text-center text-gray-500">
                                             Нет школ для отображения. Попробуйте изменить фильтры или поисковый запрос.
                                         </div>
+                                    ) : isSmallScreen ? (
+                                        <ResponsiveList
+                                            items={filteredSchools}
+                                            keyExtractor={(item) => item.id}
+                                            renderItem={(school) => (
+                                                <SchoolCard
+                                                    school={school}
+                                                    onEdit={handleEditSchool}
+                                                    onDelete={(target) => handleDeleteSchool(target.id)}
+                                                />
+                                            )}
+                                        />
                                     ) : (
                                         <Table>
                                             <TableHeader>
@@ -1817,7 +2369,7 @@ const DashboardContent: React.FC = () => {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {(filteredSchools || []).map((school) => (
+                                                {filteredSchools.map((school) => (
                                                     <TableRow key={school.id}>
                                                         <TableCell className="font-medium">
                                                             {school.name}
@@ -1954,6 +2506,10 @@ const DashboardContent: React.FC = () => {
                             />
                         </TabsContent>
 
+                        <TabsContent value="refunds" className="space-y-4">
+                            <RefundsTab />
+                        </TabsContent>
+
                         <TabsContent value="workshop-requests" className="space-y-4">
                             <div className="flex justify-between items-center">
                                 <h2 className="text-2xl font-bold">Заявки на проведение мастер-классов</h2>
@@ -1972,9 +2528,6 @@ const DashboardContent: React.FC = () => {
                             <OffersTab />
                         </TabsContent>
 
-                        <TabsContent value="privacy-policy" className="space-y-4">
-                            <PrivacyPolicyTab />
-                        </TabsContent>
 
                         <TabsContent value="contacts" className="space-y-4">
                             <ContactsTab />
@@ -2034,17 +2587,13 @@ const DashboardContent: React.FC = () => {
                                                 </Badge>
                                             </div>
                                             <div className="text-sm text-gray-600">
-                                                {(adminChats || []).filter(c => c.status === 'pending').length} ожидают ответа
-                                            </div>
-                                            {/* Отладочная информация для непрочитанных */}
-                                            <div className="text-xs text-gray-400 mt-2 p-2 bg-gray-100 rounded">
-                                                Debug: Всего непрочитанных: {(adminChats || []).reduce((sum, chat) => sum + (chat.unreadCount || 0), 0)}
+                                                {(adminChats || []).filter(c => (c.unreadCount || 0) > 0).length} ожидают ответа
                                             </div>
                                             {/* Статус WebSocket */}
                                             <div className="text-xs mt-2 p-2 rounded flex items-center space-x-2">
-                                                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                                                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : wsConnecting ? 'bg-yellow-500' : 'bg-gray-400'}`} />
                                                 <span className="text-gray-600">
-                                                    WebSocket: Отключен
+                                                    WebSocket: {wsConnected ? 'Подключен' : wsConnecting ? 'Подключение...' : 'Отключен'}
                                                 </span>
                                             </div>
                                         </div>
@@ -2059,49 +2608,81 @@ const DashboardContent: React.FC = () => {
                                                     Нет чатов
                                                 </div>
                                             ) : (
-                                                (adminChats || []).map((chat) => (
-                                                    <div
-                                                        key={chat.id}
-                                                        onClick={() => setSelectedAdminChat(chat)}
-                                                        className={cn(
-                                                            "p-4 border-b border-gray-100 cursor-pointer transition-colors",
-                                                            selectedAdminChat?.id === chat.id && "bg-blue-50 border-blue-200"
-                                                        )}
-                                                    >
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <div className="flex items-center space-x-2">
-                                                                <div className={cn(
-                                                                    "w-2 h-2 rounded-full",
-                                                                    getChatStatusColor(chat.status)
-                                                                )} />
-                                                                <span className="text-sm font-medium text-gray-900">
-                                                                    {getChatStatusText(chat.status)}
+                                                (adminChats || []).map((chat) => {
+                                                    const hasUnread = getChatUnreadCount(chat) > 0;
+                                                    return (
+                                                        <div
+                                                            key={chat.id}
+                                                            onClick={() => setSelectedAdminChat(chat)}
+                                                            className={cn(
+                                                                "p-4 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50",
+                                                                selectedAdminChat?.id === chat.id && "bg-blue-50 border-blue-200"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center justify-between mb-1">
+                                                                {/* Зеленый кружок только для непрочитанных */}
+                                                                {hasUnread && (
+                                                                    <div className="flex items-center space-x-2">
+                                                                        <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+                                                                        <Badge variant="destructive" className="text-xs">
+                                                                            {getChatUnreadCount(chat)}
+                                                                        </Badge>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Имя и фамилия */}
+                                                            <p className={cn(
+                                                                "text-base mb-1",
+                                                                hasUnread ? "font-bold text-gray-900" : "font-medium text-gray-700"
+                                                            )}>
+                                                                {chat.user?.name && chat.user?.surname
+                                                                    ? `${chat.user.name} ${chat.user.surname}`.trim()
+                                                                    : chat.user?.name || 'Пользователь'
+                                                                }
+                                                            </p>
+
+                                                            {/* Телефон */}
+                                                            {chat.user?.phone && (
+                                                                <p className={cn(
+                                                                    "text-xs mb-1 flex items-center gap-1",
+                                                                    hasUnread ? "font-semibold text-gray-800" : "text-gray-600"
+                                                                )}>
+                                                                    <span>📞</span>
+                                                                    <span>{chat.user.phone}</span>
+                                                                </p>
+                                                            )}
+
+                                                            {/* Школа */}
+                                                            {chat.user?.schoolName && chat.user.schoolName !== 'Не указана' && (
+                                                                <p className={cn(
+                                                                    "text-xs mb-1 flex items-center gap-1",
+                                                                    hasUnread ? "font-semibold text-gray-800" : "text-gray-600"
+                                                                )}>
+                                                                    <span>🏫</span>
+                                                                    <span className="line-clamp-1">{chat.user.schoolName}</span>
+                                                                </p>
+                                                            )}
+
+                                                            {/* Последнее сообщение */}
+                                                            {chat.lastMessage && (
+                                                                <p className={cn(
+                                                                    "text-xs mt-2 line-clamp-2",
+                                                                    hasUnread ? "font-medium text-gray-700" : "text-gray-500"
+                                                                )}>
+                                                                    {chat.lastMessage}
+                                                                </p>
+                                                            )}
+
+                                                            {/* Время */}
+                                                            <div className="flex items-center justify-end mt-2">
+                                                                <span className="text-xs text-gray-400">
+                                                                    {formatChatDateTime(chat.lastMessageAt)}
                                                                 </span>
                                                             </div>
-                                                            {getChatUnreadCount(chat) > 0 && (
-                                                                <Badge variant="destructive" className="text-xs">
-                                                                    {getChatUnreadCount(chat)}
-                                                                </Badge>
-                                                            )}
                                                         </div>
-                                                        <p className="text-sm font-medium text-gray-900">
-                                                            {chat.user?.name && chat.user?.surname
-                                                                ? `${chat.user.name} ${chat.user.surname}`.trim()
-                                                                : chat.user?.name || 'Пользователь'
-                                                            }
-                                                        </p>
-                                                        {chat.lastMessage && (
-                                                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                                                                {chat.lastMessage}
-                                                            </p>
-                                                        )}
-                                                        <div className="flex items-center justify-end mt-2">
-                                                            <span className="text-xs text-gray-400">
-                                                                {formatChatDateTime(chat.lastMessageAt)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))
+                                                    );
+                                                })
                                             )}
                                         </div>
                                     </div>
@@ -2120,33 +2701,8 @@ const DashboardContent: React.FC = () => {
                                                                     : selectedAdminChat.user?.name || 'Пользователь'
                                                                 }
                                                             </h4>
-                                                            <div className="flex items-center space-x-2 mt-1">
-                                                                <div className={cn(
-                                                                    "w-2 h-2 rounded-full",
-                                                                    getChatStatusColor(selectedAdminChat.status)
-                                                                )} />
-                                                                <span className="text-sm text-gray-600">
-                                                                    {getChatStatusText(selectedAdminChat.status)}
-                                                                </span>
-                                                            </div>
                                                         </div>
-                                                        <div className="flex items-center space-x-2">
-                                                            <Select
-                                                                value={selectedAdminChat.status}
-                                                                onValueChange={(value: 'active' | 'closed' | 'pending') =>
-                                                                    handleAdminChatStatusUpdate(selectedAdminChat.id, value)
-                                                                }
-                                                                disabled={isUpdatingAdminChatStatus}
-                                                            >
-                                                                <SelectTrigger className="w-32">
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="pending">Ожидает</SelectItem>
-                                                                    <SelectItem value="active">Активен</SelectItem>
-                                                                    <SelectItem value="closed">Закрыт</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
+                                                        <div className="flex items-center space-x-2">{/* Убрали select для изменения статуса */}
                                                             <AlertDialog>
                                                                 <AlertDialogTrigger asChild>
                                                                     <Button
@@ -2218,7 +2774,7 @@ const DashboardContent: React.FC = () => {
                                                                         {msg.senderType === 'admin' ? (
                                                                             <Shield className="w-3 h-3" />
                                                                         ) : (
-                                                                            <User className="w-3 h-3" />
+                                                                            <UserIcon className="w-3 h-3" />
                                                                         )}
                                                                         <span className="text-xs opacity-75">
                                                                             {msg.senderType === 'admin' ? 'Администратор' :
@@ -2339,7 +2895,8 @@ const DashboardContent: React.FC = () => {
                             await createUser({
                                 name: userData.name,
                                 surname: userData.surname,
-                                role: userData.role
+                                role: userData.role,
+                                password: userData.password
                             });
                         } catch (error) {
                             console.error('Error creating user:', error);
@@ -2349,18 +2906,257 @@ const DashboardContent: React.FC = () => {
                     trigger={null}
                 />
 
+                {mobileFabConfig && (
+                    <FloatingActionButton
+                        label={mobileFabConfig.label}
+                        icon={mobileFabConfig.icon}
+                        onClick={mobileFabConfig.onClick}
+                    />
+                )}
+
             </div>
         </div>
     );
 };
 
+
 // Основной компонент Dashboard с провайдером контекста
 const Dashboard: React.FC = () => {
     return (
         <AdminFiltersProvider>
-            <DashboardContent />
+            <AdminNavigationProvider>
+                <DashboardContent />
+            </AdminNavigationProvider>
         </AdminFiltersProvider>
     );
 };
 
 export default Dashboard; 
+
+interface UsersMobileListProps {
+    filteredUsers: User[];
+    isLoading: boolean;
+    error?: string | null;
+    getParentForChild: (user: User) => User | null;
+    getChildSchoolName: (user: User) => string | null;
+    onDeleteUser: (userId: string) => Promise<void>;
+}
+
+const UsersMobileList: React.FC<UsersMobileListProps> = ({
+    filteredUsers,
+    isLoading,
+    error,
+    getParentForChild,
+    getChildSchoolName,
+    onDeleteUser,
+}) => {
+    const { selectedIds, selectionCount, setSelection, isSelected, clearSelection } = useSelectionManager();
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    const handleBulkDelete = useCallback(async () => {
+        if (selectionCount === 0 || isBulkDeleting) {
+            return;
+        }
+
+        setIsBulkDeleting(true);
+        try {
+            for (const id of Array.from(selectedIds)) {
+                await onDeleteUser(id);
+            }
+            clearSelection();
+        } catch (error) {
+            console.error('Bulk delete users error:', error);
+        } finally {
+            setIsBulkDeleting(false);
+        }
+    }, [selectionCount, isBulkDeleting, selectedIds, onDeleteUser, clearSelection]);
+
+    const bulkActions = useMemo(
+        () => [
+            {
+                id: 'delete',
+                label: isBulkDeleting ? 'Удаление...' : 'Удалить',
+                onClick: handleBulkDelete,
+                icon: Trash2,
+                variant: 'destructive' as const,
+            },
+        ],
+        [handleBulkDelete, isBulkDeleting],
+    );
+
+    if (isLoading) {
+        return <div className="py-4 text-center">Загрузка...</div>;
+    }
+
+    if (error) {
+        return <div className="py-4 text-center text-red-500">{error}</div>;
+    }
+
+    if (filteredUsers.length === 0) {
+        return (
+            <div className="py-4 text-center text-gray-500">
+                Нет пользователей для отображения. Попробуйте изменить фильтры или поисковый запрос.
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <ResponsiveList
+                items={filteredUsers}
+                keyExtractor={(item) => item.id}
+                renderItem={(user) => {
+                    const parent = getParentForChild(user);
+                    const childSchool = getChildSchoolName(user);
+                    return (
+                        <UserCard
+                            user={user}
+                            parentUser={parent}
+                            childSchoolName={childSchool}
+                            selectable
+                            selected={isSelected(user.id)}
+                            onSelectChange={(value) => setSelection(user.id, value)}
+                            onDelete={(target) => onDeleteUser(target.id)}
+                        />
+                    );
+                }}
+            />
+
+            <BulkActionBar
+                count={selectionCount}
+                onClear={clearSelection}
+                actions={bulkActions}
+            />
+        </>
+    );
+};
+
+interface UsersFilterFieldsProps {
+    users: User[];
+    schools: School[];
+    userFilters: {
+        role: string;
+        school: string;
+        class: string;
+    };
+    updateFilters: (section: 'users', values: Record<string, string>) => void;
+    getUserSchoolName: (user: User) => string | null;
+    showResetButton?: boolean;
+}
+
+const UsersFilterFields: React.FC<UsersFilterFieldsProps> = ({
+    users,
+    schools,
+    userFilters,
+    updateFilters,
+    getUserSchoolName,
+    showResetButton = true,
+}) => {
+    const schoolOptions = useMemo(() => {
+        if (!users || users.length === 0) return [];
+        const names = users
+            .map((user) => {
+                try {
+                    return getUserSchoolName(user);
+                } catch (error) {
+                    console.error('Error getting school name for user:', error, user);
+                    return null;
+                }
+            })
+            .filter(Boolean) as string[];
+        return Array.from(new Set(names)).sort();
+    }, [users, getUserSchoolName]);
+
+    const classOptions = useMemo(() => {
+        if (!users || users.length === 0 || userFilters.school === 'all') return [];
+        const classes = users
+            .filter((user) => {
+                try {
+                    const schoolName = getUserSchoolName(user);
+                    return schoolName === userFilters.school && user.class;
+                } catch (error) {
+                    console.error('Error filtering user for classes:', error, user);
+                    return false;
+                }
+            })
+            .map((user) => user.class)
+            .filter(Boolean) as string[];
+        return Array.from(new Set(classes)).sort();
+    }, [users, userFilters.school, getUserSchoolName]);
+
+    return (
+        <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="role-filter">Роль</Label>
+                    <Select
+                        value={userFilters.role}
+                        onValueChange={(value) => updateFilters('users', { role: value })}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Выберите роль" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Все роли</SelectItem>
+                            <SelectItem value="admin">Администратор</SelectItem>
+                            <SelectItem value="executor">Исполнитель</SelectItem>
+                            <SelectItem value="parent">Родитель</SelectItem>
+                            <SelectItem value="child">Ребенок</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="school-filter">Школа</Label>
+                    <Select
+                        value={userFilters.school}
+                        onValueChange={(value) => updateFilters('users', { school: value, class: 'all' })}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Выберите школу" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Все школы</SelectItem>
+                            {(schoolOptions.length > 0 ? schoolOptions : schools.map((school) => school.name)).map((schoolName) => (
+                                <SelectItem key={schoolName} value={schoolName}>
+                                    {schoolName}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="class-filter">Класс</Label>
+                    <Select
+                        value={userFilters.class}
+                        onValueChange={(value) => updateFilters('users', { class: value })}
+                        disabled={userFilters.school === 'all'}
+                    >
+                        <SelectTrigger disabled={userFilters.school === 'all'}>
+                            <SelectValue placeholder="Выберите класс" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Все классы</SelectItem>
+                            {classOptions.map((className) => (
+                                <SelectItem key={className} value={className}>
+                                    {className}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
+            {showResetButton && (
+                <Button
+                    variant="outline"
+                    onClick={() => updateFilters('users', { role: 'all', school: 'all', class: 'all' })}
+                    className="w-full"
+                >
+                    Сбросить фильтры
+                </Button>
+            )}
+        </div>
+    );
+};

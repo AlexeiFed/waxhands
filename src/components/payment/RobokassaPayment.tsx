@@ -5,16 +5,19 @@
  * @created: 2025-01-26
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CreditCard, Smartphone, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { Invoice } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useInvoiceById } from '@/hooks/use-invoices';
+import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface RobokassaPaymentProps {
-    invoice: Invoice;
+    invoiceId: string;
     onPaymentSuccess?: () => void;
     onPaymentError?: (error: string) => void;
     onRefundSuccess?: () => void;
@@ -28,12 +31,15 @@ interface PaymentResponse {
         formData?: {
             MerchantLogin: string;
             OutSum: string;
-            InvoiceID: string;
-            Receipt: string;
+            InvId: number | string; // Может быть как число, так и строка
+            Receipt?: string; // Опционально для фискализации
+            receipt?: string; // Альтернативное имя параметра
             Description: string;
             SignatureValue: string;
             Culture: string;
             Encoding: string;
+            TaxationSystem?: string; // Опционально - система налогообложения
+            taxationSystem?: string; // Альтернативное имя параметра
             IsTest?: string;
         };
     };
@@ -50,37 +56,100 @@ interface RefundResponse {
 }
 
 export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
-    invoice,
+    invoiceId,
     onPaymentSuccess,
     onPaymentError,
     onRefundSuccess
 }) => {
     const { user } = useAuth();
+    const queryClient = useQueryClient();
+    const { data: invoice, isLoading: invoiceLoading, error: invoiceError } = useInvoiceById(invoiceId, {
+        enabled: !!invoiceId
+    });
     const [isLoading, setIsLoading] = useState(false);
     const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isRefunding, setIsRefunding] = useState(false);
     const [refundAvailable, setRefundAvailable] = useState(false);
 
+    // WebSocket для автоматических обновлений данных счета
+    const { isConnected: masterClassesWsConnected } = useMasterClassesWebSocket({
+        userId: user?.id,
+        enabled: !!invoiceId, // Включаем только когда есть invoiceId
+        onMasterClassUpdate: useCallback(() => {
+            console.log('🔄 WebSocket: Обновление данных счета в RobokassaPayment');
+
+            // Принудительно обновляем данные счета
+            queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] });
+            queryClient.refetchQueries({ queryKey: ['invoice', invoiceId] });
+
+            // Обновляем данные счетов родителя
+            if (user?.id) {
+                queryClient.invalidateQueries({ queryKey: ['invoices', 'parent', user.id] });
+                queryClient.refetchQueries({ queryKey: ['invoices', 'parent', user.id] });
+            }
+        }, [invoiceId, user?.id, queryClient])
+    });
+
     // Проверяем, доступна ли оплата для пользователя
     const isPaymentAvailable = !!user; // Оплата доступна для всех авторизованных пользователей
 
-    // Отладочная информация
-    console.log('🔍 RobokassaPayment Debug:', {
-        user: user,
-        isPaymentAvailable: isPaymentAvailable
-    });
+    // Принудительное обновление данных при изменении invoiceId
+    useEffect(() => {
+        if (invoiceId) {
+            console.log('🔄 RobokassaPayment: Обновляем данные счета при изменении invoiceId');
+
+            // Принудительно обновляем данные счета
+            queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] });
+            queryClient.refetchQueries({ queryKey: ['invoice', invoiceId] });
+        }
+    }, [invoiceId, queryClient]);
 
     // Проверяем возможность возврата (до 3 часов до мастер-класса)
     useEffect(() => {
-        if (invoice.status === 'paid' && invoice.workshop_date) {
+        if (invoice?.status === 'paid' && invoice?.workshop_date) {
             const workshopDate = new Date(invoice.workshop_date);
             const now = new Date();
             const threeHoursBefore = new Date(workshopDate.getTime() - 3 * 60 * 60 * 1000);
 
             setRefundAvailable(now <= threeHoursBefore);
         }
-    }, [invoice.status, invoice.workshop_date]);
+    }, [invoice?.status, invoice?.workshop_date]);
+
+    // Если invoiceId не определен, показываем ошибку
+    if (!invoiceId) {
+        return (
+            <Alert variant="destructive">
+                <XCircle className="h-4 w-4" />
+                <AlertDescription>
+                    Ошибка: ID счета не определен
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
+    // Если счет загружается или произошла ошибка
+    if (invoiceLoading) {
+        return (
+            <div className="flex items-center justify-center p-4">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                <span>Загрузка данных счета...</span>
+            </div>
+        );
+    }
+
+    if (invoiceError || !invoice) {
+        return (
+            <Alert variant="destructive">
+                <XCircle className="h-4 w-4" />
+                <AlertDescription>
+                    Ошибка загрузки счета: {invoiceError?.message || 'Счет не найден'}
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
+    // Отладочная информация
 
     const handlePayment = async () => {
         if (!isPaymentAvailable) {
@@ -91,9 +160,36 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
         setIsLoading(true);
         setError(null);
 
+        // Определяем, запущено ли приложение как PWA
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+            (window.navigator as { standalone?: boolean }).standalone === true;
+
+        // Определяем iOS устройство
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as { MSStream?: boolean }).MSStream;
+        
+        // Определяем Android устройство
+        const isAndroid = /Android/.test(navigator.userAgent);
+
+        // На iOS и Android НЕ открываем предварительное окно - это блокируется
+        // Вместо этого будем перенаправлять напрямую после получения URL
+        let pendingWindow: Window | null = null;
+
+        // Открываем окно только на десктопе
+        if (!isStandalone && !isIOS && !isAndroid) {
+            try {
+                pendingWindow = window.open('', 'robokassa_payment', 'width=800,height=600,scrollbars=yes,resizable=yes');
+                if (pendingWindow) {
+                    pendingWindow.document.write('<p style="font-family: sans-serif; text-align: center; padding-top: 40px;">Загружаем форму оплаты…</p>');
+                }
+            } catch (popupError) {
+                console.warn('⚠️ Не удалось открыть предварительное окно оплаты:', popupError);
+                pendingWindow = null;
+            }
+        }
+
+        console.log('📱 Устройство:', { isStandalone, isIOS, isAndroid, hasPendingWindow: !!pendingWindow });
+
         try {
-            console.log('🔄 Создаем ссылку на оплату для счета:', invoice.id);
-            console.log('🔍 Текущий paymentUrl в состоянии:', paymentUrl);
 
             const token = localStorage.getItem('authToken');
             console.log('🔍 Токен авторизации:', token?.substring(0, 20) + '...');
@@ -103,44 +199,31 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
 
             // Используем стандартный API путь с принудительным обходом кэша
             const directUrl = `${import.meta.env.VITE_API_URL || 'https://waxhands.ru/api'}/robokassa/invoices/${invoice.id}/pay?t=${Date.now()}&nocache=${Math.random()}`;
-            console.log('🔗 API URL с принудительным обходом кэша:', directUrl);
 
-            // Полностью обходим Service Worker с прямым IP
-            const response = await new Promise<Response>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', directUrl, true);
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-                xhr.setRequestHeader('Pragma', 'no-cache');
-                xhr.setRequestHeader('Expires', '0');
+            console.log('🔗 Запрос к API:', directUrl);
 
-                xhr.onreadystatechange = () => {
-                    if (xhr.readyState === 4) {
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            const response = new Response(xhr.responseText, {
-                                status: xhr.status,
-                                statusText: xhr.statusText,
-                                headers: new Headers({
-                                    'content-type': xhr.getResponseHeader('content-type') || 'application/json'
-                                })
-                            });
-                            resolve(response);
-                        } else {
-                            reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-                        }
-                    }
-                };
-
-                xhr.onerror = () => reject(new Error('Network error'));
-                xhr.send();
+            // Используем стандартный fetch с обходом кэша
+            const response = await fetch(directUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                },
+                cache: 'no-store'
             });
 
-            console.log('📡 Ответ от API:', {
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries())
-            });
+            console.log('📡 Статус ответа:', response.status);
+            console.log('📡 Заголовки ответа:', Object.fromEntries(response.headers.entries()));
+
+            // Проверяем статус ответа
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Ошибка API:', response.status, errorText);
+                throw new Error(`Ошибка сервера: ${response.status} - ${errorText}`);
+            }
 
             // Проверяем тип ответа
             const contentType = response.headers.get('content-type');
@@ -148,34 +231,36 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
             if (contentType && contentType.includes('application/json')) {
                 // JSON ответ
                 const result: PaymentResponse = await response.json();
-                console.log('📄 JSON ответ от API:', result);
+
+                console.log('📦 Ответ API:', result);
 
                 if (result.success && result.data) {
                     if (result.data.formData) {
                         // Новая структура с POST формой и фискализацией
-                        console.log('✅ Получены данные POST формы с фискализацией:', result.data.formData);
-                        setPaymentUrl(result.data.paymentUrl || 'https://auth.robokassa.ru/Merchant/Index.aspx');
-                        // Создаем и отправляем POST форму
-                        submitPaymentForm(result.data.paymentUrl, result.data.formData);
+                        console.log('✅ Получены данные формы для оплаты:', result.data.formData);
+
+                        const finalUrl = result.data.paymentUrl || 'https://auth.robokassa.ru/Merchant/Index.aspx';
+                        setPaymentUrl(finalUrl);
+                        // Создаем и отправляем POST форму (передаем флаги устройства)
+                        submitPaymentForm(finalUrl, result.data.formData, pendingWindow, isStandalone, isIOS || isAndroid);
                     } else if (result.data.paymentUrl) {
                         // Fallback на старую структуру с URL
                         console.log('⚠️ Получена ссылка на оплату (возможно без фискализации):', result.data.paymentUrl);
                         setPaymentUrl(result.data.paymentUrl);
-                        openPaymentIframe(result.data.paymentUrl);
+                        openPaymentIframe(result.data.paymentUrl, pendingWindow, isStandalone, isIOS || isAndroid);
                     } else {
-                        console.log('❌ Неизвестная структура ответа API:', result);
+
                         setError('Неизвестная структура ответа от сервера');
                         onPaymentError?.('Неизвестная структура ответа от сервера');
                     }
                 } else {
-                    console.log('❌ Ошибка в ответе API:', result.error);
+
                     setError(result.error || 'Ошибка создания ссылки на оплату');
                     onPaymentError?.(result.error || 'Ошибка создания ссылки на оплату');
                 }
             } else {
                 // HTML ответ или JSON с HTML - извлекаем URL из iframe
                 const responseText = await response.text();
-                console.log('📄 Получен ответ от Robokassa:', responseText);
 
                 let htmlText = responseText;
 
@@ -184,20 +269,20 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                     const jsonData = JSON.parse(responseText);
                     if (jsonData.html || jsonData.data) {
                         htmlText = jsonData.html || jsonData.data;
-                        console.log('📄 Извлечен HTML из JSON:', htmlText);
+
                     }
                 } catch (e) {
                     // Это не JSON, используем как есть
-                    console.log('📄 Получен чистый HTML ответ');
+
                 }
 
                 // Ищем URL в iframe
                 const iframeMatch = htmlText.match(/src="([^"]+)"/);
                 if (iframeMatch && iframeMatch[1]) {
-                    const paymentUrl = iframeMatch[1];
-                    console.log('🔗 Извлечен URL оплаты:', paymentUrl);
+                                const paymentUrl = iframeMatch[1];
+
                     setPaymentUrl(paymentUrl);
-                    openPaymentIframe(paymentUrl);
+                    openPaymentIframe(paymentUrl, pendingWindow, isStandalone, isIOS || isAndroid);
                 } else {
                     // Если не удалось извлечь URL, но есть HTML с document.write
                     if (htmlText.includes('document.write')) {
@@ -211,35 +296,65 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                                 .replace(/\\n/g, '')
                                 .replace(/\\t/g, '');
 
-                            console.log('🔍 Извлечен HTML из document.write:', decodedHtml);
-
                             // Ищем URL в извлеченном HTML
                             const iframeMatch2 = decodedHtml.match(/src="([^"]+)"/);
                             if (iframeMatch2 && iframeMatch2[1]) {
                                 const paymentUrl = iframeMatch2[1];
-                                console.log('🔗 Извлечен URL оплаты из document.write:', paymentUrl);
+
                                 setPaymentUrl(paymentUrl);
-                                openPaymentIframe(paymentUrl);
+                                openPaymentIframe(paymentUrl, pendingWindow, isStandalone, isIOS || isAndroid);
                                 return;
                             }
 
                             // Если URL не найден, показываем декодированный HTML
+                            if (pendingWindow && !pendingWindow.closed) {
+                                pendingWindow.close();
+                                pendingWindow = null;
+                            }
                             showPaymentModal(decodedHtml);
                         } else {
-                            console.log('🖼️ Показываем исходный HTML форму оплаты');
+                            if (pendingWindow && !pendingWindow.closed) {
+                                pendingWindow.close();
+                                pendingWindow = null;
+                            }
                             showPaymentModal(htmlText);
                         }
                     } else {
                         // Если не удалось извлечь URL, показываем HTML в модальном окне
-                        console.log('🖼️ Показываем HTML форму оплаты');
+                        if (pendingWindow && !pendingWindow.closed) {
+                            pendingWindow.close();
+                            pendingWindow = null;
+                        }
                         showPaymentModal(htmlText);
                     }
                 }
             }
         } catch (err) {
-            const errorMessage = 'Ошибка при создании ссылки на оплату';
+            let errorMessage = 'Произошла ошибка при создании ссылки на оплату';
+
+            if (err instanceof Error) {
+                errorMessage = err.message;
+
+                // Специальная обработка для различных типов ошибок
+                if (err.message.includes('401')) {
+                    errorMessage = 'Ошибка авторизации. Пожалуйста, войдите в систему заново.';
+                } else if (err.message.includes('403')) {
+                    errorMessage = 'Доступ запрещен. Обратитесь к администратору.';
+                } else if (err.message.includes('404')) {
+                    errorMessage = 'Счет не найден. Пожалуйста, обновите страницу.';
+                } else if (err.message.includes('500')) {
+                    errorMessage = 'Внутренняя ошибка сервера. Попробуйте позже.';
+                } else if (err.message.includes('Network error')) {
+                    errorMessage = 'Ошибка сети. Проверьте подключение к интернету.';
+                }
+            }
+
+            console.error('❌ Ошибка при создании ссылки на оплату:', err);
             setError(errorMessage);
             onPaymentError?.(errorMessage);
+            if (pendingWindow && !pendingWindow.closed) {
+                pendingWindow.close();
+            }
         } finally {
             setIsLoading(false);
         }
@@ -315,20 +430,65 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
         };
     };
 
-    const submitPaymentForm = (url: string, formData: NonNullable<PaymentResponse['data']>['formData']) => {
+    const submitPaymentForm = (
+        url: string,
+        formData: NonNullable<PaymentResponse['data']>['formData'],
+        targetWindow: Window | null,
+        isStandalone: boolean,
+        isMobile: boolean = false
+    ) => {
         if (!formData) {
             console.error('❌ Данные формы отсутствуют');
             return;
         }
 
-        console.log('📝 Создаем и отправляем POST форму для RoboKassa:', { url, formData });
+        // Проверяем обязательные параметры для фискализации (более гибкая валидация)
+        console.log('🔍 Проверка параметров формы:', Object.keys(formData));
+
+        if (!formData.Receipt && !formData.receipt) {
+            console.warn('⚠️ Параметр Receipt отсутствует, но продолжаем (возможно, фискализация отключена)');
+        }
+
+        if (!formData.TaxationSystem && !formData.taxationSystem) {
+            console.warn('⚠️ Параметр TaxationSystem отсутствует, но продолжаем');
+        }
+
+        // Проверяем тип InvId - может быть как число, так и строка
+        if (formData.InvId === null || formData.InvId === undefined || formData.InvId === '') {
+            console.error('❌ InvId отсутствует или пустой');
+            setError('Ошибка формата номера счета');
+            return;
+        }
+
+        // Преобразуем InvId в число если это строка
+        const invIdNumber = typeof formData.InvId === 'string' ? parseInt(formData.InvId, 10) : formData.InvId;
+        if (isNaN(invIdNumber)) {
+            console.error('❌ InvId не может быть преобразован в число:', formData.InvId);
+            setError('Ошибка формата номера счета');
+            return;
+        }
 
         // Создаем форму
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = url;
-        form.target = '_blank';
+        
+        // На мобильных устройствах или PWA - открываем в том же окне
+        // На десктопе - пытаемся открыть в popup если он существует
+        if (isMobile || isStandalone || !targetWindow || targetWindow.closed) {
+            form.target = '_self'; // Открываем в том же окне на мобильных
+            console.log('📱 Открываем платежную форму в том же окне (мобильное устройство или PWA)');
+        } else {
+            const targetName = targetWindow.name || 'robokassa_payment';
+            if (!targetWindow.name) {
+                targetWindow.name = targetName;
+            }
+            form.target = targetName;
+            console.log('💻 Открываем платежную форму в popup окне (десктоп)');
+        }
+        
         form.style.display = 'none';
+        form.enctype = 'application/x-www-form-urlencoded';
 
         // Добавляем поля формы с правильной обработкой
         Object.entries(formData).forEach(([key, value]) => {
@@ -346,47 +506,63 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
         form.submit();
         document.body.removeChild(form);
 
-        console.log('✅ POST форма отправлена в новом окне');
+        // Пытаемся сфокусировать окно только на десктопе
+        if (!isMobile && !isStandalone && targetWindow && !targetWindow.closed) {
+            try {
+                targetWindow.focus();
+            } catch (focusError) {
+                console.warn('⚠️ Не удалось сфокусировать окно оплаты:', focusError);
+            }
+        }
+
     };
 
-    const openPaymentIframe = (url: string) => {
+    const openPaymentIframe = (url: string, existingWindow: Window | null, isStandalone: boolean, isMobile: boolean = false) => {
         // Все ссылки Robokassa открываем в новом окне (iframe блокируется политикой безопасности)
-        console.log('🔗 Открываем ссылку Robokassa в новом окне:', url);
 
-        // Для PWA лучше открывать в том же окне
-        if (window.matchMedia('(display-mode: standalone)').matches ||
-            (window.navigator as { standalone?: boolean }).standalone === true) {
-            // PWA режим - открываем в том же окне
-            console.log('📱 PWA режим: открываем в том же окне');
+        // Для PWA или мобильных устройств открываем в том же окне
+        if (isStandalone || isMobile) {
+            console.log('📱 Перенаправление на оплату в том же окне (PWA или мобильное устройство)');
             window.location.href = url;
             return;
         }
 
-        // Обычный браузер - пытаемся открыть в новом окне
-        const paymentWindow = window.open(url, 'robokassa_payment', 'width=800,height=600,scrollbars=yes,resizable=yes');
+        // Обычный браузер (десктоп) - пытаемся открыть в новом окне
+        let paymentWindow = existingWindow;
+
+        if (paymentWindow && paymentWindow.closed) {
+            paymentWindow = null;
+        }
+
+        if (paymentWindow) {
+            paymentWindow.location.href = url;
+        } else {
+            paymentWindow = window.open(url, 'robokassa_payment', 'width=800,height=600,scrollbars=yes,resizable=yes');
+        }
 
         if (!paymentWindow) {
-            // Если не удалось открыть новое окно, открываем в том же
-            console.log('🔄 Fallback: открываем в том же окне');
+            // Если не удалось открыть новое окно (блокировка popup), открываем в том же
+            console.log('⚠️ Popup заблокирован, перенаправление в том же окне');
             window.location.href = url;
             return;
         }
 
         // Слушаем закрытие окна
         const checkClosed = setInterval(() => {
-            if (paymentWindow.closed) {
-                clearInterval(checkClosed);
-                console.log('🔄 Окно оплаты закрыто, обновляем страницу');
-                // Обновляем страницу для отображения нового статуса
-                window.location.reload();
+            try {
+                if (paymentWindow && paymentWindow.closed) {
+                    clearInterval(checkClosed);
+                    // Обновляем страницу для отображения нового статуса
+                    window.location.reload();
+                }
+            } catch (e) {
+                // Игнорируем ошибки доступа к окну
             }
         }, 1000);
 
         // Дополнительная проверка через 30 секунд
         setTimeout(() => {
-            if (!paymentWindow.closed) {
-                console.log('⏰ Окно оплаты все еще открыто через 30 секунд');
-            }
+            clearInterval(checkClosed);
         }, 30000);
 
     };
@@ -399,21 +575,62 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
 
         try {
             const token = localStorage.getItem('authToken');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://waxhands.ru/api'}/robokassa/invoices/${invoice.id}/refund`, {
+
+            // Сначала получаем JWT токен для отладки
+            console.log('🔍 Получаем JWT токен для отладки...');
+            console.log('🔍 URL для JWT токена:', `${import.meta.env.VITE_API_URL || 'https://waxhands.ru/api'}/robokassa/invoices/${invoice.id}/refund/jwt`);
+            console.log('🔍 Токен авторизации:', token ? `${token.substring(0, 20)}...` : 'НЕТ ТОКЕНА');
+
+            const jwtResponse = await fetch(`${import.meta.env.VITE_API_URL || 'https://waxhands.ru/api'}/robokassa/invoices/${invoice.id}/refund/jwt`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            console.log('🔍 JWT Response status:', jwtResponse.status);
+            console.log('🔍 JWT Response ok:', jwtResponse.ok);
+
+            if (jwtResponse.ok) {
+                const jwtData = await jwtResponse.json();
+                console.log('🔐 JWT токен для возврата:', jwtData.jwtToken);
+                console.log('📋 Данные для возврата:', jwtData.refundData);
+                console.log('🔍 Декодированный payload:', JSON.parse(atob(jwtData.jwtToken.split('.')[1])));
+            } else {
+                const errorText = await jwtResponse.text();
+                console.warn('⚠️ Не удалось получить JWT токен для отладки:', jwtResponse.status, errorText);
+            }
+
+            const finalEmail = (user?.email || (invoice as Invoice)?.participant_email || '').trim();
+            const finalReason = 'Возврат по запросу пользователя';
+
+            if (!finalEmail) {
+                throw new Error('Не удалось определить e-mail для возврата. Обратитесь в поддержку.');
+            }
+
+            // Отправляем запрос на возврат c указанием причины и e-mail
+            const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://waxhands.ru/api'}/robokassa/invoices/${invoice.id}/refund/initiate`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    opKey: invoice.payment_id, // Используем payment_id как opKey
-                    refundSum: invoice.amount
+                    reason: finalReason,
+                    email: finalEmail
                 })
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Ошибка API возврата:', response.status, errorText);
+                throw new Error(`Ошибка сервера: ${response.status} - ${errorText}`);
+            }
 
             const result: RefundResponse = await response.json();
 
             if (result.success) {
+                console.log('✅ Возврат инициирован успешно:', result);
                 onRefundSuccess?.();
                 // Обновляем страницу для отображения нового статуса
                 window.location.reload();
@@ -421,7 +638,8 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                 setError(result.error || 'Ошибка создания возврата');
             }
         } catch (err) {
-            const errorMessage = 'Ошибка при создании возврата';
+            console.error('❌ Ошибка при создании возврата:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Ошибка при создании возврата';
             setError(errorMessage);
         } finally {
             setIsRefunding(false);
@@ -434,7 +652,7 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <CreditCard className="h-5 w-5" />
-                        Оплата через Robokassa
+                        Оплата
                     </CardTitle>
                     <CardDescription>
                         Безопасная оплата картой или через СБП
@@ -456,7 +674,7 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <CreditCard className="h-5 w-5" />
-                    Оплата через Robokassa
+                    Оплата
                 </CardTitle>
                 <CardDescription>
                     Безопасная оплата картой или через СБП
@@ -502,9 +720,13 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                         <div className="flex items-center gap-2 text-green-600">
                             <CheckCircle className="h-4 w-4" />
                             <span>Счет оплачен</span>
+                            {invoice.payment_method === 'cash' && (
+                                <span className="text-xs text-gray-500">(наличными)</span>
+                            )}
                         </div>
 
-                        {refundAvailable && (
+                        {/* Кнопка возврата показывается только для онлайн оплаты (не для наличных) */}
+                        {refundAvailable && invoice.payment_method !== 'cash' && (
                             <Button
                                 onClick={handleRefund}
                                 disabled={isRefunding}
@@ -525,9 +747,15 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
                             </Button>
                         )}
 
-                        {!refundAvailable && (
+                        {!refundAvailable && invoice.payment_method !== 'cash' && (
                             <p className="text-sm text-muted-foreground">
                                 Возврат возможен только до 3 часов до начала мастер-класса
+                            </p>
+                        )}
+
+                        {invoice.payment_method === 'cash' && (
+                            <p className="text-sm text-gray-600">
+                                Оплата произведена наличными. Возврат оформляется напрямую с администратором.
                             </p>
                         )}
                     </div>

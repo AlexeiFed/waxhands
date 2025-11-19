@@ -27,11 +27,9 @@ export const chatApi = {
 
     // Получить чаты пользователя
     getUserChats: async (userId: string): Promise<ChatListResponse> => {
-        console.log('🔍 chat-api: getUserChats вызван с параметрами:', { userId });
 
         try {
             const response = await api.get<ChatListResponse>(`/chat/user/${userId}`);
-            console.log('✅ chat-api: getUserChats успешно выполнен');
 
             const result = response.data || response;
 
@@ -49,7 +47,6 @@ export const chatApi = {
 
     // Получить все чаты (для администратора)
     getAllChats: async (status?: string): Promise<ChatListResponse> => {
-        console.log('🔍 chat-api: getAllChats вызван с параметрами:', { status });
 
         try {
             const params = new URLSearchParams();
@@ -58,7 +55,6 @@ export const chatApi = {
             }
 
             const response = await api.get<ChatListResponse>(`/chat/admin/all?${params.toString()}`);
-            console.log('✅ chat-api: getAllChats успешно выполнен');
 
             // Backend возвращает данные напрямую, а не в response.data
             // Поэтому извлекаем данные из response.data или используем response напрямую
@@ -78,11 +74,9 @@ export const chatApi = {
 
     // Получить сообщения чата
     getChatMessages: async (chatId: string): Promise<ChatMessagesResponse> => {
-        console.log('🔍 chat-api: getChatMessages вызван с параметрами:', { chatId });
 
         try {
             const response = await api.get<ChatMessagesResponse>(`/chat/${chatId}/messages`);
-            console.log('✅ chat-api: getChatMessages успешно выполнен');
 
             const result = response.data || response;
 
@@ -100,14 +94,14 @@ export const chatApi = {
 
     // Отправить сообщение
     sendMessage: async (data: SendMessageRequest): Promise<{ success: boolean; messageId: string; message: string }> => {
-        console.log('📤 chat-api: Отправляю сообщение:', data);
+
         const response = await api.post<{ success: boolean; messageId: string; message: string }>('/chat/send', {
             chatId: data.chatId,
             message: data.message,
             messageType: data.messageType || 'text',
             fileUrl: data.fileUrl
         });
-        console.log('📡 chat-api: Ответ от сервера:', response);
+
         return response.data!;
     },
 
@@ -132,17 +126,30 @@ export const chatApi = {
     // Получить количество непрочитанных сообщений
     getUnreadCount: async (userId: string): Promise<{ unreadTotal: number }> => {
         try {
+            // Путь: /chat/user/{userId}/unread -> полный: /api/chat/user/{userId}/unread
             const response = await api.get<{ unreadTotal: number }>(`/chat/user/${userId}/unread`);
-            return response.data!;
+            console.log('✅ chat-api: getUnreadCount ответ:', response);
+
+            // apiRequest возвращает данные напрямую, используем fallback для совместимости
+            const result = response.data || response;
+
+            // Проверяем, что данные в правильном формате
+            if (result && typeof result === 'object' && 'unreadTotal' in result) {
+                return result as { unreadTotal: number };
+            }
+
+            console.error('❌ chat-api: getUnreadCount - неверный формат ответа:', result);
+            throw new Error('Invalid response format');
         } catch (error) {
-            console.error('❌ chat-api: getUnreadCount ошибка:', error);
+            console.error('❌ chat-api: getUnreadCount ошибка для userId:', userId);
+            console.error('❌ chat-api: getUnreadCount детали:', error);
             throw error;
         }
     },
 
     // Удалить чат
     deleteChat: async (chatId: string): Promise<{ success: boolean; message: string }> => {
-        const response = await api.delete<{ success: boolean; message: string }>(`/chat/${chatId}`);
+        const response = await api.delete<{ success: boolean; message: string }>(`/chat/delete/${chatId}`);
         return response.data!;
     }
 };

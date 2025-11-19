@@ -5,7 +5,7 @@
  * @created: 2024-12-19
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     Card,
     CardContent,
@@ -22,11 +22,35 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { useUpdateParticipantPaymentStatus } from '@/hooks/use-master-classes';
+import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
+import { useInvoicesWebSocket } from '@/hooks/use-invoices-websocket';
 import { MasterClassParticipant, MasterClassStatistics, Service } from '@/types/services';
-import { UserCheck, UserX, MessageCircle, Users, DollarSign, Calendar, Clock, MapPin, Building, Filter, RefreshCw, FileText, Phone, User, CheckCircle, AlertCircle, CreditCard, TrendingUp, Download, FileSpreadsheet, FileText as FileTextIcon } from 'lucide-react';
+import { UserCheck, UserX, MessageCircle, Users, DollarSign, Calendar, Clock, MapPin, Building, Filter, RefreshCw, FileText, Phone, User, CheckCircle, AlertCircle, CreditCard, TrendingUp, Download, FileSpreadsheet, FileText as FileTextIcon, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-utils';
 import { MasterClassEvent } from '@/types/services';
+import { AdminParentRegistrationModal } from './AdminParentRegistrationModal';
+import MultiChildWorkshopModal from '@/components/ui/multi-child-workshop-modal';
+import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+interface RegisteredParentData {
+    parent: {
+        id: string;
+        name: string;
+        surname: string;
+        phone: string;
+    };
+    children: Array<{
+        id: string;
+        name: string;
+        surname: string;
+        age?: number;
+        school_id: string;
+        school_name: string;
+        class: string;
+    }>;
+}
 
 interface MasterClassDetailsProps {
     masterClass: {
@@ -42,14 +66,7 @@ interface MasterClassDetailsProps {
         executors: string[];
         notes?: string;
         participants: MasterClassParticipant[];
-        statistics: {
-            totalParticipants: number;
-            totalAmount: number;
-            paidAmount: number;
-            unpaidAmount: number;
-            stylesStats: { [key: string]: number };
-            optionsStats: { [key: string]: number };
-        };
+        statistics: MasterClassStatistics;
         createdAt: string;
         updatedAt: string;
         school_data?: { teacher?: string; teacherPhone?: string };
@@ -59,10 +76,27 @@ interface MasterClassDetailsProps {
     service: Service;
     onUpdateMasterClass?: (id: string, updates: Partial<MasterClassEvent>) => Promise<void>;
     allMasterClasses?: MasterClassEvent[];
-    onRefreshMasterClasses?: () => Promise<void>;
+    onRefreshMasterClasses?: (params?: { forceRefresh?: boolean }) => Promise<void>;
 }
 
 export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterClass, service, onUpdateMasterClass, allMasterClasses = [], onRefreshMasterClasses }) => {
+    const { isSmallScreen } = useResponsiveLayout();
+    // Функция для конвертации даты в формат YYYY-MM-DD для input type="date"
+    const formatDateForInput = (dateString: string): string => {
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                return dateString;
+            }
+            // Конвертируем в московское время (UTC+3) для правильного отображения
+            const moscowDate = new Date(date.getTime() + (3 * 60 * 60 * 1000));
+            return moscowDate.toISOString().split('T')[0];
+        } catch (error) {
+            console.error('Error formatting date for input:', error);
+            return dateString;
+        }
+    };
+
     const [stats, setStats] = useState<MasterClassStatistics | null>(null);
     const [loading, setLoading] = useState(false);
     const [schoolData, setSchoolData] = useState<{ teacher?: string; teacherPhone?: string } | null>(null);
@@ -72,14 +106,78 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
             hasReceived: p.hasReceived || false
         }))
     );
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Состояние для фильтра по статусу оплаты
     const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
 
+    // WebSocket для автоматических обновлений
+    const isUpdatingRef = useRef(false);
+
+    const refreshMasterClassDetails = useCallback(async () => {
+        if (isUpdatingRef.current) {
+            return;
+        }
+
+        isUpdatingRef.current = true;
+        setIsRefreshing(true);
+        try {
+            const response = await api.masterClassEvents.getEventById(masterClass.id);
+            const updatedMasterClass = response as unknown as MasterClassEvent;
+
+            const updatedParticipants = (updatedMasterClass.participants || []).map(p => ({
+                ...p,
+                hasReceived: p.hasReceived || false
+            }));
+
+            setParticipants(updatedParticipants);
+            setStats({
+                ...updatedMasterClass.statistics,
+                cashAmount: updatedMasterClass.statistics?.cashAmount || 0,
+                stylesStats: updatedMasterClass.statistics?.stylesStats || {},
+                optionsStats: updatedMasterClass.statistics?.optionsStats || {}
+            });
+
+            await onRefreshMasterClasses?.({ forceRefresh: true });
+        } catch (error) {
+            console.error('Error refreshing master class details:', error);
+        } finally {
+            isUpdatingRef.current = false;
+            setIsRefreshing(false);
+        }
+    }, [masterClass.id, onRefreshMasterClasses]);
+
+    useMasterClassesWebSocket({
+        enabled: true,
+        onMasterClassUpdate: () => {
+            void refreshMasterClassDetails();
+        }
+    });
+
+    // WebSocket для обновлений счетов - для мгновенного обновления таблицы участников
+    useInvoicesWebSocket({
+        userId: 'admin',
+        enabled: true,
+        listenAll: true,
+        onInvoiceUpdate: useCallback((invoiceId: string, status: string, updatedMasterClassId?: string) => {
+            console.log('📡 [MasterClassDetails] Получено обновление счета:', {
+                invoiceId,
+                status,
+                updatedMasterClassId,
+                currentMasterClassId: masterClass.id
+            });
+            // Обновляем только если это счет для текущего мастер-класса
+            if (updatedMasterClassId === masterClass.id) {
+                console.log('🔄 [MasterClassDetails] Обновляем данные мастер-класса');
+                void refreshMasterClassDetails();
+            }
+        }, [masterClass.id, refreshMasterClassDetails])
+    });
+
     // Состояние для режима редактирования
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState({
-        date: masterClass.date,
+        date: formatDateForInput(masterClass.date),
         time: masterClass.time,
         executors: masterClass.executors, // executors уже string[]
         notes: masterClass.notes || ''
@@ -97,22 +195,33 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
     const [previewMessage, setPreviewMessage] = useState('');
     const [messageType, setMessageType] = useState<'teacher' | 'admin'>('teacher');
 
+    // Состояние для раскрытия/скрытия данных родителя
+    const [expandedParticipants, setExpandedParticipants] = useState<Set<string>>(new Set());
+
+    // Состояние для модальных окон регистрации
+    const [isRegisteringParent, setIsRegisteringParent] = useState(false);
+    const [isRegisteringChildren, setIsRegisteringChildren] = useState(false);
+    const [registeredParentData, setRegisteredParentData] = useState<RegisteredParentData | null>(null);
+
     const { toast } = useToast();
     const updatePaymentStatusMutation = useUpdateParticipantPaymentStatus();
 
     // Загружаем актуальные данные участников при изменении masterClass
     useEffect(() => {
+        console.log('🔄 Обновление participants из masterClass:', {
+            participantsCount: masterClass.participants?.length || 0,
+            masterClassId: masterClass.id
+        });
+
         if (masterClass.participants && masterClass.participants.length > 0) {
-            console.log('🔍 MasterClassDetails: Загружаем участников:', masterClass.participants);
             setParticipants((masterClass.participants || []).map(p => ({
                 ...p,
                 hasReceived: p.hasReceived || false
             })));
         } else {
-            console.log('⚠️ MasterClassDetails: Нет участников в masterClass');
             setParticipants([]);
         }
-    }, [masterClass.participants]);
+    }, [masterClass.participants, masterClass.id]);
 
     // Получение отфильтрованных участников
     const getFilteredParticipants = (): MasterClassParticipant[] => {
@@ -140,6 +249,63 @@ export const MasterClassDetails: React.FC<MasterClassDetailsProps> = ({ masterCl
             unpaidAmount
         };
     };
+
+    const participantPaymentStats = useMemo(() => {
+        if (!participants || participants.length === 0) {
+            return {
+                totalParticipants: 0,
+                totalAmount: 0,
+                paidAmount: 0,
+                unpaidAmount: 0,
+                cashAmount: 0
+            };
+        }
+
+        const totalAmount = participants.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const paidParticipants = participants.filter(p => p.isPaid);
+        const paidAmount = paidParticipants.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const cashAmount = paidParticipants
+            .filter(p => p.paymentMethod === 'cash')
+            .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const unpaidAmount = totalAmount - paidAmount;
+
+        return {
+            totalParticipants: participants.length,
+            totalAmount,
+            paidAmount,
+            unpaidAmount,
+            cashAmount
+        };
+    }, [participants]);
+
+    const statsToDisplay = useMemo<MasterClassStatistics>(() => {
+        const base: MasterClassStatistics = {
+            totalParticipants: stats?.totalParticipants ?? masterClass.statistics?.totalParticipants ?? 0,
+            totalAmount: stats?.totalAmount ?? masterClass.statistics?.totalAmount ?? 0,
+            paidAmount: stats?.paidAmount ?? masterClass.statistics?.paidAmount ?? 0,
+            unpaidAmount: stats?.unpaidAmount ?? masterClass.statistics?.unpaidAmount ?? 0,
+            cashAmount: stats?.cashAmount ?? masterClass.statistics?.cashAmount ?? 0,
+            stylesStats: stats?.stylesStats ?? masterClass.statistics?.stylesStats ?? {},
+            optionsStats: stats?.optionsStats ?? masterClass.statistics?.optionsStats ?? {}
+        };
+
+        if (!participants || participants.length === 0) {
+            return base;
+        }
+
+        const effectiveCashAmount = participantPaymentStats.cashAmount > 0
+            ? participantPaymentStats.cashAmount
+            : base.cashAmount;
+
+        return {
+            ...base,
+            totalParticipants: participantPaymentStats.totalParticipants,
+            totalAmount: participantPaymentStats.totalAmount || base.totalAmount,
+            paidAmount: participantPaymentStats.paidAmount,
+            unpaidAmount: participantPaymentStats.unpaidAmount,
+            cashAmount: effectiveCashAmount
+        };
+    }, [participants, stats, masterClass.statistics, participantPaymentStats]);
 
     // Функция для форматирования сообщения для учителя
     const formatTeacherMessage = () => {
@@ -236,12 +402,26 @@ ${unpaidNames}
         setPreviewMessage('');
     };
 
+    // Функция для переключения раскрытия/скрытия данных родителя
+    const toggleParticipantExpansion = (participantId: string) => {
+        setExpandedParticipants(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(participantId)) {
+                newSet.delete(participantId);
+            } else {
+                newSet.add(participantId);
+            }
+            return newSet;
+        });
+    };
+
     const loadStats = useCallback(async () => {
         setLoading(true);
         try {
             // Используем локальную статистику вместо API вызова
             const localStats: MasterClassStatistics = {
                 ...masterClass.statistics,
+                cashAmount: masterClass.statistics.cashAmount || 0,
                 stylesStats: {},
                 optionsStats: {}
             };
@@ -311,18 +491,34 @@ ${unpaidNames}
         loadStats();
         loadSchoolData();
         loadExecutors(); // Загрузка исполнителей при монтировании
-        console.log('MasterClass data:', masterClass);
-        console.log('executor_names:', masterClass.executor_names);
-        console.log('executors_full:', masterClass.executors_full);
-        console.log('executors (IDs):', masterClass.executors);
-        console.log('school_data:', masterClass.school_data);
-        console.log('Participants:', participants);
-    }, [masterClass.id, loadExecutors, loadSchoolData, loadStats, masterClass, participants]);
+    }, [masterClass.id, loadExecutors, loadSchoolData, loadStats]);
+
+    // Обновляем статистику при изменении masterClass.statistics
+    useEffect(() => {
+        console.log('🔄 Обновление статистики из masterClass:', masterClass.statistics);
+        setStats({
+            ...masterClass.statistics,
+            cashAmount: masterClass.statistics.cashAmount || 0,
+            stylesStats: masterClass.statistics.stylesStats || {},
+            optionsStats: masterClass.statistics.optionsStats || {}
+        });
+    }, [masterClass.statistics, masterClass.id]);
+
+    // Принудительно обновляем статистику при изменении masterClass
+    useEffect(() => {
+        console.log('🔄 Принудительное обновление статистики при изменении masterClass');
+        setStats({
+            ...masterClass.statistics,
+            cashAmount: masterClass.statistics.cashAmount || 0,
+            stylesStats: masterClass.statistics.stylesStats || {},
+            optionsStats: masterClass.statistics.optionsStats || {}
+        });
+    }, [masterClass]);
 
     // Синхронизация editData с masterClass при изменении данных
     useEffect(() => {
         setEditData({
-            date: masterClass.date,
+            date: formatDateForInput(masterClass.date),
             time: masterClass.time,
             executors: masterClass.executors,
             notes: masterClass.notes || ''
@@ -332,7 +528,6 @@ ${unpaidNames}
     // Сохранение изменений
     const handleSaveChanges = async () => {
         try {
-            console.log('Saving changes:', editData);
 
             // Если изменилась дата, обновляем все мастер-классы этой школы в этот день
             // Правильно извлекаем дату с учетом московского времени
@@ -341,32 +536,11 @@ ${unpaidNames}
             const moscowDate = new Date(originalDate.getTime() + (3 * 60 * 60 * 1000));
             const originalDateOnly = moscowDate.toISOString().split('T')[0];
 
-            console.log('🔍 ПРОВЕРКА УСЛОВИЯ МАССОВОГО ОБНОВЛЕНИЯ:');
-            console.log('editData.date:', editData.date);
-            console.log('originalDateOnly:', originalDateOnly);
-            console.log('editData.date !== originalDateOnly:', editData.date !== originalDateOnly);
-            console.log('onUpdateMasterClass exists:', !!onUpdateMasterClass);
-
             if (editData.date !== originalDateOnly && onUpdateMasterClass) {
                 const newDate = editData.date;
 
-                console.log('=== ОТЛАДКА МАССОВОГО ОБНОВЛЕНИЯ ===');
-                console.log('Текущий мастер-класс:', {
-                    id: masterClass.id,
-                    schoolId: masterClass.schoolId,
-                    date: masterClass.date,
-                    originalDateOnly
-                });
-                console.log('Новая дата:', newDate);
-                console.log('Всего мастер-классов в allMasterClasses:', allMasterClasses.length);
-
-                // Находим все мастер-классы той же школы в исходный день
-                console.log('🔍 Начинаем поиск мастер-классов для массового обновления...');
-                console.log('Ищем мастер-классы с schoolId:', masterClass.schoolId, 'и датой:', originalDateOnly);
-
                 // Сначала обновляем данные мастер-классов для получения актуальной информации
                 if (onRefreshMasterClasses) {
-                    console.log('🔄 Обновляем данные перед поиском...');
                     await onRefreshMasterClasses();
                 }
 
@@ -383,10 +557,7 @@ ${unpaidNames}
                     return isSameSchool && isSameDate && isNotCurrent;
                 });
 
-                console.log(`Найдено ${sameSchoolSameDayClasses.length} мастер-классов той же школы в день ${originalDateOnly}`);
-
                 // Обновляем основной мастер-класс
-                console.log('Обновляем основной мастер-класс...');
                 await onUpdateMasterClass(masterClass.id, {
                     date: editData.date,
                     time: editData.time,
@@ -395,23 +566,18 @@ ${unpaidNames}
                 });
 
                 // Обновляем все остальные мастер-классы той же школы в этот день
-                console.log('Начинаем массовое обновление...');
                 for (const mc of sameSchoolSameDayClasses) {
-                    console.log(`Обновляем мастер-класс ${mc.id} с даты ${mc.date} на дату ${newDate}`);
                     try {
                         await onUpdateMasterClass(mc.id, {
                             date: newDate
                         });
-                        console.log(`✅ Мастер-класс ${mc.id} успешно обновлен`);
                     } catch (error) {
                         console.error(`❌ Ошибка обновления мастер-класса ${mc.id}:`, error);
                     }
                 }
-                console.log('=== КОНЕЦ МАССОВОГО ОБНОВЛЕНИЯ ===');
 
                 // Принудительно обновляем данные мастер-классов
                 if (onRefreshMasterClasses) {
-                    console.log('🔄 Обновляем данные мастер-классов...');
                     await onRefreshMasterClasses();
                 }
 
@@ -468,7 +634,7 @@ ${unpaidNames}
     // Отмена редактирования
     const handleCancelEdit = () => {
         setEditData({
-            date: masterClass.date,
+            date: formatDateForInput(masterClass.date),
             time: masterClass.time,
             executors: masterClass.executors, // executors уже string[]
             notes: masterClass.notes || ''
@@ -534,6 +700,8 @@ ${unpaidNames}
                 title: "Статус оплаты обновлен",
                 description: `Статус оплаты участника изменен на ${isPaid ? 'оплачено' : 'не оплачено'}`,
             });
+
+            await refreshMasterClassDetails();
         } catch (error) {
             console.error('Error updating payment status:', error);
             toast({
@@ -546,7 +714,13 @@ ${unpaidNames}
 
     const handleServiceReceivedChange = async (participantId: string, hasReceived: boolean) => {
         try {
-            // TODO: API call to update service received status
+            // Отправляем запрос на backend
+            await api.patch(
+                `/master-classes/${masterClass.id}/participants/${participantId}/service-received`,
+                { hasReceived }
+            );
+
+            // Обновляем локальное состояние после успешного сохранения
             setParticipants(prev => prev.map(p =>
                 p.id === participantId ? { ...p, hasReceived } : p
             ));
@@ -562,6 +736,90 @@ ${unpaidNames}
                 description: "Не удалось обновить статус получения услуги",
                 variant: "destructive",
             });
+        }
+    };
+
+    // Обработчик наличной оплаты
+    const handleCashPayment = async (participantId: string) => {
+        const participant = participants.find(p => p.id === participantId);
+        if (!participant) return;
+
+        // Подтверждение наличной оплаты
+        const confirmed = window.confirm(
+            `Подтвердить наличную оплату для "${participant.childName}"?\n\n` +
+            `Сумма: ${participant.totalAmount} ₽\n\n` +
+            `После подтверждения:\n` +
+            `• Статус оплаты изменится на "Оплачено"\n` +
+            `• Счет будет помечен как оплаченный наличными\n` +
+            `• Сумма будет добавлена в статистику наличных платежей`
+        );
+
+        if (!confirmed) return;
+
+        try {
+            const response = await api.patch<{ success: boolean; data: unknown }>(
+                `/master-classes/${masterClass.id}/participants/${participantId}/cash-payment`
+            );
+
+            if (response.data.success) {
+                toast({
+                    title: 'Наличная оплата подтверждена ✅',
+                    description: `Участник ${participant.childName} помечен как оплативший наличными`,
+                });
+
+                // Обновляем локальное состояние
+                setParticipants(prev => prev.map(p =>
+                    p.id === participantId ? { ...p, isPaid: true, paymentMethod: 'cash' } : p
+                ));
+
+                await refreshMasterClassDetails();
+            }
+        } catch (error) {
+            console.error('Error confirming cash payment:', error);
+            const err = error as { response?: { data?: { error?: string } } };
+            toast({
+                title: 'Ошибка',
+                description: err.response?.data?.error || 'Не удалось подтвердить наличную оплату',
+                variant: 'destructive',
+            });
+        }
+    };
+
+    // Обработчик успешной регистрации родителя
+    const handleParentRegistrationSuccess = (data: RegisteredParentData) => {
+        console.log('✅ handleParentRegistrationSuccess вызван:', data);
+        console.log('👶 Дети зарегистрированы:', data.children);
+
+        setRegisteredParentData(data);
+        setIsRegisteringParent(false);
+
+        // Используем setTimeout для гарантированного открытия модального окна после закрытия предыдущего
+        // Увеличиваем задержку до 500ms для гарантии
+        setTimeout(() => {
+            console.log('⏰ Открываем модальное окно записи детей');
+            setIsRegisteringChildren(true);
+        }, 500);
+
+        toast({
+            title: 'Родитель зарегистрирован ✅',
+            description: `Теперь выберите детей и услуги для записи на мастер-класс`,
+        });
+    };
+
+    // Обработчик успешной записи детей на мастер-класс
+    const handleChildrenRegistrationSuccess = async () => {
+        // НЕ закрываем модальное окно - пользователь должен увидеть секцию оплаты и кнопку WhatsApp
+        // setIsRegisteringChildren(false);
+        // setRegisteredParentData(null);
+
+        toast({
+            title: 'Дети записаны на мастер-класс ✅',
+            description: 'Счет сформирован и готов к отправке. Отправьте счет родителю через WhatsApp!',
+        });
+
+        // Обновляем данные мастер-класса
+        if (onRefreshMasterClasses) {
+            await onRefreshMasterClasses();
         }
     };
 
@@ -605,7 +863,10 @@ ${unpaidNames}
                         : masterClass.statistics.paidAmount,
                     unpaidAmount: !participant.isPaid
                         ? Math.max(masterClass.statistics.unpaidAmount - participant.totalAmount, 0)
-                        : masterClass.statistics.unpaidAmount
+                        : masterClass.statistics.unpaidAmount,
+                    cashAmount: (participant.isPaid && participant.paymentMethod === 'cash')
+                        ? Math.max((masterClass.statistics.cashAmount || 0) - participant.totalAmount, 0)
+                        : (masterClass.statistics.cashAmount || 0)
                 };
 
                 masterClass.statistics = updatedStats;
@@ -616,17 +877,6 @@ ${unpaidNames}
                 title: "Участник удален",
                 description: `Участник "${participant.childName}" удален с мастер-класса. Счет и статистика обновлены.`,
                 variant: "default",
-            });
-
-            console.log('🗑️ Удален участник:', {
-                participantId,
-                childName: participant.childName,
-                masterClassId: masterClass.id,
-                totalAmount: participant.totalAmount,
-                wasPaid: participant.isPaid,
-                selectedStyles: participant.selectedStyles,
-                selectedOptions: participant.selectedOptions,
-                updatedStatistics: ('updatedStatistics' in response && response.updatedStatistics) || 'fallback'
             });
 
         } catch (error) {
@@ -663,6 +913,282 @@ ${unpaidNames}
         };
     };
 
+    if (isSmallScreen) {
+        const filteredParticipants = getFilteredParticipants();
+        const currentStats = stats ?? masterClass.statistics;
+        const executorNames = masterClass.executors_full?.map((e) => e.fullName) || masterClass.executors || [];
+
+        return (
+            <div className="flex h-full flex-col overflow-hidden bg-white">
+                <div className="px-4 pt-4 pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <h2 className="text-2xl font-bold text-primary">{service.name}</h2>
+                            <p className="text-sm text-gray-500">
+                                {new Date(masterClass.date).toLocaleDateString('ru-RU')} • {masterClass.time}
+                            </p>
+                        </div>
+                        <Badge variant="secondary" className="px-3 py-1 text-sm">
+                            {masterClass.classGroup}
+                        </Badge>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Button
+                            onClick={() => setIsRegisteringParent(true)}
+                            className="bg-gradient-to-r from-orange-500 to-purple-500 hover:from-orange-600 hover:to-purple-600 text-white"
+                        >
+                            <UserCheck className="w-4 h-4 mr-2" />
+                            Записать участника
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditing(!isEditing)}
+                        >
+                            {isEditing ? 'Отменить редактирование' : 'Редактировать'}
+                        </Button>
+                    </div>
+                </div>
+
+                <Tabs defaultValue="overview" className="flex-1 flex flex-col px-4 pb-4">
+                    <TabsList className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-gray-100 p-1">
+                        <TabsTrigger value="overview" className="text-xs">Обзор</TabsTrigger>
+                        <TabsTrigger value="participants" className="text-xs">Участники</TabsTrigger>
+                        <TabsTrigger value="stats" className="text-xs">Оплаты</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="overview" className="flex-1 overflow-y-auto space-y-4">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Основная информация</CardTitle>
+                                <CardDescription>Детали мастер-класса</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-1 gap-3">
+                                <div className="flex items-center gap-3 text-sm">
+                                    <Calendar className="h-4 w-4 text-blue-600" />
+                                    <span>{new Date(masterClass.date).toLocaleDateString('ru-RU')} • {masterClass.time}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm">
+                                    <MapPin className="h-4 w-4 text-orange-600" />
+                                    <span>{masterClass.city}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm">
+                                    <Building className="h-4 w-4 text-purple-600" />
+                                    <span>{masterClass.schoolName}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm">
+                                    <Users className="h-4 w-4 text-teal-600" />
+                                    <span>{executorNames.length > 0 ? executorNames.join(', ') : 'Исполнители не назначены'}</span>
+                                </div>
+                                {masterClass.school_data?.teacher && (
+                                    <div className="flex items-center gap-3 text-sm">
+                                        <User className="h-4 w-4 text-indigo-600" />
+                                        <span>
+                                            Учитель: {masterClass.school_data.teacher}
+                                            {masterClass.school_data.teacherPhone ? ` • ${masterClass.school_data.teacherPhone}` : ''}
+                                        </span>
+                                    </div>
+                                )}
+                                {masterClass.notes && (
+                                    <div className="rounded-lg bg-orange-50 p-3 text-sm text-gray-700">
+                                        <span className="font-medium text-orange-600 block mb-1">Заметки:</span>
+                                        {masterClass.notes}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    <TabsContent value="participants" className="flex-1 overflow-y-auto space-y-4">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Участники</CardTitle>
+                                <CardDescription>Управление списком и оплатами</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <div className="space-y-1">
+                                    <Label htmlFor="payment-filter-mobile">Статус оплаты</Label>
+                                    <Select
+                                        value={paymentStatusFilter}
+                                        onValueChange={(value: 'all' | 'paid' | 'unpaid') => setPaymentStatusFilter(value)}
+                                    >
+                                        <SelectTrigger id="payment-filter-mobile">
+                                            <SelectValue placeholder="Статус оплаты" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Все</SelectItem>
+                                            <SelectItem value="paid">Оплачено</SelectItem>
+                                            <SelectItem value="unpaid">Не оплачено</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {filteredParticipants.length === 0 ? (
+                                    <div className="rounded-lg border border-dashed border-orange-200 bg-white/70 p-6 text-center text-sm text-gray-500">
+                                        Участников с выбранным фильтром нет.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {filteredParticipants.map((participant) => (
+                                            <Card key={participant.id} className="border-orange-100 bg-white/90 shadow-sm">
+                                                <CardContent className="space-y-3 p-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-base font-semibold text-gray-900">
+                                                                {participant.childName}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500 flex flex-wrap items-center gap-1">
+                                                                <span>Родитель: {participant.parentName} {participant.parentSurname}</span>
+                                                                {participant.parentPhone && (
+                                                                    <>
+                                                                        <span className="text-gray-400">•</span>
+                                                                        <a
+                                                                            href={`tel:${participant.parentPhone.replace(/\s+/g, '')}`}
+                                                                            className="text-blue-600 hover:underline"
+                                                                        >
+                                                                            {participant.parentPhone}
+                                                                        </a>
+                                                                    </>
+                                                                )}
+                                                            </p>
+                                                        </div>
+                                                        <Badge variant={participant.isPaid ? 'default' : 'outline'} className={participant.isPaid ? 'bg-green-500 text-white' : ''}>
+                                                            {participant.isPaid ? 'Оплачено' : 'Ожидает'}
+                                                        </Badge>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-2 text-xs text-gray-600">
+                                                        <div className="flex items-center gap-2">
+                                                            <Phone className="h-3 w-3 text-green-600" />
+                                                            <span>{participant.parentPhone || 'Телефон не указан'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <DollarSign className="h-3 w-3 text-orange-600" />
+                                                            <span>Сумма: {participant.totalAmount} ₽</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <FileTextIcon className="h-3 w-3 text-purple-600" />
+                                                            <span>{getStyleOptionNames(participant.selectedStyles || [], participant.selectedOptions || []).styles}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className={participant.isPaid ? 'border-green-200 text-green-600' : 'border-orange-200 text-orange-600'}
+                                                            onClick={() => handlePaymentStatusChange(participant.id, !participant.isPaid)}
+                                                        >
+                                                            {participant.isPaid ? 'Отметить как неоплаченного' : 'Отметить как оплачено'}
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="destructive"
+                                                            onClick={() => handleRemoveParticipant(participant.id)}
+                                                        >
+                                                            Удалить
+                                                        </Button>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    <TabsContent value="stats" className="flex-1 overflow-y-auto space-y-4">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Финансы</CardTitle>
+                                <CardDescription>Сводка по оплатам</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-1 gap-3">
+                                <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+                                    <p className="text-xs text-green-700">Итого собрано</p>
+                                    <p className="text-xl font-semibold text-green-900">{currentStats.totalAmount} ₽</p>
+                                </div>
+                                <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                                    <p className="text-xs text-blue-700">Оплачено</p>
+                                    <p className="text-xl font-semibold text-blue-900">{currentStats.paidAmount} ₽</p>
+                                </div>
+                                <div className="rounded-lg border border-orange-100 bg-orange-50 p-3">
+                                    <p className="text-xs text-orange-700">Ожидает оплаты</p>
+                                    <p className="text-xl font-semibold text-orange-900">{currentStats.unpaidAmount} ₽</p>
+                                </div>
+                                <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
+                                    <p className="text-xs text-purple-700">Оплачено наличными</p>
+                                    <p className="text-xl font-semibold text-purple-900">{currentStats.cashAmount || 0} ₽</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                </Tabs>
+
+                <AdminParentRegistrationModal
+                    isOpen={isRegisteringParent}
+                    onOpenChange={setIsRegisteringParent}
+                    masterClassId={masterClass.id}
+                    schoolId={masterClass.schoolId}
+                    classGroup={masterClass.classGroup}
+                    onSuccess={handleParentRegistrationSuccess}
+                />
+
+                {registeredParentData && isRegisteringChildren && (
+                    <MultiChildWorkshopModal
+                        isOpen={isRegisteringChildren}
+                        onOpenChange={(open) => {
+                            setIsRegisteringChildren(open);
+                            if (!open) {
+                                setRegisteredParentData(null);
+                            }
+                        }}
+                        workshop={{
+                            id: masterClass.id,
+                            title: service.name,
+                            date: masterClass.date,
+                            time: masterClass.time,
+                            classGroup: masterClass.classGroup,
+                            schoolName: masterClass.schoolName,
+                            schoolId: masterClass.schoolId,
+                            serviceId: masterClass.serviceId,
+                            eligibleChildren: registeredParentData.children.map(child => ({
+                                id: child.id,
+                                name: `${child.name} ${child.surname}`,
+                                age: child.age || 7,
+                                schoolId: child.school_id,
+                                schoolName: child.school_name,
+                                classGroup: child.class,
+                            })),
+                            childrenWithStatus: registeredParentData.children.map(child => ({
+                                childId: child.id,
+                                childName: `${child.name} ${child.surname}`,
+                                status: 'none' as const,
+                            })),
+                        }}
+                        children={registeredParentData.children.map(child => ({
+                            id: child.id,
+                            name: child.name,
+                            surname: child.surname,
+                            fullName: `${child.name} ${child.surname}`,
+                            age: child.age || 7,
+                            schoolId: child.school_id,
+                            schoolName: child.school_name,
+                            classGroup: child.class,
+                            parentId: registeredParentData.parent.id,
+                            parentName: registeredParentData.parent.name,
+                            parentSurname: registeredParentData.parent.surname,
+                            parentPhone: registeredParentData.parent.phone,
+                        }))}
+                        onRegistrationSuccess={handleChildrenRegistrationSuccess}
+                        masterClasses={allMasterClasses}
+                    />
+                )}
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6 p-6 max-h-screen overflow-y-auto">
             {/* Заголовок */}
@@ -670,9 +1196,18 @@ ${unpaidNames}
                 <div>
                     <h2 className="text-3xl font-bold text-primary">{service.name}</h2>
                 </div>
-                <Badge variant="outline" className="text-xl px-6 py-3">
-                    {masterClass.classGroup}
-                </Badge>
+                <div className="flex items-center gap-3">
+                    <Button
+                        onClick={() => setIsRegisteringParent(true)}
+                        className="bg-gradient-to-r from-orange-500 to-purple-500 hover:from-orange-600 hover:to-purple-600 text-white"
+                    >
+                        <UserCheck className="w-4 h-4 mr-2" />
+                        Записать на мастер-класс
+                    </Button>
+                    <Badge variant="outline" className="text-xl px-6 py-3">
+                        {masterClass.classGroup}
+                    </Badge>
+                </div>
             </div>
 
             {/* Информация о мастер-классе */}
@@ -886,19 +1421,30 @@ ${unpaidNames}
                 <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
                         <div className="text-center p-6 bg-blue-50 rounded-lg">
-                            <div className="text-3xl font-bold text-blue-600">{masterClass.statistics.totalParticipants}</div>
+                            <div className="text-3xl font-bold text-blue-600">{statsToDisplay.totalParticipants || 0}</div>
                             <div className="text-base text-blue-600">Участников</div>
                         </div>
                         <div className="text-center p-6 bg-green-50 rounded-lg">
-                            <div className="text-3xl font-bold text-green-600">{formatCurrency(masterClass.statistics.totalAmount)}</div>
+                            <div className="text-3xl font-bold text-green-600">{formatCurrency(statsToDisplay.totalAmount || 0)}</div>
                             <div className="text-base text-green-600">Общая сумма</div>
                         </div>
                         <div className="text-center p-6 bg-purple-50 rounded-lg">
-                            <div className="text-3xl font-bold text-purple-600">{formatCurrency(masterClass.statistics.paidAmount)}</div>
-                            <div className="text-base text-purple-600">Оплатили</div>
+                            <div className="text-3xl font-bold text-purple-600">{formatCurrency(statsToDisplay.paidAmount || 0)}</div>
+                            <div className="text-base text-purple-600 space-y-1">
+                                <div>Оплатили</div>
+                                {(statsToDisplay.cashAmount || 0) > 0 ? (
+                                    <div className="text-xs text-purple-500">
+                                        (в т.ч. наличными: {formatCurrency(statsToDisplay.cashAmount)})
+                                    </div>
+                                ) : (
+                                    <div className="text-xs text-gray-400">
+                                        (наличные: 0₽)
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="text-center p-6 bg-orange-50 rounded-lg">
-                            <div className="text-3xl font-bold text-orange-600">{formatCurrency(masterClass.statistics.unpaidAmount)}</div>
+                            <div className="text-3xl font-bold text-orange-600">{formatCurrency(statsToDisplay.unpaidAmount || 0)}</div>
                             <div className="text-base text-orange-600">Не оплатили</div>
                         </div>
                     </div>
@@ -939,24 +1485,40 @@ ${unpaidNames}
                         <div className="space-y-4">
                             <h4 className="text-lg font-semibold">Статистика по вариантам ручек:</h4>
                             <div className="space-y-2">
-                                {Object.entries(masterClass.statistics.stylesStats).map(([styleId, count]) => (
-                                    <div key={styleId} className="flex justify-between items-center p-2 bg-muted rounded">
-                                        <span className="text-sm">{styleId}</span>
-                                        <Badge variant="secondary">{count}</Badge>
-                                    </div>
-                                ))}
+                                {statsToDisplay && Object.keys(statsToDisplay.stylesStats || {}).length > 0 ? (
+                                    Object.entries(statsToDisplay.stylesStats || {}).map(([styleId, count]) => {
+                                        // Получаем название стиля из сервиса
+                                        const styleName = service?.styles?.find(s => s.id === styleId)?.name || styleId;
+                                        return (
+                                            <div key={styleId} className="flex justify-between items-center p-2 bg-muted rounded">
+                                                <span className="text-sm">{styleName}</span>
+                                                <Badge variant="secondary">{count}</Badge>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">Нет данных</p>
+                                )}
                             </div>
                         </div>
 
                         <div className="space-y-4">
                             <h4 className="text-lg font-semibold">Статистика по дополнительным услугам:</h4>
                             <div className="space-y-2">
-                                {Object.entries(masterClass.statistics.optionsStats).map(([optionId, count]) => (
-                                    <div key={optionId} className="flex justify-between items-center p-2 bg-muted rounded">
-                                        <span className="text-sm">{optionId}</span>
-                                        <Badge variant="secondary">{count}</Badge>
-                                    </div>
-                                ))}
+                                {statsToDisplay && Object.keys(statsToDisplay.optionsStats || {}).length > 0 ? (
+                                    Object.entries(statsToDisplay.optionsStats || {}).map(([optionId, count]) => {
+                                        // Получаем название опции из сервиса
+                                        const optionName = service?.options?.find(o => o.id === optionId)?.name || optionId;
+                                        return (
+                                            <div key={optionId} className="flex justify-between items-center p-2 bg-muted rounded">
+                                                <span className="text-sm">{optionName}</span>
+                                                <Badge variant="secondary">{count}</Badge>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">Нет данных</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -966,18 +1528,32 @@ ${unpaidNames}
             {/* Таблица участников */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-2xl">
-                        <Users className="h-6 w-6" />
-                        Участники
-                        {paymentStatusFilter !== 'all' && (
-                            <Badge variant="secondary" className="text-sm ml-2">
-                                {paymentStatusFilter === 'paid' ? 'Оплаченные' : 'Ожидающие оплаты'}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <CardTitle className="flex items-center gap-3 text-2xl font-semibold tracking-tight">
+                            <Users className="h-6 w-6" />
+                            Участники
+                            {paymentStatusFilter !== 'all' && (
+                                <Badge variant="secondary" className="text-sm">
+                                    {paymentStatusFilter === 'paid' ? 'Оплаченные' : 'Ожидающие оплаты'}
+                                </Badge>
+                            )}
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-sm">
+                                {getFilteredParticipants().length} из {participants.length}
                             </Badge>
-                        )}
-                        <Badge variant="outline" className="text-sm ml-auto">
-                            {getFilteredParticipants().length} из {participants.length}
-                        </Badge>
-                    </CardTitle>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2"
+                                onClick={() => void refreshMasterClassDetails()}
+                                disabled={isRefreshing}
+                            >
+                                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                Обновить
+                            </Button>
+                        </div>
+                    </div>
                     <CardDescription>
                         {paymentStatusFilter === 'all'
                             ? 'Список всех участников мастер-класса'
@@ -1099,16 +1675,26 @@ ${unpaidNames}
                             <TableHeader>
                                 <TableRow>
                                     <TableHead className="font-semibold">Участник</TableHead>
-                                    {/* Динамические заголовки стилей */}
+                                    {/* Динамические заголовки стилей с ценами */}
                                     {service?.styles.map(style => (
-                                        <TableHead key={style.id} className="font-semibold text-center min-w-[100px]">
-                                            {style.name}
+                                        <TableHead key={style.id} className="font-semibold text-center min-w-[120px]">
+                                            <div className="space-y-1">
+                                                <div className="text-sm">{style.name}</div>
+                                                <div className="text-xs font-normal text-green-600">
+                                                    {style.price ? `${style.price.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
+                                                </div>
+                                            </div>
                                         </TableHead>
                                     ))}
-                                    {/* Динамические заголовки опций */}
+                                    {/* Динамические заголовки опций с ценами */}
                                     {service?.options.map(option => (
-                                        <TableHead key={option.id} className="font-semibold text-center min-w-[100px]">
-                                            {option.name}
+                                        <TableHead key={option.id} className="font-semibold text-center min-w-[120px]">
+                                            <div className="space-y-1">
+                                                <div className="text-sm">{option.name}</div>
+                                                <div className="text-xs font-normal text-blue-600">
+                                                    {option.price ? `${option.price.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
+                                                </div>
+                                            </div>
                                         </TableHead>
                                     ))}
                                     <TableHead className="font-semibold">Сумма</TableHead>
@@ -1123,18 +1709,10 @@ ${unpaidNames}
                                     getFilteredParticipants().map((participant) => {
                                         const isPendingPayment = !participant.isPaid;
                                         const hasReceivedService = participant.hasReceived || false;
+                                        const isRobokassaPayment = participant.paymentMethod === 'robokassa';
+                                        const showCashButton = isPendingPayment && !isRobokassaPayment;
 
-                                        // Отладочная информация для участника
-                                        console.log(`🔍 MasterClassDetails: Данные участника ${participant.childName}:`, {
-                                            id: participant.id,
-                                            childName: participant.childName,
-                                            parentName: participant.parentName,
-                                            selectedStyles: participant.selectedStyles,
-                                            selectedOptions: participant.selectedOptions,
-                                            totalAmount: participant.totalAmount,
-                                            isPaid: participant.isPaid,
-                                            hasReceived: participant.hasReceived
-                                        });
+                                        // Данные участника
 
                                         // Создаем функцию для подсчета количества выбранных стилей
                                         const getStyleCount = (styleId: string) => {
@@ -1177,21 +1755,53 @@ ${unpaidNames}
                                                 `}
                                             >
                                                 <TableCell className="font-medium">
-                                                    <div>
-                                                        <p className="font-semibold">{participant.childName}</p>
-                                                        {participant.childName !== participant.parentName && (
-                                                            <p className="text-sm text-muted-foreground">Родитель: {participant.parentName}</p>
+                                                    <div className="space-y-1">
+                                                        <div
+                                                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded"
+                                                            onClick={() => toggleParticipantExpansion(participant.id)}
+                                                        >
+                                                            {expandedParticipants.has(participant.id) ? (
+                                                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                                            ) : (
+                                                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                                            )}
+                                                            <p className="font-semibold">{participant.childName}</p>
+                                                        </div>
+                                                        {expandedParticipants.has(participant.id) && (
+                                                            <div className="ml-6 space-y-1">
+                                                                {(participant.parentName || participant.parentSurname) && (
+                                                                    <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-2">
+                                                                        <span>Родитель: {participant.parentName} {participant.parentSurname}</span>
+                                                                        {participant.parentPhone && (
+                                                                            <a
+                                                                                href={`tel:${participant.parentPhone.replace(/\s+/g, '')}`}
+                                                                                className="text-blue-600 hover:underline"
+                                                                            >
+                                                                                {participant.parentPhone}
+                                                                            </a>
+                                                                        )}
+                                                                    </p>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </TableCell>
-                                                {/* Динамические столбцы стилей с количеством */}
+                                                {/* Динамические столбцы стилей с количеством и ценой */}
                                                 {service?.styles.map(style => {
                                                     const count = getStyleCount(style.id);
+                                                    const totalPrice = count > 0 && style.price ? count * style.price : 0;
                                                     return (
                                                         <TableCell key={style.id} className="text-center">
                                                             {count > 0 ? (
-                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-green-100 text-green-800 rounded-full font-semibold text-sm">
-                                                                    {count}
+                                                                <div className="space-y-1">
+                                                                    <div className="inline-flex items-center justify-center w-8 h-8 bg-green-100 text-green-800 rounded-full font-semibold text-sm">
+                                                                        {count}
+                                                                    </div>
+                                                                    {style.price && style.price > 0 && (
+                                                                        <div className="text-xs text-green-600 font-medium">
+                                                                            {totalPrice.toLocaleString('ru-RU')} ₽
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <div className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 text-gray-400 rounded-full font-semibold text-sm">
@@ -1201,14 +1811,22 @@ ${unpaidNames}
                                                         </TableCell>
                                                     );
                                                 })}
-                                                {/* Динамические столбцы опций с количеством */}
+                                                {/* Динамические столбцы опций с количеством и ценой */}
                                                 {service?.options.map(option => {
                                                     const count = getOptionCount(option.id);
+                                                    const totalPrice = count > 0 && option.price ? count * option.price : 0;
                                                     return (
                                                         <TableCell key={option.id} className="text-center">
                                                             {count > 0 ? (
-                                                                <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 rounded-full font-semibold text-sm">
-                                                                    {count}
+                                                                <div className="space-y-1">
+                                                                    <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 rounded-full font-semibold text-sm">
+                                                                        {count}
+                                                                    </div>
+                                                                    {option.price && option.price > 0 && (
+                                                                        <div className="text-xs text-blue-600 font-medium">
+                                                                            {totalPrice.toLocaleString('ru-RU')} ₽
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <div className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 text-gray-400 rounded-full font-semibold text-sm">
@@ -1222,26 +1840,48 @@ ${unpaidNames}
                                                     {formatCurrency(participant.totalAmount)}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="flex items-center space-x-2">
-                                                        <Switch
-                                                            checked={participant.isPaid}
-                                                            onCheckedChange={(checked) =>
-                                                                handlePaymentStatusChange(participant.id, checked)
-                                                            }
-                                                        />
-                                                        <Badge variant={participant.isPaid ? "default" : "destructive"}>
-                                                            {participant.isPaid ? (
-                                                                <>
-                                                                    <UserCheck className="w-3 h-3 mr-1" />
-                                                                    Оплачено
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <UserX className="w-3 h-3 mr-1" />
-                                                                    Ожидает
-                                                                </>
-                                                            )}
-                                                        </Badge>
+                                                    <div className="flex flex-col space-y-2">
+                                                        <div className="flex items-center space-x-2">
+                                                            <Switch
+                                                                checked={participant.isPaid}
+                                                                onCheckedChange={(checked) =>
+                                                                    handlePaymentStatusChange(participant.id, checked)
+                                                                }
+                                                            />
+                                                            <Badge variant={participant.isPaid ? "default" : "destructive"}>
+                                                                {participant.isPaid ? (
+                                                                    <>
+                                                                        <UserCheck className="w-3 h-3 mr-1" />
+                                                                        Оплачено
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <UserX className="w-3 h-3 mr-1" />
+                                                                        Ожидает
+                                                                    </>
+                                                                )}
+                                                            </Badge>
+                                                        </div>
+                                                        {showCashButton && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handleCashPayment(participant.id)}
+                                                                className="text-green-600 border-green-200 hover:bg-green-50 text-xs"
+                                                            >
+                                                                <DollarSign className="w-3 h-3 mr-1" />
+                                                                Наличными
+                                                            </Button>
+                                                        )}
+                                                        {participant.isPaid && (
+                                                            <Badge variant="outline" className="text-xs">
+                                                                {participant.paymentMethod === 'cash' ? '💵 Наличные' :
+                                                                    participant.paymentMethod === 'robokassa' ? '💳 Робокасса' :
+                                                                        participant.paymentMethod === 'card' ? '💳 Карта' :
+                                                                            participant.paymentMethod === 'transfer' ? '💳 Перевод' :
+                                                                                participant.paymentMethod ? `💳 ${participant.paymentMethod}` : '💳 Оплачено'}
+                                                            </Badge>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
@@ -1339,8 +1979,31 @@ ${unpaidNames}
                         variant="outline"
                         className="w-full"
                         disabled={loading}
+                        onClick={async () => {
+                            setLoading(true);
+                            try {
+                                await api.post(`/master-classes/${masterClass.id}/recalculate-statistics`);
+                                toast({
+                                    title: 'Статистика обновлена',
+                                    description: 'Статистика пересчитана на основе текущих участников',
+                                });
+                                // Перезагружаем данные мастер-класса
+                                if (onRefreshMasterClasses) {
+                                    await onRefreshMasterClasses();
+                                }
+                            } catch (error) {
+                                toast({
+                                    title: 'Ошибка',
+                                    description: 'Не удалось пересчитать статистику',
+                                    variant: 'destructive',
+                                });
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
                     >
-                        {loading ? 'Обновляем...' : 'Обновить статистику'}
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        {loading ? 'Обновляем...' : 'Пересчитать статистику'}
                     </Button>
 
                     {/* Кнопки экспорта */}
@@ -1434,7 +2097,6 @@ ${unpaidNames}
                                 Excel ({getFilteredParticipants().length} участников)
                             </Button>
 
-
                         </div>
                     )}
                     <div className="text-xs text-muted-foreground text-center pt-2 border-t">
@@ -1511,6 +2173,69 @@ ${unpaidNames}
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Модальное окно регистрации родителя */}
+            <AdminParentRegistrationModal
+                isOpen={isRegisteringParent}
+                onOpenChange={setIsRegisteringParent}
+                masterClassId={masterClass.id}
+                schoolId={masterClass.schoolId}
+                classGroup={masterClass.classGroup}
+                onSuccess={handleParentRegistrationSuccess}
+            />
+
+            {/* Модальное окно записи детей на мастер-класс */}
+            {registeredParentData && isRegisteringChildren && (
+                <MultiChildWorkshopModal
+                    isOpen={isRegisteringChildren}
+                    onOpenChange={(open) => {
+                        console.log('🔧 MultiChildWorkshopModal onOpenChange:', open);
+                        setIsRegisteringChildren(open);
+                        if (!open) {
+                            setRegisteredParentData(null);
+                        }
+                    }}
+                    workshop={{
+                        id: masterClass.id,
+                        title: service.name,
+                        date: masterClass.date,
+                        time: masterClass.time,
+                        classGroup: masterClass.classGroup,
+                        schoolName: masterClass.schoolName,
+                        schoolId: masterClass.schoolId,
+                        serviceId: masterClass.serviceId,
+                        eligibleChildren: registeredParentData.children.map(child => ({
+                            id: child.id,
+                            name: `${child.name} ${child.surname}`,
+                            age: child.age || 7,
+                            schoolId: child.school_id,
+                            schoolName: child.school_name,
+                            classGroup: child.class,
+                        })),
+                        childrenWithStatus: registeredParentData.children.map(child => ({
+                            childId: child.id,
+                            childName: `${child.name} ${child.surname}`,
+                            status: 'none' as const,
+                        })),
+                    }}
+                    children={registeredParentData.children.map(child => ({
+                        id: child.id,
+                        name: child.name,
+                        surname: child.surname,
+                        fullName: `${child.name} ${child.surname}`,
+                        age: child.age || 7,
+                        schoolId: child.school_id,
+                        schoolName: child.school_name,
+                        classGroup: child.class,
+                        parentId: registeredParentData.parent.id,
+                        parentName: registeredParentData.parent.name,
+                        parentSurname: registeredParentData.parent.surname,
+                        parentPhone: registeredParentData.parent.phone,
+                    }))}
+                    onRegistrationSuccess={handleChildrenRegistrationSuccess}
+                    masterClasses={allMasterClasses}
+                />
             )}
         </div>
     );

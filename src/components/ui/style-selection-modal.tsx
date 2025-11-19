@@ -83,12 +83,10 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 );
 
                 if (waxHandService) {
-                    console.log('Найдена услуга "Восковая ручка":', waxHandService);
 
                     // Дополнительно загружаем медиафайлы из таблицы master_class_events
                     try {
                         const mediaResponse = await servicesAPI.getServiceMedia(waxHandService.id);
-                        console.log('Загружены медиафайлы из БД:', mediaResponse);
 
                         // Проверяем, есть ли медиафайлы в БД
                         const hasMediaInDB = mediaResponse.styles.some(style =>
@@ -100,7 +98,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                         );
 
                         if (hasMediaInDB) {
-                            console.log('В БД найдены медиафайлы, обновляем услугу');
 
                             // Валидируем и очищаем медиафайлы
                             const validatedStyles = mediaResponse.styles.map(style => ({
@@ -122,11 +119,10 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                                 options: validatedOptions.length > 0 ? validatedOptions : waxHandService.options
                             };
 
-                            console.log('Обогащенная услуга с медиафайлами:', enrichedService);
                             setCurrentService(enrichedService);
                             setDataSource('database');
                         } else {
-                            console.log('В БД нет медиафайлов, используем базовые данные услуги');
+
                             setCurrentService(waxHandService);
                             setDataSource('fallback');
                         }
@@ -275,14 +271,13 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 // Убираем /api из базового URL для правильного формирования пути к файлам
                 const cleanBaseUrl = baseUrl.replace('/api', '');
                 absoluteUrl = `${cleanBaseUrl}${url}`;
-                console.log(`Преобразуем относительный URL ${url} в абсолютный: ${absoluteUrl}`);
+
             }
 
             // Проверяем что URL валидный
             const urlObj = new URL(absoluteUrl);
             if (!urlObj.protocol.startsWith('http')) return false;
 
-            console.log(`Проверяем файл: ${absoluteUrl}`);
             const response = await fetch(absoluteUrl, {
                 method: 'HEAD',
                 mode: 'cors',
@@ -290,7 +285,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             });
 
             const exists = response.ok;
-            console.log(`Файл ${absoluteUrl} доступен: ${exists} (статус: ${response.status})`);
+
             return exists;
         } catch (error) {
             console.error(`Ошибка при проверке файла ${url}:`, error);
@@ -305,11 +300,9 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
         const existingFiles: string[] = [];
         const validUrls = urls.filter(url => url && typeof url === 'string');
 
-        console.log('Проверяем файлы:', validUrls);
-
         for (const url of validUrls) {
             const exists = await checkFileExists(url);
-            console.log(`Файл ${url} существует: ${exists}`);
+
             if (exists) {
                 // Возвращаем абсолютный URL для существующих файлов
                 const baseUrl = import.meta.env.VITE_API_URL || 'https://waxhands.ru';
@@ -319,13 +312,11 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             }
         }
 
-        console.log('Найдены существующие файлы:', existingFiles);
         return existingFiles;
     };
 
     // Открытие галереи фото
     const openPhotoGallery = async (images: string[], title: string) => {
-        console.log(`openPhotoGallery: Получены изображения для "${title}":`, images);
 
         if (!Array.isArray(images) || images.length === 0) {
             toast({
@@ -349,7 +340,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 return;
             }
 
-            console.log(`openPhotoGallery: Открываем галерею для "${title}" с существующими изображениями:`, existingImages);
             setCurrentMedia({ type: 'photo', title, urls: existingImages });
             setPhotoGalleryOpen(true);
         } catch (error) {
@@ -364,7 +354,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
 
     // Открытие видео плеера
     const openVideoPlayer = async (videos: string[], title: string) => {
-        console.log(`openVideoPlayer: Получены видео для "${title}":`, videos);
 
         if (!Array.isArray(videos) || videos.length === 0) {
             toast({
@@ -388,7 +377,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 return;
             }
 
-            console.log(`openVideoPlayer: Открываем видео для "${title}" с существующими видео:`, existingVideos);
             setCurrentMedia({ type: 'video', title, urls: existingVideos });
             setVideoPlayerOpen(true);
         } catch (error) {
@@ -406,13 +394,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
         const hasValidImages = item.images && Array.isArray(item.images) && item.images.length > 0;
         const hasValidVideos = item.videos && Array.isArray(item.videos) && item.videos.length > 0;
         const hasMedia = hasValidImages || hasValidVideos;
-        console.log(`hasValidMedia для "${item.name}":`, {
-            hasImages: hasValidImages,
-            hasVideos: hasValidVideos,
-            images: item.images,
-            videos: item.videos,
-            result: hasMedia
-        });
+
         return hasMedia;
     };
 
@@ -422,7 +404,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             images: style.images && Array.isArray(style.images) ? style.images : [],
             videos: style.videos && Array.isArray(style.videos) ? style.videos : []
         };
-        console.log(`getStyleMedia для стиля "${style.name}":`, media);
+
         return media;
     };
 
@@ -432,7 +414,7 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             images: option.images && Array.isArray(option.images) ? option.images : [],
             videos: option.videos && Array.isArray(option.videos) ? option.videos : []
         };
-        console.log(`getOptionMedia для опции "${option.name}":`, media);
+
         return media;
     };
 
@@ -462,7 +444,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             // Здесь просто пытаемся создать регистрацию и обрабатываем ошибки
 
             // Сначала создаем регистрацию на мастер-класс
-            console.log('Создание регистрации на мастер-класс...');
 
             const registrationData = {
                 workshopId: workshop.id,
@@ -478,13 +459,11 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 totalPrice: totalPrice
             };
 
-            console.log('Данные для регистрации:', registrationData);
-
             // Создаем регистрацию через API
             let registrationResult;
             try {
                 registrationResult = await workshopRegistrationsAPI.createRegistration(registrationData);
-                console.log('Регистрация создана:', registrationResult);
+
             } catch (registrationError: unknown) {
                 console.error('Ошибка при создании регистрации:', registrationError);
 
@@ -516,11 +495,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
             const localDate = new Date(workshopDate.getTime() - (workshopDate.getTimezoneOffset() * 60000));
             const normalizedDate = localDate.toISOString().split('T')[0];
 
-            console.log('Исходная дата:', workshop.date);
-            console.log('Workshop объект даты:', workshopDate);
-            console.log('Локальная дата:', localDate);
-            console.log('Нормализованная дата:', normalizedDate);
-
             const invoiceData = {
                 master_class_id: workshop.id,
                 workshop_date: normalizedDate,
@@ -548,13 +522,10 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 })
             };
 
-            console.log('🔄 StyleSelectionModal: Создание счета - данные:', invoiceData);
-            console.log('🔄 StyleSelectionModal: Workshop данные:', workshop);
-
             let result;
             try {
                 result = await createInvoiceMutation.mutateAsync(invoiceData);
-                console.log('✅ StyleSelectionModal: Счет создан успешно:', result);
+
                 // Backend автоматически добавляет участника в master_class_events.participants
             } catch (invoiceError) {
                 console.error('❌ StyleSelectionModal: Ошибка создания счета:', invoiceError);
@@ -562,8 +533,6 @@ const StyleSelectionModal = ({ workshop, isOpen, onOpenChange, participantName, 
                 console.error('❌ StyleSelectionModal: Данные которые не удалось обработать:', invoiceData);
                 throw invoiceError; // Перебрасываем ошибку для обработки выше
             }
-
-            console.log('Участник будет добавлен автоматически при создании счета');
 
             toast({
                 title: "Заявка отправлена! 🎉",

@@ -54,6 +54,27 @@ const ParentChat: React.FC<ParentChatProps> = ({ isOpen, onOpenChange }) => {
         }
     }, [chats, selectedChat, setSelectedChat]);
 
+    // Отмечаем сообщения как прочитанные ТОЛЬКО когда чат ОТКРЫТ
+    useEffect(() => {
+        if (isOpen && selectedChat?.id && user?.id) {
+            console.log('🔓 ParentChat: Чат открыт - отмечаем сообщения как прочитанные для чата', selectedChat.id);
+
+            // Импортируем chatApi для прямого вызова
+            import('../../lib/chat-api').then(({ chatApi }) => {
+                chatApi.markAsRead({
+                    chatId: selectedChat.id,
+                    userId: user.id
+                }).then(() => {
+                    console.log('✅ ParentChat: Сообщения отмечены как прочитанные');
+                    // Обновляем счетчик непрочитанных через хук
+                    // refetchUnread будет вызван автоматически через WebSocket
+                }).catch((error) => {
+                    console.warn('⚠️ ParentChat: Не удалось отметить сообщения как прочитанные:', error);
+                });
+            });
+        }
+    }, [isOpen, selectedChat?.id, user?.id]); // Зависимости: только когда чат открывается или меняется
+
     const handleCreateChat = async (e?: React.FormEvent) => {
         if (e) {
             e.preventDefault();

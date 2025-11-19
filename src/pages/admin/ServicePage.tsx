@@ -55,16 +55,12 @@ const AdminServicePage: React.FC = () => {
                             service={service}
                             onAddStyle={(serviceId) => {
                                 // делегируем в админскую панель (модальные), здесь базово ничего не открываем
-                                console.log('Add style requested for', serviceId);
                             }}
                             onAddOption={(serviceId) => {
-                                console.log('Add option requested for', serviceId);
                             }}
                             onViewStyle={(style) => {
-                                console.log('View style', style.id);
                             }}
                             onViewOption={(option) => {
-                                console.log('View option', option.id);
                             }}
                             onReorderStyles={(serviceId, order) => reorderServiceStyles(serviceId, order)}
                             onReorderOptions={(serviceId, order) => reorderServiceOptions(serviceId, order)}
@@ -85,5 +81,4 @@ const AdminServicePage: React.FC = () => {
 };
 
 export default AdminServicePage;
-
 

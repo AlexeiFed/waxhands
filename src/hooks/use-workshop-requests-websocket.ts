@@ -67,7 +67,6 @@ export const useWorkshopRequestsWebSocket = (
         try {
             const wsUrl = `${WS_BASE_URL}?userId=${userId}&isAdmin=${isAdmin}`;
 
-
             wsRef.current = new WebSocket(wsUrl);
 
             wsRef.current.onopen = () => {
@@ -96,7 +95,33 @@ export const useWorkshopRequestsWebSocket = (
 
             wsRef.current.onmessage = (event) => {
                 try {
-                    const message = JSON.parse(event.data);
+                    let message;
+
+                    // Проверяем тип данных
+                    if (event.data instanceof Blob) {
+                        // Если это Blob, читаем как текст
+                        event.data.text().then(text => {
+                            try {
+                                message = JSON.parse(text);
+                                if (message.type === 'pong') return;
+
+                                // Вызываем callback функцию если она есть
+                                if (onMessageRef.current && typeof onMessageRef.current === 'function') {
+                                    onMessageRef.current(message);
+                                }
+                            } catch (parseError) {
+                                console.error('❌ WorkshopRequests: Ошибка парсинга Blob данных:', parseError);
+                            }
+                        }).catch(blobError => {
+                            console.error('❌ WorkshopRequests: Ошибка чтения Blob:', blobError);
+                        });
+                        return;
+                    } else if (typeof event.data === 'string') {
+                        message = JSON.parse(event.data);
+                    } else {
+                        console.warn('⚠️ WorkshopRequests: Неизвестный тип данных:', typeof event.data);
+                        return;
+                    }
 
                     if (message.type === 'pong') {
                         return;

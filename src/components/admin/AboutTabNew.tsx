@@ -57,7 +57,7 @@ const AboutTabNew: React.FC = () => {
     // Автоматическое обновление при получении WebSocket уведомлений
     React.useEffect(() => {
         if (lastUpdate > 0) {
-            console.log('🔄 Получено обновление about через WebSocket, перезагружаем данные');
+
             // Данные автоматически обновятся через хуки
         }
     }, [lastUpdate]);
@@ -127,13 +127,7 @@ const AboutTabNew: React.FC = () => {
 
     // Функция для просмотра медиа
     const handleViewMedia = (media: AboutMedia) => {
-        console.log('🔍 Просмотр медиа:', {
-            id: media.id,
-            title: media.title,
-            type: media.type,
-            filename: media.filename,
-            file_path: media.file_path
-        });
+
         setViewingMedia(media);
         setIsViewModalOpen(true);
     };
@@ -209,7 +203,6 @@ const AboutTabNew: React.FC = () => {
             }
 
             const uploadResult = await uploadResponse.json();
-            console.log('Upload result:', uploadResult);
 
             // Получаем file_path из результата загрузки
             let filePath = '';

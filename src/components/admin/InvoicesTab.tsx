@@ -15,14 +15,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
 import { useInvoices, useUpdateInvoiceStatus } from '@/hooks/use-invoices';
+import { useInvoicesWebSocket } from '@/hooks/use-invoices-websocket';
 import { Invoice, InvoiceFilters } from '@/types';
 import { InvoicesFilters } from '@/contexts/AdminFiltersContext';
 import { Search, Filter, Eye, CheckCircle, XCircle, Clock, DollarSign, Calendar as CalendarIcon, MapPin, Users, Plus, Trash2, RefreshCw } from 'lucide-react';
 import PaymentStatus from '@/components/ui/payment-status';
+import InvoiceDetailsModal from '@/components/ui/invoice-details-modal';
 import { ru } from 'date-fns/locale';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { ResponsiveList } from '@/components/admin/lists/ResponsiveList';
+import { InvoiceCard } from '@/components/admin/cards/InvoiceCard';
 
 interface InvoicesTabProps {
     filters: InvoicesFilters;
@@ -32,10 +39,47 @@ interface InvoicesTabProps {
 const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const { isSmallScreen } = useResponsiveLayout();
+    const { user } = useAuth();
+
+    // WebSocket для автоматических обновлений счетов
+    useMasterClassesWebSocket({
+        userId: 'admin', // Для админ панели используем фиксированный userId
+        enabled: true,
+        onMasterClassUpdate: () => {
+            // Инвалидируем кэш счетов для обновления данных
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        }
+    });
+    useInvoicesWebSocket({
+        userId: user?.id,
+        enabled: true,
+        listenAll: user?.role === 'admin',
+        onInvoiceUpdate: useCallback((invoiceId: string, status: string, masterClassId?: string) => {
+            console.log('📡 [InvoicesTab] Получено обновление счета:', { invoiceId, status, masterClassId });
+            // Инвалидируем кеш счетов
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            // Принудительно обновляем счета
+            queryClient.refetchQueries({ queryKey: ['invoices'] }).catch(console.error);
+            // Если есть masterClassId, обновляем и мастер-классы
+            if (masterClassId) {
+                console.log('🔄 [InvoicesTab] Обновляем мастер-классы');
+                queryClient.invalidateQueries({ queryKey: ['master-classes'] });
+                queryClient.refetchQueries({ queryKey: ['master-classes'] }).catch(console.error);
+            }
+            toast({
+                title: status === 'paid' ? 'Счет оплачен' : status === 'cancelled' ? 'Счет отменен' : 'Обновление счета',
+                description: `Счет ${invoiceId.slice(-8)} изменил статус на ${status}`,
+            });
+        }, [queryClient, toast])
+    });
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
     const [userFullNames, setUserFullNames] = useState<{ [key: string]: string }>({});
+    const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+    const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
-    const { data: invoicesData, isLoading, error } = useInvoices(filters);
+    const { data: invoicesData, isLoading, error} = useInvoices(filters);
     const updateStatusMutation = useUpdateInvoiceStatus();
 
     // Получаем уникальные значения для фильтров из данных счетов
@@ -166,9 +210,8 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
             try {
                 isSyncing = true;
                 setIsAutoSyncing(true);
-                console.log('🔄 Автоматическая синхронизация счетов...');
+
                 const result = await api.invoices.syncAllInvoicesWithParticipants();
-                console.log('✅ Автосинхронизация завершена:', result);
 
                 // Инвалидируем кэш для обновления отображения
                 queryClient.invalidateQueries({ queryKey: ['master-classes'] });
@@ -188,11 +231,6 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
         return () => clearTimeout(timer);
     }, [queryClient]); // Убираем queryClient из зависимостей
 
-    console.log('InvoicesTab - invoicesData:', invoicesData);
-    console.log('InvoicesTab - error:', error);
-    console.log('InvoicesTab - invoicesData.invoices:', invoicesData?.invoices);
-    console.log('InvoicesTab - invoicesData.total:', invoicesData?.total);
-
     const total = invoicesData?.total || 0;
 
     // Загружаем полные имена пользователей при изменении счетов
@@ -202,7 +240,6 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
             fetchUserFullNames(userIds);
         }
     }, [invoices, fetchUserFullNames]);
-
 
     const handleStatusUpdate = async (invoiceId: string, newStatus: string) => {
         try {
@@ -225,8 +262,6 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
             });
         }
     };
-
-
 
     const handleDeleteInvoice = async (invoiceId: string, masterClassId: string, participantId: string) => {
         try {
@@ -288,7 +323,10 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                 <div className="flex gap-2">
                     <Button
                         size="sm"
-                        onClick={() => handleStatusUpdate(invoice.id, 'paid')}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleStatusUpdate(invoice.id, 'paid');
+                        }}
                         className="bg-green-500 hover:bg-green-600 text-white"
                     >
                         <CheckCircle className="w-4 h-4 mr-1" />
@@ -297,7 +335,10 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                     <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => handleStatusUpdate(invoice.id, 'cancelled')}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleStatusUpdate(invoice.id, 'cancelled');
+                        }}
                     >
                         <XCircle className="w-4 h-4 mr-1" />
                         Отменить
@@ -401,6 +442,80 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
     const paidAmount = invoices.filter(inv => inv.status === 'paid').reduce((sum, invoice) => sum + invoice.amount, 0);
     const pendingAmount = invoices.filter(inv => inv.status === 'pending').reduce((sum, invoice) => sum + invoice.amount, 0);
 
+    // Синхронизация с Robokassa
+    const handleSyncWithRobokassa = async () => {
+        try {
+            setIsSyncing(true);
+            console.log('🔄 Запуск синхронизации с Robokassa...');
+            
+            const response = await api.post<{
+                success: boolean;
+                message: string;
+                results: {
+                    checked: number;
+                    updated: number;
+                    failed: number;
+                    updatedInvoices: Array<{
+                        id: string;
+                        participant_name: string;
+                        amount: number;
+                        robokassa_id: string;
+                    }>;
+                };
+            }>('/robokassa-sync/sync-pending-invoices');
+            
+            console.log('📡 Ответ от сервера:', response);
+            
+            if (!response) {
+                throw new Error('Сервер не вернул ответ');
+            }
+            
+            if (response.success) {
+                const { results } = response;
+                
+                toast({
+                    title: 'Синхронизация завершена',
+                    description: `Проверено: ${results.checked}, Обновлено: ${results.updated}, Ошибок: ${results.failed}`,
+                    variant: results.updated > 0 ? 'default' : 'default',
+                });
+
+                if (results.updatedInvoices && results.updatedInvoices.length > 0) {
+                    console.log('✅ Обновленные счета:', results.updatedInvoices);
+                    results.updatedInvoices.forEach((inv) => {
+                        console.log(`- ${inv.participant_name}: ${inv.amount} ₽`);
+                    });
+                }
+
+                // Обновляем данные
+                queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                queryClient.invalidateQueries({ queryKey: ['master-classes'] });
+                await queryClient.refetchQueries({ queryKey: ['invoices'] });
+            } else {
+                throw new Error('Неизвестная ошибка');
+            }
+        } catch (error: any) {
+            console.error('❌ Ошибка синхронизации:', error);
+            console.error('❌ Детали ошибки:', {
+                message: error?.message,
+                response: error?.response,
+                status: error?.response?.status,
+                data: error?.response?.data
+            });
+            
+            const errorMessage = error?.response?.data?.error 
+                || error?.message 
+                || 'Не удалось выполнить синхронизацию с Robokassa';
+            
+            toast({
+                title: 'Ошибка синхронизации',
+                description: errorMessage,
+                variant: 'destructive',
+            });
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -470,6 +585,38 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Кнопка синхронизации с Robokassa */}
+            <Card className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-indigo-200">
+                <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <RefreshCw className={`w-5 h-5 text-indigo-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                            <div>
+                                <p className="text-sm font-semibold text-indigo-900">Синхронизация с Robokassa</p>
+                                <p className="text-xs text-indigo-600">Проверить статусы неоплаченных счетов в Robokassa</p>
+                            </div>
+                        </div>
+                        <Button
+                            onClick={handleSyncWithRobokassa}
+                            disabled={isSyncing}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                            {isSyncing ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                    Синхронизация...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="w-4 h-4 mr-2" />
+                                    Синхронизировать
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Фильтры и календарь в одной строке */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -661,6 +808,24 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                             <p className="text-lg font-medium mb-2">Счета не найдены</p>
                             <p className="text-sm">Попробуйте изменить параметры поиска или создать новый счет</p>
                         </div>
+                    ) : isSmallScreen ? (
+                        <ResponsiveList
+                            items={invoices}
+                            keyExtractor={(item) => item.id}
+                            renderItem={(invoice) => (
+                                <InvoiceCard
+                                    invoice={invoice}
+                                    participantFullName={userFullNames[invoice.participant_id]}
+                                    onViewDetails={(current) => {
+                                        setSelectedInvoice(current);
+                                        setIsInvoiceModalOpen(true);
+                                    }}
+                                    onMarkPaid={(current) => handleStatusUpdate(current.id, 'paid')}
+                                    onMarkCancelled={(current) => handleStatusUpdate(current.id, 'cancelled')}
+                                    onDelete={(current) => handleDeleteInvoice(current.id, current.master_class_id, current.participant_id)}
+                                />
+                            )}
+                        />
                     ) : (
                         <div className="overflow-x-auto">
                             <Table>
@@ -681,7 +846,14 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                                 </TableHeader>
                                 <TableBody>
                                     {invoices.map((invoice) => (
-                                        <TableRow key={invoice.id}>
+                                        <TableRow
+                                            key={invoice.id}
+                                            className="cursor-pointer hover:bg-gray-50"
+                                            onClick={() => {
+                                                setSelectedInvoice(invoice);
+                                                setIsInvoiceModalOpen(true);
+                                            }}
+                                        >
                                             <TableCell className="font-mono text-sm">{invoice.id.slice(0, 8)}...</TableCell>
                                             <TableCell>
                                                 <div>
@@ -720,7 +892,6 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                                                     paymentId={invoice.payment_id}
                                                     paymentLabel={invoice.payment_label}
                                                     onStatusUpdate={(newStatus) => {
-                                                        // Обновляем локальное состояние
                                                         const updatedInvoices = invoices.map(inv =>
                                                             inv.id === invoice.id ? { ...inv, status: newStatus as 'pending' | 'paid' | 'cancelled' } : inv
                                                         );
@@ -772,6 +943,22 @@ const InvoicesTab: React.FC<InvoicesTabProps> = ({ filters, onFiltersChange }) =
                     )}
                 </CardContent>
             </Card>
+
+            {/* Модальное окно с деталями счета */}
+            <InvoiceDetailsModal
+                invoice={selectedInvoice}
+                isOpen={isInvoiceModalOpen}
+                onOpenChange={setIsInvoiceModalOpen}
+                onInvoiceDeleted={(invoiceId) => {
+                    // Обновляем кэш после удаления счета
+                    queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                    toast({
+                        title: "Счет удален",
+                        description: "Счет успешно удален из системы",
+                        variant: "default",
+                    });
+                }}
+            />
         </div>
     );
 };

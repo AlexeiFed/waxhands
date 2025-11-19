@@ -27,17 +27,17 @@ export const usePWAInstall = () => {
 
     // Перехватываем событие beforeinstallprompt
     const handleBeforeInstallPrompt = (e: Event) => {
-      console.log('PWA: beforeinstallprompt event triggered', e);
-      e.preventDefault();
       const promptEvent = e as BeforeInstallPromptEvent;
-      console.log('PWA: Setting deferred prompt', promptEvent);
+
+      // НЕ вызываем preventDefault() автоматически - это вызывает ошибку
+      // Пользователь должен сам вызвать prompt() когда захочет установить
       setDeferredPrompt(promptEvent);
       setIsInstallable(true);
     };
 
     // Обрабатываем успешную установку
     const handleAppInstalled = () => {
-      console.log('PWA: App installed event triggered');
+
       setIsInstalled(true);
       setIsInstallable(false);
       setDeferredPrompt(null);
@@ -53,11 +53,11 @@ export const usePWAInstall = () => {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistration().then(registration => {
             if (registration) {
-              console.log('PWA: Service Worker found, checking installability');
+
               // Если есть SW, но нет beforeinstallprompt, возможно приложение уже предлагалось
               // Устанавливаем isInstallable в true для ручной установки
               setTimeout(() => {
-                console.log('PWA: No beforeinstallprompt event, enabling manual install');
+
                 setIsInstallable(true);
               }, 2000);
             }
@@ -80,7 +80,6 @@ export const usePWAInstall = () => {
 
   // Функция для показа промпта установки
   const promptInstall = async (): Promise<boolean> => {
-    console.log('PWA: promptInstall called, deferredPrompt:', deferredPrompt);
 
     // Если есть отложенный промпт - используем его
     if (deferredPrompt) {
@@ -88,7 +87,6 @@ export const usePWAInstall = () => {
         console.log('PWA: Calling deferredPrompt.prompt()');
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        console.log('PWA: User choice outcome:', outcome);
 
         if (outcome === 'accepted') {
           setDeferredPrompt(null);
@@ -104,7 +102,7 @@ export const usePWAInstall = () => {
     }
 
     // Если нет отложенного промпта, возвращаем false
-    console.log('PWA: No deferred prompt available');
+
     return false;
   };
 

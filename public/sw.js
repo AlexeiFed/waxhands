@@ -1,5 +1,5 @@
 // Service Worker для PWA
-const CACHE_NAME = 'waxhands-pwa-v3.1.0-20250920-network-first';
+const CACHE_NAME = 'waxhands-pwa-v3.2.0-20250925-network-first';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -74,7 +74,7 @@ self.addEventListener('fetch', (event) => {
 
 // Активация service worker
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating v3.1.0 with network-first...');
+  console.log('Service Worker: Activating v3.2.0 with network-first...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -87,13 +87,21 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      console.log('Service Worker: Activated v3.1.0 - All old caches cleared, network-first enabled');
+      console.log('Service Worker: Activated v3.2.0 - All old caches cleared, network-first enabled');
       // Безопасно обновляем клиентов
       return self.clients.claim();
     }).catch((error) => {
       console.error('Service Worker: Activation failed:', error);
     })
   );
+});
+
+// Обработка сообщений от main thread
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('Service Worker: Received SKIP_WAITING message, activating immediately');
+    self.skipWaiting();
+  }
 });
 
 // Push уведомления

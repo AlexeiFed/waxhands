@@ -24,12 +24,11 @@ const Login = () => {
     // Если пользователь уже авторизован, перенаправляем на соответствующий dashboard
     useEffect(() => {
         if (isAuthenticated && user && !authLoading) {
-            console.log('🔄 Пользователь авторизован, перенаправляем на dashboard для роли:', user.role);
-            
-            const redirectPath = user.role === 'admin' ? '/admin' : 
-                                 user.role === 'executor' ? '/executor' : 
-                                 user.role === 'child' ? '/child' : '/parent';
-            
+
+            const redirectPath = user.role === 'admin' ? '/admin' :
+                user.role === 'executor' ? '/executor' :
+                    user.role === 'child' ? '/child' : '/parent';
+
             navigate(redirectPath, { replace: true });
         }
     }, [isAuthenticated, user, authLoading, navigate]);
@@ -74,7 +73,7 @@ const Login = () => {
 
         try {
             const formData = new FormData(e.target as HTMLFormElement);
-            const surname = formData.get("surname") as string;
+            const surname = (formData.get("surname") as string).trim();
             const phoneNumber = formData.get("phone") as string;
 
             // Валидация
@@ -101,8 +100,6 @@ const Login = () => {
                 phone: phoneNumber,
                 role: "parent" as const,
             };
-
-            console.log('👨‍👩‍👧‍👦 Parent login data:', parentData);
 
             await login(parentData);
 

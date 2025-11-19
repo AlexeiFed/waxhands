@@ -31,16 +31,9 @@ export const uploadFiles = async (req: Request, res: Response): Promise<void> =>
         console.log('Upload files - parsed files structure:', JSON.stringify(files, null, 2));
 
         const uploadedFiles: {
-            avatar?: string;
             images?: string[];
             videos?: string[];
         } = {};
-
-        // Обрабатываем аватар
-        if (files.avatar && files.avatar[0]) {
-            console.log('Processing avatar:', files.avatar[0].filename);
-            uploadedFiles.avatar = `/uploads/avatars/${files.avatar[0].filename}`;
-        }
 
         // Обрабатываем изображения
         if (files.images && files.images.length > 0) {

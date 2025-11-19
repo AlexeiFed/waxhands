@@ -9,8 +9,15 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { X, Play, Image as ImageIcon, Video, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useAboutMedia } from '@/hooks/use-about-api';
+import { useAboutMedia, AboutMedia } from '@/hooks/use-about-api';
 import { useServices } from '@/hooks/use-services';
+
+interface MediaItem {
+    type: 'image' | 'video';
+    file_path: string;
+    thumbnail_path?: string;
+    title?: string;
+}
 
 export const GallerySection: React.FC = () => {
     const { media, loading: mediaLoading } = useAboutMedia();
@@ -25,40 +32,40 @@ export const GallerySection: React.FC = () => {
     // Собираем медиа из услуг (стили и опции)
     const servicesMedia = (services || []).flatMap(service => {
         const stylesMedia = (service.styles || []).flatMap(style => {
-            const media = [];
+            const media: MediaItem[] = [];
             if (style.images && Array.isArray(style.images)) {
                 media.push(...style.images.map(img => ({
                     type: 'image' as const,
-                    file_path: typeof img === 'string' ? img : img.file_path || img,
-                    thumbnail_path: typeof img === 'string' ? undefined : img.thumbnail_path,
+                    file_path: typeof img === 'string' ? img : (img as { file_path?: string }).file_path || String(img),
+                    thumbnail_path: typeof img === 'string' ? undefined : (img as { thumbnail_path?: string }).thumbnail_path,
                     title: style.name
                 })));
             }
             if (style.videos && Array.isArray(style.videos)) {
                 media.push(...style.videos.map(vid => ({
                     type: 'video' as const,
-                    file_path: typeof vid === 'string' ? vid : vid.file_path || vid,
-                    thumbnail_path: typeof vid === 'string' ? undefined : vid.thumbnail_path,
+                    file_path: typeof vid === 'string' ? vid : (vid as { file_path?: string }).file_path || String(vid),
+                    thumbnail_path: typeof vid === 'string' ? undefined : (vid as { thumbnail_path?: string }).thumbnail_path,
                     title: style.name
                 })));
             }
             return media;
         });
         const optionsMedia = (service.options || []).flatMap(option => {
-            const media = [];
+            const media: MediaItem[] = [];
             if (option.images && Array.isArray(option.images)) {
                 media.push(...option.images.map(img => ({
                     type: 'image' as const,
-                    file_path: typeof img === 'string' ? img : img.file_path || img,
-                    thumbnail_path: typeof img === 'string' ? undefined : img.thumbnail_path,
+                    file_path: typeof img === 'string' ? img : (img as { file_path?: string }).file_path || String(img),
+                    thumbnail_path: typeof img === 'string' ? undefined : (img as { thumbnail_path?: string }).thumbnail_path,
                     title: option.name
                 })));
             }
             if (option.videos && Array.isArray(option.videos)) {
                 media.push(...option.videos.map(vid => ({
                     type: 'video' as const,
-                    file_path: typeof vid === 'string' ? vid : vid.file_path || vid,
-                    thumbnail_path: typeof vid === 'string' ? undefined : vid.thumbnail_path,
+                    file_path: typeof vid === 'string' ? vid : (vid as { file_path?: string }).file_path || String(vid),
+                    thumbnail_path: typeof vid === 'string' ? undefined : (vid as { thumbnail_path?: string }).thumbnail_path,
                     title: option.name
                 })));
             }
@@ -121,7 +128,7 @@ export const GallerySection: React.FC = () => {
 
     const filteredMedia = getFilteredMedia();
 
-    const openMedia = (item: any, index: number) => {
+    const openMedia = (item: MediaItem | AboutMedia, index: number) => {
         setSelectedMedia({
             type: item.type,
             src: getMediaUrl(item.file_path),
@@ -202,7 +209,6 @@ export const GallerySection: React.FC = () => {
                         </div>
                     </div>
                 </div>
-
 
                 {/* Галерея медиа */}
                 {filteredMedia.length > 0 ? (

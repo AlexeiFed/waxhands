@@ -13,6 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { FileImage, FileVideo, Play, Sparkles, Star, Palette, Gift, Users, X, Hand } from 'lucide-react';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
 
 // CSS для скрытия скроллбара на мобильных
 const scrollbarHideStyles = `
@@ -62,7 +63,7 @@ const AboutNew: React.FC = () => {
     // Автоматическое обновление при получении WebSocket уведомлений
     React.useEffect(() => {
         if (lastUpdate > 0) {
-            console.log('🔄 Получено обновление about через WebSocket');
+
             // Данные автоматически обновятся через хуки
         }
     }, [lastUpdate]);
@@ -70,33 +71,18 @@ const AboutNew: React.FC = () => {
     // Отладочная информация для услуг
     React.useEffect(() => {
         if (services && services.length > 0) {
-            console.log('🔍 AboutNew: Полученные услуги:', services);
+
             services.forEach((service, serviceIndex) => {
-                console.log(`🔍 Услуга ${serviceIndex + 1}:`, {
-                    name: service.name,
-                    stylesCount: service.styles?.length || 0,
-                    optionsCount: service.options?.length || 0
-                });
 
                 if (service.styles && Array.isArray(service.styles)) {
                     service.styles.forEach((style, styleIndex) => {
-                        console.log(`  🎨 Стиль ${styleIndex + 1}:`, {
-                            name: style.name,
-                            avatar: style.avatar,
-                            images: style.images,
-                            videos: style.videos
-                        });
+
                     });
                 }
 
                 if (service.options && Array.isArray(service.options)) {
                     service.options.forEach((option, optionIndex) => {
-                        console.log(`  ✨ Опция ${optionIndex + 1}:`, {
-                            name: option.name,
-                            avatar: option.avatar,
-                            images: option.images,
-                            videos: option.videos
-                        });
+
                     });
                 }
             });
@@ -119,12 +105,11 @@ const AboutNew: React.FC = () => {
     }
 
     const getMediaUrl = (filePath: string) => {
-        console.log('🔗 getMediaUrl вызван с:', filePath);
 
         // Преобразуем путь из БД в URL для отображения
         if (filePath.startsWith('/src/assets/')) {
             // Путь уже правильный для Vite dev server
-            console.log('  → Vite assets путь:', filePath);
+
             return filePath;
         }
 
@@ -132,7 +117,7 @@ const AboutNew: React.FC = () => {
         if (filePath.startsWith('@uploads/')) {
             // Заменяем @uploads/ на правильный URL к backend
             const result = filePath.replace('@uploads/', '/uploads/');
-            console.log('  → @uploads путь преобразован:', result);
+
             return result;
         }
 
@@ -140,13 +125,13 @@ const AboutNew: React.FC = () => {
         if (filePath.startsWith('uploads/')) {
             // Заменяем uploads/ на правильный URL к backend
             const result = filePath.replace('uploads/', '/uploads/');
-            console.log('  → uploads путь преобразован:', result);
+
             return result;
         }
 
         // Если путь уже содержит полный URL
         if (filePath.startsWith('http')) {
-            console.log('  → Полный URL:', filePath);
+
             return filePath;
         }
 
@@ -154,7 +139,7 @@ const AboutNew: React.FC = () => {
         // В production используем основной домен с /uploads/ для backend uploads
         const baseUrl = process.env.NODE_ENV === 'production' ? 'https://waxhands.ru' : 'http://localhost:3001';
         const result = `${baseUrl}${filePath}`;
-        console.log('  → Добавлен базовый URL:', result);
+
         return result;
     };
 
@@ -269,8 +254,6 @@ const AboutNew: React.FC = () => {
                         </p>
                     </div>
                 </div>
-
-
 
                 {/* Информационные блоки */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
@@ -554,21 +537,14 @@ const AboutNew: React.FC = () => {
                                                         <Card key={style.id} className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 hover:border-purple-300 transition-all duration-300 transform hover:-translate-y-1">
                                                             <CardContent className="p-6 text-center">
                                                                 {/* Аватар стиля */}
-                                                                <div className="w-20 h-20 bg-gradient-to-br from-purple-200 to-pink-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
-                                                                    {style.avatar ? (
-                                                                        <img
-                                                                            src={getAvatarUrl(style.avatar)}
-                                                                            alt={style.name}
-                                                                            className="w-full h-full object-cover rounded-full"
-                                                                            style={{ zIndex: 1 }}
-                                                                            onError={(e) => {
-                                                                                const target = e.target as HTMLImageElement;
-                                                                                target.src = getMediaFallback('images');
-                                                                                target.alt = 'Аватар недоступен';
-                                                                            }}
-                                                                        />
-                                                                    ) : null}
-                                                                    <span className={`text-3xl ${style.avatar ? 'hidden' : ''}`} style={{ zIndex: 0 }}>🎨</span>
+                                                                <div className="w-20 h-20 mx-auto mb-4">
+                                                                    <AvatarDisplay
+                                                                        images={style.images}
+                                                                        type="style"
+                                                                        alt={style.name}
+                                                                        size="lg"
+                                                                        className="w-20 h-20 rounded-full"
+                                                                    />
                                                                 </div>
 
                                                                 <h5 className="text-xl font-bold text-purple-800 mb-3">
@@ -579,7 +555,6 @@ const AboutNew: React.FC = () => {
                                                                 {style.fullDescription && (
                                                                     <ExpandableText
                                                                         text={style.fullDescription}
-                                                                        maxLines={5}
                                                                         className="text-gray-600 mb-4 text-sm leading-relaxed"
                                                                     />
                                                                 )}
@@ -630,21 +605,14 @@ const AboutNew: React.FC = () => {
                                                         <Card key={option.id} className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 hover:border-blue-300 transition-all duration-300 transform hover:-translate-y-1">
                                                             <CardContent className="p-6 text-center">
                                                                 {/* Аватар опции */}
-                                                                <div className="w-20 h-20 bg-gradient-to-br from-blue-200 to-cyan-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden relative">
-                                                                    {option.avatar ? (
-                                                                        <img
-                                                                            src={getAvatarUrl(option.avatar)}
-                                                                            alt={option.name}
-                                                                            className="w-full h-full object-cover rounded-full"
-                                                                            style={{ zIndex: 1 }}
-                                                                            onError={(e) => {
-                                                                                const target = e.target as HTMLImageElement;
-                                                                                target.src = getMediaFallback('images');
-                                                                                target.alt = 'Аватар недоступен';
-                                                                            }}
-                                                                        />
-                                                                    ) : null}
-                                                                    <span className={`text-3xl ${option.avatar ? 'hidden' : ''}`} style={{ zIndex: 0 }}>✨</span>
+                                                                <div className="w-20 h-20 mx-auto mb-4">
+                                                                    <AvatarDisplay
+                                                                        images={option.images}
+                                                                        type="option"
+                                                                        alt={option.name}
+                                                                        size="lg"
+                                                                        className="w-20 h-20 rounded-full"
+                                                                    />
                                                                 </div>
 
                                                                 <h5 className="text-xl font-bold text-blue-800 mb-3">
@@ -655,7 +623,6 @@ const AboutNew: React.FC = () => {
                                                                 {option.fullDescription && (
                                                                     <ExpandableText
                                                                         text={option.fullDescription}
-                                                                        maxLines={5}
                                                                         className="text-gray-600 mb-4 text-sm leading-relaxed"
                                                                     />
                                                                 )}

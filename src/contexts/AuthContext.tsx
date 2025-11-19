@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         const profile = await api.auth.getProfile();
                         setUser({ ...profile, role: profile.role as UserRole });
                         setIsAuthenticated(true);
-                        console.log('Auth check successful, user:', profile);
+
                     } catch (profileError) {
                         console.error('Profile fetch failed, token may be invalid:', profileError);
                         // Если токен недействителен, очищаем его и состояние
@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     // Если токена нет, очищаем состояние
                     setUser(null);
                     setIsAuthenticated(false);
-                    console.log('No auth token found');
+
                 }
             } catch (error) {
                 console.error('Auth check failed:', error);
@@ -93,12 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const login = async (credentials: LoginCredentials): Promise<boolean> => {
         try {
             setLoading(true);
-            console.log('🔐 Начинаем процесс входа для:', credentials.phone);
+
             const response = await api.auth.login(credentials);
-            console.log('✅ Успешный вход, пользователь:', response.user);
+
             setUser({ ...response.user, role: response.user.role as UserRole });
             setIsAuthenticated(true);
-            console.log('🔑 Состояние аутентификации обновлено');
+
             return true;
         } catch (error) {
             console.error('Login failed:', error);
@@ -128,13 +128,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (userData.role === 'parent' && userData.children && response.user.children) {
                 try {
                     localStorage.setItem('registered_children', JSON.stringify(response.user.children));
-                    console.log('👶 Дети сохранены в localStorage:', response.user.children);
+
                 } catch (storageError) {
                     console.warn('⚠️ Failed to save children to localStorage:', storageError);
                     // Fallback: пытаемся сохранить в sessionStorage
                     try {
                         sessionStorage.setItem('registered_children', JSON.stringify(response.user.children));
-                        console.log('👶 Дети сохранены в sessionStorage');
+
                     } catch (sessionError) {
                         console.error('❌ Failed to save children to sessionStorage:', sessionError);
                     }
@@ -144,7 +144,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setUser({ ...response.user, role: response.user.role as UserRole });
             setIsAuthenticated(true);
 
-            console.log('✅ Registration successful');
         } catch (error) {
             console.error('❌ Registration failed:', error);
             throw error;
@@ -180,7 +179,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Функция выхода
     const logout = () => {
-        console.log('🚪 Logging out...');
+
         api.auth.logout();
         setUser(null);
         setIsAuthenticated(false);

@@ -77,7 +77,7 @@ export const ParentProfileEditModal = ({ isOpen, onClose }: ParentProfileEditMod
             }
 
             // Валидация телефона если он указан
-            if (formData.phone && !/^\+?[\d\s\-\(\)]+$/.test(formData.phone)) {
+            if (formData.phone && !/^\+?[\d\s\-()]+$/.test(formData.phone)) {
                 toast({
                     title: "Ошибка",
                     description: "Введите корректный номер телефона",

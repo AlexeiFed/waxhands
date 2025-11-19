@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { Service, ServiceStyle, ServiceOption } from '../types';
+import { useServicesWebSocket } from './use-services-websocket';
 
 interface UseServicesReturn {
     services: Service[];
@@ -11,11 +12,15 @@ interface UseServicesReturn {
         page?: number;
         limit?: number;
         category?: string;
+        surname?: string;
+        phone?: string;
+        userId?: string;
+        forceRefresh?: boolean;
     }) => Promise<void>;
     createService: (serviceData: Omit<Service, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
     updateService: (id: string, serviceData: Partial<Service>) => Promise<void>;
     deleteService: (id: string) => Promise<void>;
-    getServiceById: (id: string) => Promise<Service>;
+    getServiceById: (id: string, userData?: { surname?: string; phone?: string; userId?: string }) => Promise<Service>;
     addStyleToService: (serviceId: string, style: Omit<ServiceStyle, 'id'>) => Promise<void>;
     addOptionToService: (serviceId: string, option: Omit<ServiceOption, 'id'>) => Promise<void>;
     updateServiceStyle: (serviceId: string, styleId: string, style: Partial<ServiceStyle>) => Promise<void>;
@@ -24,7 +29,7 @@ interface UseServicesReturn {
     reorderServiceOptions: (serviceId: string, order: string[]) => Promise<void>;
 }
 
-export const useServices = (): UseServicesReturn => {
+export const useServices = (userId?: string): UseServicesReturn => {
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -34,12 +39,15 @@ export const useServices = (): UseServicesReturn => {
         page?: number;
         limit?: number;
         category?: string;
+        surname?: string;
+        phone?: string;
+        userId?: string;
+        forceRefresh?: boolean;
     }) => {
         try {
             setLoading(true);
             setError(null);
             const response = await api.services.getServices(params);
-            console.log('use-services: Полученные услуги из API:', response.services);
             setServices(response.services);
             setTotal(response.total);
         } catch (err) {
@@ -49,6 +57,16 @@ export const useServices = (): UseServicesReturn => {
             setLoading(false);
         }
     }, []);
+
+    // WebSocket для автоматических обновлений услуг
+    const { isConnected: servicesWsConnected } = useServicesWebSocket({
+        userId,
+        enabled: true,
+        onServiceUpdate: useCallback(() => {
+            // Принудительно обновляем услуги
+            fetchServices({ forceRefresh: true });
+        }, [fetchServices])
+    });
 
     const createService = async (serviceData: Omit<Service, 'id' | 'createdAt' | 'updatedAt'>) => {
         try {
@@ -98,12 +116,9 @@ export const useServices = (): UseServicesReturn => {
 
     const updateServiceStyle = async (serviceId: string, styleId: string, style: Partial<ServiceStyle>) => {
         try {
-            console.log('use-services: updateServiceStyle called:', { serviceId, styleId, style });
-            console.log('use-services: style price type:', typeof style.price, 'value:', style.price);
             setLoading(true);
             setError(null);
             const result = await api.services.updateServiceStyle(serviceId, styleId, style);
-            console.log('use-services: updateServiceStyle result:', result);
             await fetchServices();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to update service style');
@@ -148,9 +163,6 @@ export const useServices = (): UseServicesReturn => {
             if (invalidIds.length > 0) {
                 throw new Error(`Неверные ID стилей: ${invalidIds.join(', ')}`);
             }
-
-            console.log('Reordering styles:', { serviceId, order });
-
             await apiRequestReorder('styles', serviceId, order);
             await fetchServices();
         } catch (err) {
@@ -182,9 +194,6 @@ export const useServices = (): UseServicesReturn => {
             if (invalidIds.length > 0) {
                 throw new Error(`Неверные ID опций: ${invalidIds.join(', ')}`);
             }
-
-            console.log('Reordering options:', { serviceId, order });
-
             await apiRequestReorder('options', serviceId, order);
             await fetchServices();
         } catch (err) {
@@ -199,25 +208,11 @@ export const useServices = (): UseServicesReturn => {
 
     const apiRequestReorder = async (type: 'styles' | 'options', serviceId: string, order: string[]) => {
         try {
-            console.log(`Отправка запроса на сортировку ${type}:`, {
-                serviceId,
-                order,
-                orderLength: order.length,
-                orderTypes: order.map(id => typeof id),
-                url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/services/${serviceId}/${type}/reorder`
-            });
-
             // Получаем текущую услугу для дополнительной валидации
             const currentService = services.find(s => s.id === serviceId);
             if (currentService) {
                 const currentItems = type === 'styles' ? currentService.styles : currentService.options;
                 console.log(`Текущие ${type} в услуге:`, currentItems.map(item => ({ id: item.id, name: item.name })));
-                console.log(`Сравнение с отправляемым порядком:`, {
-                    currentIds: currentItems.map(item => item.id),
-                    orderIds: order,
-                    missingInCurrent: order.filter(id => !currentItems.find(item => item.id === id)),
-                    missingInOrder: currentItems.filter(item => !order.includes(item.id))
-                });
             }
 
             const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/services/${serviceId}/${type}/reorder`, {
@@ -233,9 +228,6 @@ export const useServices = (): UseServicesReturn => {
                 success: false,
                 error: 'Не удалось обработать ответ сервера'
             }));
-
-            console.log(`Ответ сервера на сортировку ${type}:`, { status: response.status, data });
-
             if (!response.ok) {
                 const errorMessage = data.error || `Ошибка ${response.status}: ${response.statusText}`;
                 console.error(`Ошибка сортировки ${type}:`, errorMessage);
@@ -287,10 +279,10 @@ export const useServices = (): UseServicesReturn => {
         }
     };
 
-    const getServiceById = async (id: string): Promise<Service> => {
+    const getServiceById = async (id: string, userData?: { surname?: string; phone?: string; userId?: string }): Promise<Service> => {
         try {
             setError(null);
-            return await api.services.getServiceById(id);
+            return await api.services.getServiceById(id, userData);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to get service';
             setError(errorMessage);

@@ -55,7 +55,6 @@ export const VideoPlayerModal = ({ isOpen, onOpenChange, videoUrl, title }: Vide
             if (videoRef.current) {
                 videoRef.current.currentTime = 0;
             }
-            console.log(`VideoPlayerModal: Открываем видео для "${title}":`, videoUrl);
         }
     }, [isOpen, videoUrl, title]);
 
@@ -103,7 +102,6 @@ export const VideoPlayerModal = ({ isOpen, onOpenChange, videoUrl, title }: Vide
     const handleLoadedMetadata = () => {
         if (videoRef.current) {
             setDuration(videoRef.current.duration);
-            console.log(`VideoPlayerModal: Метаданные видео загружены, длительность: ${videoRef.current.duration}s`);
         }
     };
 
@@ -193,7 +191,6 @@ export const VideoPlayerModal = ({ isOpen, onOpenChange, videoUrl, title }: Vide
     };
 
     const handleVideoLoad = () => {
-        console.log(`VideoPlayerModal: Видео успешно загружено:`, videoUrl);
         setIsLoading(false);
         setHasError(false);
     };
@@ -275,7 +272,6 @@ export const VideoPlayerModal = ({ isOpen, onOpenChange, videoUrl, title }: Vide
                                         setIsLoading(false);
                                     }}
                                     onSuspend={() => {
-                                        console.log('VideoPlayerModal: Загрузка видео приостановлена');
                                     }}
                                     preload="metadata"
                                     controls={false}

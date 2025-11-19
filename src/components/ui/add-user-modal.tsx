@@ -28,11 +28,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus } from "lucide-react";
 import { User } from "@/types";
 
-
 interface AddUserModalProps {
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
-    onSubmit: (userData: Pick<User, 'name' | 'surname' | 'role'>) => Promise<void>;
+    onSubmit: (userData: Pick<User, 'name' | 'surname' | 'role'> & { password?: string }) => Promise<void>;
     trigger?: React.ReactNode | null;
 }
 
@@ -48,10 +47,12 @@ export const AddUserModal = ({
         name: string;
         surname: string;
         role: User['role'];
+        password: string;
     }>({
         name: "",
         surname: "",
         role: "executor",
+        password: "",
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -66,7 +67,23 @@ export const AddUserModal = ({
             return;
         }
 
+        if (!formData.password.trim()) {
+            toast({
+                title: "Ошибка валидации",
+                description: "Пароль обязателен для заполнения",
+                variant: "destructive",
+            });
+            return;
+        }
 
+        if (formData.password.length < 4) {
+            toast({
+                title: "Ошибка валидации",
+                description: "Пароль должен содержать минимум 4 символа",
+                variant: "destructive",
+            });
+            return;
+        }
 
         try {
             setLoading(true);
@@ -74,6 +91,7 @@ export const AddUserModal = ({
                 name: formData.name.trim(),
                 surname: formData.surname.trim() || undefined,
                 role: formData.role,
+                password: formData.password.trim(),
             });
 
             // Сброс формы после успешного добавления
@@ -81,6 +99,7 @@ export const AddUserModal = ({
                 name: "",
                 surname: "",
                 role: "executor",
+                password: "",
             });
 
             // Закрытие модального окна
@@ -108,6 +127,7 @@ export const AddUserModal = ({
                 name: "",
                 surname: "",
                 role: "executor",
+                password: "",
             });
         }
         onOpenChange(open);
@@ -148,6 +168,20 @@ export const AddUserModal = ({
                             onChange={(e) => setFormData(prev => ({ ...prev, surname: e.target.value }))}
                             placeholder="Введите фамилию (необязательно)"
                             disabled={loading}
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="password">Пароль *</Label>
+                        <Input
+                            id="password"
+                            type="password"
+                            value={formData.password}
+                            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                            placeholder="Минимум 4 символа"
+                            disabled={loading}
+                            required
+                            minLength={4}
                         />
                     </div>
 

@@ -11,11 +11,10 @@ import fs from 'fs';
 
 // Создаем директории если их нет
 const uploadsDir = path.join(process.cwd(), 'uploads');
-const avatarsDir = path.join(uploadsDir, 'avatars');
 const imagesDir = path.join(uploadsDir, 'images');
 const videosDir = path.join(uploadsDir, 'videos');
 
-[uploadsDir, avatarsDir, imagesDir, videosDir].forEach(dir => {
+[uploadsDir, imagesDir, videosDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
         console.log(`📁 Created directory: ${dir}`);
@@ -28,9 +27,7 @@ const storage = multer.diskStorage({
         let uploadPath = uploadsDir;
 
         // Определяем папку по типу файла
-        if (file.fieldname === 'avatar') {
-            uploadPath = avatarsDir;
-        } else if (file.fieldname === 'images') {
+        if (file.fieldname === 'images') {
             uploadPath = imagesDir;
         } else if (file.fieldname === 'videos') {
             uploadPath = videosDir;
@@ -56,7 +53,7 @@ const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.
     console.log('=========================');
 
     // Проверяем допустимые поля
-    const validFields = ['avatar', 'images', 'videos'];
+    const validFields = ['images', 'videos'];
     if (!validFields.includes(file.fieldname)) {
         console.log('❌ REJECTED - Invalid field name:', file.fieldname);
         console.log('Valid fields are:', validFields);
@@ -64,7 +61,7 @@ const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.
         return;
     }
 
-    if (file.fieldname === 'avatar' || file.fieldname === 'images') {
+    if (file.fieldname === 'images') {
         // Проверяем что это изображение
         if (file.mimetype.startsWith('image/')) {
             console.log('✅ ACCEPTED as image:', file.originalname);
@@ -97,7 +94,6 @@ export const upload = multer({
 
 // Middleware для загрузки файлов для стилей/опций
 export const uploadServiceFiles = upload.fields([
-    { name: 'avatar', maxCount: 1 },
     { name: 'images', maxCount: 10 }, // Увеличено до 10 изображений
     { name: 'videos', maxCount: 5 }   // Увеличено до 5 видео
 ]);

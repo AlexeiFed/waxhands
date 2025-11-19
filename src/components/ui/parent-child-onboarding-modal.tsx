@@ -30,7 +30,6 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
         // Добавляем изображения по номерам слайдов (только 2.png)
         imageMap.set(2, '/onboarding/2.png');
 
-        console.log('🗺️ Карта изображений онбординга:', imageMap);
         return imageMap;
     }, []);
 
@@ -44,7 +43,6 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
         videoMap.set(4, '/onboarding/4.mp4');
         videoMap.set(5, '/onboarding/5.mp4');
 
-        console.log('🎥 Карта видео онбординга:', videoMap);
         return videoMap;
     }, []);
 
@@ -134,8 +132,6 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
                             const image = posterImages.get(slideNumber);
                             const video = videoModules.get(slideNumber);
 
-                            console.log(`🎯 Слайд ${slideNumber}:`, { image, video });
-
                             if (image) {
                                 return (
                                     <img
@@ -147,7 +143,7 @@ const ParentChildOnboardingModal: React.FC<ParentChildOnboardingModalProps> = ({
                                             e.currentTarget.style.display = 'none';
                                         }}
                                         onLoad={() => {
-                                            console.log('✅ Изображение загружено:', image);
+
                                         }}
                                     />
                                 );

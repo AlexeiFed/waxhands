@@ -22,8 +22,6 @@ const invoicesAPI = {
         });
 
         const url = `${API_BASE_URL}/invoices?${params.toString()}`;
-        console.log('🔍 API getInvoices - URL:', url);
-        console.log('🔍 API getInvoices - filters:', filters);
 
         const response = await fetch(url, {
             headers: {
@@ -31,15 +29,11 @@ const invoicesAPI = {
             }
         });
 
-        console.log('🔍 API getInvoices - response status:', response.status);
-        console.log('🔍 API getInvoices - response ok:', response.ok);
-
         if (!response.ok) {
             throw new Error('Не удалось загрузить счета');
         }
 
         const data = await response.json();
-        console.log('🔍 API getInvoices - raw response data:', data);
 
         if (!data.success) {
             throw new Error(data.error || 'Не удалось загрузить счета');
@@ -50,7 +44,6 @@ const invoicesAPI = {
             total: data.data.pagination?.total || data.data.invoices.length
         };
 
-        console.log('🔍 API getInvoices - processed result:', result);
         return result;
     },
 
@@ -77,7 +70,7 @@ const invoicesAPI = {
 
     // Создание нового счета
     createInvoice: async (invoiceData: CreateInvoiceRequest): Promise<Invoice> => {
-        console.log('🔄 createInvoice: Отправляем данные:', invoiceData);
+
         console.log('🔄 createInvoice: Токен аутентификации:', localStorage.getItem('authToken') ? 'Есть' : 'Отсутствует');
 
         const response = await fetch(`${API_BASE_URL}/invoices`, {
@@ -89,12 +82,8 @@ const invoicesAPI = {
             body: JSON.stringify(invoiceData)
         });
 
-        console.log('🔄 createInvoice: Статус ответа:', response.status);
-        console.log('🔄 createInvoice: Статус ok:', response.ok);
-
         // Получаем текст ответа для лучшей диагностики
         const responseText = await response.text();
-        console.log('🔄 createInvoice: Текст ответа:', responseText);
 
         if (!response.ok) {
             let errorMessage = 'Не удалось создать счет';
@@ -102,9 +91,9 @@ const invoicesAPI = {
             try {
                 const errorData = JSON.parse(responseText);
                 errorMessage = errorData.error || errorMessage;
-                console.log('❌ createInvoice: Данные об ошибке:', errorData);
+
             } catch (parseError) {
-                console.log('❌ createInvoice: Не удалось распарсить ответ об ошибке:', parseError);
+                console.error('Ошибка парсинга ответа об ошибке:', parseError);
             }
 
             throw new Error(`${errorMessage} (HTTP ${response.status})`);
@@ -122,7 +111,6 @@ const invoicesAPI = {
             throw new Error(data.error || 'Не удалось создать счет');
         }
 
-        console.log('✅ createInvoice: Счет успешно создан:', data.data);
         return data.data;
     },
 
@@ -169,6 +157,26 @@ const invoicesAPI = {
         }
 
         return data.data;
+    },
+
+    // Удаление счета
+    deleteInvoice: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_BASE_URL}/invoices/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось удалить счет');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Не удалось удалить счет');
+        }
     }
 };
 
@@ -184,11 +192,11 @@ export const useInvoices = (filters: InvoiceFilters = {}) => {
     });
 };
 
-export const useInvoiceById = (id: string) => {
+export const useInvoiceById = (id: string, options?: { enabled?: boolean }) => {
     return useQuery({
         queryKey: ['invoice', id],
         queryFn: () => invoicesAPI.getInvoiceById(id),
-        enabled: !!id,
+        enabled: options?.enabled !== undefined ? options.enabled : !!id,
         staleTime: 5 * 60 * 1000,
     });
 };
@@ -215,6 +223,19 @@ export const useUpdateInvoiceStatus = () => {
         onSuccess: () => {
             // Инвалидируем кэш счетов
             queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        },
+    });
+};
+
+export const useDeleteInvoice = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (id: string) => invoicesAPI.deleteInvoice(id),
+        onSuccess: () => {
+            // Инвалидируем кэш счетов
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['invoices', 'parent'] });
         },
     });
 };

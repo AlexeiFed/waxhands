@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection.js';
 import { CreateWorkshopRegistrationRequest, WorkshopRegistration } from '../types/index.js';
+import { wsManager } from '../websocket-server.js';
 
 // Получить записи пользователя на мастер-классы
 export const getUserWorkshopRegistrations = async (req: Request, res: Response): Promise<void> => {
@@ -93,14 +94,27 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
 
         console.log('🔌 Проверяем подключение к базе данных...');
 
-        // Получаем информацию о пользователе
+        // Получаем информацию о пользователе с parent_id
         console.log('👤 Получаем информацию о пользователе...');
-        const userResult = await pool.query('SELECT name, class, class_group, school_name FROM users WHERE id = $1', [userId]);
+        const userResult = await pool.query('SELECT name, surname, class, class_group, school_name, parent_id FROM users WHERE id = $1', [userId]);
         console.log('Информация о пользователе:', userResult.rows[0]);
         if (userResult.rows.length === 0) {
             console.error('❌ Пользователь не найден:', userId);
             return res.status(404).json({ error: 'User not found' });
         }
+
+        const childUser = userResult.rows[0];
+
+        // Получаем информацию о родителе
+        let parentInfo = { name: childUser.name, surname: childUser.surname || '' };
+        if (childUser.parent_id) {
+            const parentResult = await pool.query('SELECT name, surname FROM users WHERE id = $1', [childUser.parent_id]);
+            if (parentResult.rows.length > 0) {
+                parentInfo = parentResult.rows[0];
+            }
+        }
+
+        const parentName = parentInfo.surname ? `${parentInfo.name} ${parentInfo.surname}` : parentInfo.name;
 
         // Проверяем, не записан ли уже пользователь на этот мастер-класс
         const existingResult = await pool.query(
@@ -216,9 +230,9 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
                 const participant = {
                     id: result.rows[0].id, // ID регистрации
                     childId: userId,
-                    childName: user.name,
-                    parentId: userId, // В детском интерфейсе parentId = childId
-                    parentName: user.name,
+                    childName: childUser.surname ? `${childUser.name} ${childUser.surname}` : childUser.name,
+                    parentId: childUser.parent_id || userId, // Используем parent_id из БД
+                    parentName: parentName,
                     selectedStyles: [styleName], // Используем найденное название стиля
                     selectedOptions: optionsNames, // Используем найденные названия опций
                     totalAmount: totalPrice,
@@ -228,6 +242,18 @@ export const createWorkshopRegistration = async (req: Request, res: Response) =>
                     paymentDate: undefined,
                     notes: notes || `Детская регистрация. ID: ${result.rows[0].id}. Участник: ${userId}`
                 };
+
+                console.log('👶 Создан участник:', {
+                    childId: participant.childId,
+                    childName: participant.childName,
+                    parentId: participant.parentId,
+                    parentName: participant.parentName,
+                    childUserData: {
+                        name: childUser.name,
+                        surname: childUser.surname,
+                        parent_id: childUser.parent_id
+                    }
+                });
 
                 console.log('🔍 Добавляем участника:', JSON.stringify(participant));
 
@@ -570,8 +596,21 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
             }
 
             // Добавляем всех детей в participants мастер-класса
+            // Получаем полные данные детей из БД для корректных имен
+            console.log('👶 Получаем данные детей из БД для полных имен...');
+            const childrenDataPromises = children.map(async (child) => {
+                const childResult = await client.query('SELECT name, surname FROM users WHERE id = $1', [child.childId]);
+                console.log(`👶 Данные ребенка ${child.childId} из БД:`, childResult.rows[0]);
+                return childResult.rows[0] || { name: child.childName.split(' ')[0], surname: child.childName.split(' ')[1] || '' };
+            });
+            const childrenData = await Promise.all(childrenDataPromises);
+
             // Используем новую структуру данных с объектами для стилей и опций
             const participants = children.map((child, index) => {
+                const childFromDb = childrenData[index];
+                const fullChildName = childFromDb.surname ? `${childFromDb.name} ${childFromDb.surname}` : childFromDb.name;
+                console.log(`👶 Формируем участника: childId=${child.childId}, fullChildName="${fullChildName}", fromDb=${JSON.stringify(childFromDb)}`);
+
                 // Формируем selectedStyles как массив объектов с id и name
                 let selectedStyles: Array<{ id: string; name: string }> = [];
                 if (child.style) {
@@ -600,7 +639,7 @@ export const createGroupWorkshopRegistration = async (req: Request, res: Respons
                 return {
                     id: `${invoice.id}_${index}`, // Уникальный ID для каждого участника
                     childId: child.childId,
-                    childName: child.childName,
+                    childName: fullChildName, // Используем полное имя из БД
                     parentId: parentId, // ID родителя
                     parentName: parentName,
                     selectedStyles,
@@ -916,19 +955,23 @@ export const removeParticipant = async (req: Request, res: Response) => {
         const participant = participants[participantIndex];
         console.log('🔍 Найден участник для удаления:', participant);
 
-        // Удаляем связанный счет, если он существует
-        if (participant.notes && participant.notes.includes('Счет:')) {
-            const invoiceIdMatch = participant.notes.match(/Счет:\s*(\d+)/);
-            if (invoiceIdMatch) {
-                const invoiceId = invoiceIdMatch[1];
-                console.log('🗑️ Удаляем связанный счет:', invoiceId);
+        // Удаляем связанный счет по master_class_id и participant_id (родителя)
+        const parentId = participant.parentId || participant.parent_id;
+        if (parentId) {
+            console.log('🗑️ Удаляем счета для участника:', { workshopId, parentId });
 
-                await client.query(
-                    'DELETE FROM invoices WHERE id = $1',
-                    [invoiceId]
-                );
-                console.log('✅ Счет удален');
+            const deleteInvoiceResult = await client.query(
+                'DELETE FROM invoices WHERE master_class_id = $1 AND participant_id = $2 RETURNING id',
+                [workshopId, parentId]
+            );
+
+            if (deleteInvoiceResult.rowCount && deleteInvoiceResult.rowCount > 0) {
+                console.log('✅ Счета удалены:', deleteInvoiceResult.rows.map((r: Record<string, unknown>) => r.id));
+            } else {
+                console.log('ℹ️ Счета не найдены для удаления');
             }
+        } else {
+            console.log('⚠️ Parent ID не найден, счета не удалены');
         }
 
         // Удаляем запись из workshop_registrations, если она существует
@@ -970,7 +1013,9 @@ export const removeParticipant = async (req: Request, res: Response) => {
         // Обновляем статистику по стилям
         if (participant.selectedStyles && Array.isArray(participant.selectedStyles)) {
             const currentStylesStats = currentStats.stylesStats || {};
-            participant.selectedStyles.forEach((styleId: string) => {
+            participant.selectedStyles.forEach((style: string | { id: string }) => {
+                // Поддерживаем как строки, так и объекты с id
+                const styleId = typeof style === 'string' ? style : style.id;
                 if (currentStylesStats[styleId]) {
                     currentStylesStats[styleId] = Math.max(currentStylesStats[styleId] - 1, 0);
                     if (currentStylesStats[styleId] === 0) {
@@ -984,7 +1029,9 @@ export const removeParticipant = async (req: Request, res: Response) => {
         // Обновляем статистику по опциям
         if (participant.selectedOptions && Array.isArray(participant.selectedOptions)) {
             const currentOptionsStats = currentStats.optionsStats || {};
-            participant.selectedOptions.forEach((optionId: string) => {
+            participant.selectedOptions.forEach((option: string | { id: string }) => {
+                // Поддерживаем как строки, так и объекты с id
+                const optionId = typeof option === 'string' ? option : option.id;
                 if (currentOptionsStats[optionId]) {
                     currentOptionsStats[optionId] = Math.max(currentOptionsStats[optionId] - 1, 0);
                     if (currentOptionsStats[optionId] === 0) {
@@ -1006,6 +1053,12 @@ export const removeParticipant = async (req: Request, res: Response) => {
         console.log('✅ Статистика обновлена:', newStats);
 
         await client.query('COMMIT');
+
+        // Отправляем WebSocket уведомление об удалении участника
+        if (wsManager) {
+            wsManager.notifyMasterClassUpdate(workshopId, 'participant_removed');
+            console.log('📡 WebSocket уведомление отправлено об удалении участника:', workshopId);
+        }
 
         return res.json({
             success: true,

@@ -8,7 +8,7 @@ import { createServer } from 'http';
 import routes from './routes/index.js';
 import { errorHandler, logRequest } from './middleware/auth.js';
 import { testConnection } from './database/connection.js';
-// import { initializeWebSocketManager } from './websocket-server.js'; // Отключено - используется отдельный WebSocket сервер
+import { initializeWebSocketManager } from './websocket-server.js';
 
 // Загружаем переменные окружения
 dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env' });
@@ -138,6 +138,15 @@ app.use('/uploads', (req, res, next) => {
 // API маршруты
 app.use('/api', routes);
 
+// WebSocket endpoint handler
+app.get('/ws', (req, res) => {
+    res.status(426).json({
+        success: false,
+        error: 'Upgrade Required',
+        message: 'This endpoint requires WebSocket connection'
+    });
+});
+
 // Обработка ошибок
 app.use(errorHandler);
 
@@ -159,8 +168,9 @@ const startServer = async () => {
             process.exit(1);
         }
 
-        // WebSocket сервер запущен отдельно на порту 3002
-        // await initializeWebSocketManager(server); // Отключено
+        // Инициализируем WebSocket сервер на том же порту что и backend
+        await initializeWebSocketManager(server);
+        console.log('✅ WebSocket сервер инициализирован на порту', PORT);
 
         server.listen(parseInt(PORT.toString()), HOST, () => {
             console.log(`🚀 Server running on ${HOST}:${PORT}`);
