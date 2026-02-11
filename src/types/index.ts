@@ -28,6 +28,7 @@ export interface School {
     teacher?: string;
     teacherPhone?: string;
     notes?: string;
+    paymentDisabled?: boolean;
     createdAt: string;
     updatedAt: string;
 }

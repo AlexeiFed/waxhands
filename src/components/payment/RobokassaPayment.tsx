@@ -9,12 +9,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CreditCard, Smartphone, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Loader2, CreditCard, Smartphone, CheckCircle, XCircle, RotateCcw, MessageCircle } from 'lucide-react';
 import { Invoice } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInvoiceById } from '@/hooks/use-invoices';
 import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSchools } from '@/hooks/use-schools';
 
 interface RobokassaPaymentProps {
     invoiceId: string;
@@ -66,11 +67,21 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
     const { data: invoice, isLoading: invoiceLoading, error: invoiceError } = useInvoiceById(invoiceId, {
         enabled: !!invoiceId
     });
+    const { schools } = useSchools();
     const [isLoading, setIsLoading] = useState(false);
     const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isRefunding, setIsRefunding] = useState(false);
     const [refundAvailable, setRefundAvailable] = useState(false);
+    const [schoolPaymentDisabled, setSchoolPaymentDisabled] = useState(false);
+
+    // Проверяем, отключена ли оплата для школы
+    useEffect(() => {
+        if (invoice?.school_name && schools.length > 0) {
+            const school = schools.find(s => s.name === invoice.school_name);
+            setSchoolPaymentDisabled(school?.paymentDisabled || false);
+        }
+    }, [invoice?.school_name, schools]);
 
     // WebSocket для автоматических обновлений данных счета
     const { isConnected: masterClassesWsConnected } = useMasterClassesWebSocket({
@@ -690,28 +701,45 @@ export const RobokassaPayment: React.FC<RobokassaPaymentProps> = ({
 
                 {invoice.status === 'pending' && (
                     <div className="space-y-4">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Smartphone className="h-4 w-4" />
-                            <span>Доступные способы оплаты: Банковские карты, СБП</span>
-                        </div>
+                        {schoolPaymentDisabled ? (
+                            <div className="text-center text-sm text-gray-600 p-4 border rounded-md bg-gray-50">
+                                <p className="font-medium mb-2">Оплата на данный мастер-класс закрыта.</p>
+                                <p>Для оплаты напишите в WhatsApp:</p>
+                                <div className="flex flex-col gap-1 mt-2">
+                                    <a href="https://wa.me/79145470606" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                        <MessageCircle className="h-4 w-4" /> +7 914 547-06-06
+                                    </a>
+                                    <a href="https://wa.me/79145450606" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                        <MessageCircle className="h-4 w-4" /> +7 914 545-06-06
+                                    </a>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Smartphone className="h-4 w-4" />
+                                    <span>Доступные способы оплаты: Банковские карты, СБП</span>
+                                </div>
 
-                        <Button
-                            onClick={handlePayment}
-                            disabled={isLoading}
-                            className="w-full"
-                        >
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Создание ссылки на оплату...
-                                </>
-                            ) : (
-                                <>
-                                    <CreditCard className="mr-2 h-4 w-4" />
-                                    Оплатить {invoice.amount} ₽
-                                </>
-                            )}
-                        </Button>
+                                <Button
+                                    onClick={handlePayment}
+                                    disabled={isLoading}
+                                    className="w-full"
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Создание ссылки на оплату...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard className="mr-2 h-4 w-4" />
+                                            Оплатить {invoice.amount} ₽
+                                        </>
+                                    )}
+                                </Button>
+                            </>
+                        )}
                     </div>
                 )}
 

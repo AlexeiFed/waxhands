@@ -13,3 +13,6 @@ WHERE NOT EXISTS (SELECT 1 FROM payment_settings);
 
 
 
+
+
+

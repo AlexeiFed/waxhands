@@ -848,12 +848,41 @@ ${unpaidNames}
             setParticipants(prev => prev.filter(p => p.id !== participantId));
 
             // Обновляем статистику мастер-класса из ответа сервера
-            if ('updatedStatistics' in response && response.updatedStatistics) {
+            if (response.updatedStatistics) {
                 const updatedStats = response.updatedStatistics as MasterClassStatistics;
                 masterClass.statistics = updatedStats;
                 setStats(updatedStats);
             } else {
                 // Fallback: обновляем статистику локально
+                const currentStylesStats = { ...(masterClass.statistics.stylesStats || {}) };
+                const currentOptionsStats = { ...(masterClass.statistics.optionsStats || {}) };
+
+                // Обновляем статистику по стилям
+                if (participant.selectedStyles && Array.isArray(participant.selectedStyles)) {
+                    participant.selectedStyles.forEach((style: string | { id: string }) => {
+                        const styleId = typeof style === 'string' ? style : style.id;
+                        if (currentStylesStats[styleId]) {
+                            currentStylesStats[styleId] = Math.max(currentStylesStats[styleId] - 1, 0);
+                            if (currentStylesStats[styleId] === 0) {
+                                delete currentStylesStats[styleId];
+                            }
+                        }
+                    });
+                }
+
+                // Обновляем статистику по опциям
+                if (participant.selectedOptions && Array.isArray(participant.selectedOptions)) {
+                    participant.selectedOptions.forEach((option: string | { id: string }) => {
+                        const optionId = typeof option === 'string' ? option : option.id;
+                        if (currentOptionsStats[optionId]) {
+                            currentOptionsStats[optionId] = Math.max(currentOptionsStats[optionId] - 1, 0);
+                            if (currentOptionsStats[optionId] === 0) {
+                                delete currentOptionsStats[optionId];
+                            }
+                        }
+                    });
+                }
+
                 const updatedStats = {
                     ...masterClass.statistics,
                     totalParticipants: Math.max(masterClass.statistics.totalParticipants - 1, 0),
@@ -866,7 +895,9 @@ ${unpaidNames}
                         : masterClass.statistics.unpaidAmount,
                     cashAmount: (participant.isPaid && participant.paymentMethod === 'cash')
                         ? Math.max((masterClass.statistics.cashAmount || 0) - participant.totalAmount, 0)
-                        : (masterClass.statistics.cashAmount || 0)
+                        : (masterClass.statistics.cashAmount || 0),
+                    stylesStats: currentStylesStats,
+                    optionsStats: currentOptionsStats
                 };
 
                 masterClass.statistics = updatedStats;

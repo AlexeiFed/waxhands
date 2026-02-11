@@ -6,12 +6,14 @@
  * @updated: 2025-11-09
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './button';
 import { CreditCard, Loader2, CheckCircle, XCircle, ExternalLink, Users } from 'lucide-react';
 import { useToast } from './use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePaymentSettings } from '@/hooks/use-payment-settings';
+import { useInvoiceById } from '@/hooks/use-invoices';
+import { useSchools } from '@/hooks/use-schools';
 
 interface Child {
     id: string;
@@ -234,10 +236,21 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
     const { user } = useAuth();
     const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({ status: 'idle' });
     const { isEnabled: globalPaymentEnabled, isLoading: paymentSettingsLoading } = usePaymentSettings();
+    const { data: invoice } = useInvoiceById(invoiceId, { enabled: !!invoiceId });
+    const { schools } = useSchools();
+    const [schoolPaymentDisabled, setSchoolPaymentDisabled] = useState(false);
+
+    // Проверяем, отключена ли оплата для школы
+    useEffect(() => {
+        if (invoice?.school_name && schools.length > 0) {
+            const school = schools.find(s => s.name === invoice.school_name);
+            setSchoolPaymentDisabled(school?.paymentDisabled || false);
+        }
+    }, [invoice?.school_name, schools]);
 
     // Блокируем кнопку только если настройки загружены И оплата выключена
     // Во время загрузки (paymentSettingsLoading) не блокируем кнопку
-    const paymentDisabled = isPaymentDisabled || (!paymentSettingsLoading && !globalPaymentEnabled);
+    const paymentDisabled = isPaymentDisabled || schoolPaymentDisabled || (!paymentSettingsLoading && !globalPaymentEnabled);
 
     const handlePaymentClick = async () => {
         // Если настройки еще загружаются, показываем сообщение
@@ -462,13 +475,41 @@ const YandexPaymentButton: React.FC<YandexPaymentButtonProps> = ({
                 </div>
             )}
 
-            {paymentDisabled && (
+            {paymentDisabled && !schoolPaymentDisabled && (
                 <div className="space-y-1">
                     <p className="text-xs text-amber-600">
                         💳 Система оплаты находится в разработке
                     </p>
                     <p className="text-xs text-gray-500">
                         Счет создан, но оплата будет доступна в ближайшее время
+                    </p>
+                </div>
+            )}
+
+            {schoolPaymentDisabled && (
+                <div className="space-y-2 mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                    <p className="text-sm text-amber-800 font-medium">
+                        Оплата на данный мастер-класс закрыта.
+                    </p>
+                    <p className="text-sm text-amber-700">
+                        Для оплаты напишите в WhatsApp:{' '}
+                        <a
+                            href="https://wa.me/79145470606"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline font-medium"
+                        >
+                            +79145470606
+                        </a>
+                        {' или '}
+                        <a
+                            href="https://wa.me/79145450606"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline font-medium"
+                        >
+                            +79145450606
+                        </a>
                     </p>
                 </div>
             )}

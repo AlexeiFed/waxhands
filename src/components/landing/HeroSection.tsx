@@ -9,9 +9,11 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Sparkles, Hand, Palette } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useLandingSettings } from '@/hooks/use-landing-settings';
 
 export const HeroSection: React.FC = () => {
     const navigate = useNavigate();
+    const { registrationEnabled, isLoading: landingSettingsLoading } = useLandingSettings();
 
     return (
         <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -137,15 +139,17 @@ export const HeroSection: React.FC = () => {
 
                     {/* Кнопки действий */}
                     <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center mb-8 sm:mb-12 mt-6 sm:mt-8 px-4 max-w-md sm:max-w-none mx-auto">
-                        <Button
-                            onClick={() => navigate('/register')}
-                            size="lg"
-                            className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-4 sm:px-8 py-3 sm:py-4 text-sm sm:text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 w-full sm:w-auto"
-                        >
-                            <Hand className="w-4 h-4 sm:w-6 sm:h-6 mr-2" />
-                            <span className="truncate">Записаться на мастер-класс</span>
-                            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 ml-2" />
-                        </Button>
+                        {registrationEnabled && !landingSettingsLoading && (
+                            <Button
+                                onClick={() => navigate('/register')}
+                                size="lg"
+                                className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-4 sm:px-8 py-3 sm:py-4 text-sm sm:text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 w-full sm:w-auto"
+                            >
+                                <Hand className="w-4 h-4 sm:w-6 sm:h-6 mr-2" />
+                                <span className="truncate">Записаться на мастер-класс</span>
+                                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 ml-2" />
+                            </Button>
+                        )}
 
                         <Button
                             variant="outline"

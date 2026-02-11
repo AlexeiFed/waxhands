@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection.js';
 import { School, PaginationParams, PaginatedResponse } from '../types/index.js';
+import { wsManager } from '../websocket-server.js';
 
 export const getAllSchools = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -19,7 +20,8 @@ export const getAllSchools = async (req: Request, res: Response): Promise<void> 
         const schools = result.rows.map(school => ({
             ...school,
             classes: school.classes || [],
-            teacherPhone: school.teacher_phone // Маппинг для фронтенда
+            teacherPhone: school.teacher_phone, // Маппинг для фронтенда
+            paymentDisabled: school.payment_disabled || false
         }));
 
         // Возвращаем структуру, соответствующую ожиданиям frontend
@@ -57,6 +59,7 @@ export const getSchoolById = async (req: Request, res: Response): Promise<void> 
         const school = result.rows[0];
         school.classes = school.classes || [];
         school.teacherPhone = school.teacher_phone; // Маппинг для фронтенда
+        school.paymentDisabled = school.payment_disabled || false;
 
         res.json({
             success: true,
@@ -94,6 +97,7 @@ export const createSchool = async (req: Request, res: Response): Promise<void> =
         const newSchool = result.rows[0];
         newSchool.classes = newSchool.classes || [];
         newSchool.teacherPhone = newSchool.teacher_phone; // Маппинг для фронтенда
+        newSchool.paymentDisabled = newSchool.payment_disabled || false;
 
         res.status(201).json({
             success: true,
@@ -162,6 +166,7 @@ export const updateSchool = async (req: Request, res: Response): Promise<void> =
         const updatedSchool = result.rows[0];
         updatedSchool.classes = updatedSchool.classes || [];
         updatedSchool.teacherPhone = updatedSchool.teacher_phone; // Маппинг для фронтенда
+        updatedSchool.paymentDisabled = updatedSchool.payment_disabled || false;
 
         res.json({
             success: true,
@@ -260,7 +265,8 @@ export const searchSchools = async (req: Request, res: Response): Promise<void> 
 
         const schools = result.rows.map(school => ({
             ...school,
-            classes: school.classes || []
+            classes: school.classes || [],
+            paymentDisabled: school.payment_disabled || false
         }));
 
         res.json({
@@ -270,6 +276,69 @@ export const searchSchools = async (req: Request, res: Response): Promise<void> 
 
     } catch (error) {
         console.error('Search schools error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+};
+
+export const toggleSchoolPayment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        console.log('🔄 toggleSchoolPayment called:', {
+            id: req.params.id,
+            body: req.body,
+            paymentDisabled: req.body?.paymentDisabled,
+            type: typeof req.body?.paymentDisabled
+        });
+
+        const { id } = req.params;
+        const { paymentDisabled } = req.body;
+
+        if (typeof paymentDisabled !== 'boolean') {
+            console.error('❌ Invalid paymentDisabled type:', typeof paymentDisabled, paymentDisabled);
+            res.status(400).json({
+                success: false,
+                error: 'paymentDisabled must be a boolean'
+            });
+            return;
+        }
+
+        console.log('✅ Updating school payment:', { id, paymentDisabled });
+
+        const result = await pool.query(`
+            UPDATE schools 
+            SET payment_disabled = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING *
+        `, [paymentDisabled, id]);
+
+        if (result.rows.length === 0) {
+            res.status(404).json({
+                success: false,
+                error: 'School not found'
+            });
+            return;
+        }
+
+        const updatedSchool = result.rows[0];
+        updatedSchool.classes = updatedSchool.classes || [];
+        updatedSchool.teacherPhone = updatedSchool.teacher_phone;
+        updatedSchool.paymentDisabled = updatedSchool.payment_disabled || false;
+
+        // Отправляем WebSocket уведомление об изменении оплаты школы
+        if (wsManager) {
+            wsManager.notifyMasterClassUpdate(id, 'school_payment_changed');
+            console.log('📡 WebSocket уведомление отправлено для изменения оплаты школы:', id);
+        }
+
+        res.json({
+            success: true,
+            data: updatedSchool
+        });
+
+    } catch (error) {
+        console.error('Toggle school payment error:', error);
         res.status(500).json({
             success: false,
             error: 'Internal server error'

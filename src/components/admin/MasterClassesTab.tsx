@@ -68,6 +68,14 @@ export default function MasterClassesTab({
         togglePayment
     } = usePaymentSettings();
 
+    // Локальное состояние для оптимистичного обновления школ
+    const [localSchools, setLocalSchools] = useState<School[]>(schools);
+
+    // Синхронизируем локальное состояние с пропсами
+    useEffect(() => {
+        setLocalSchools(schools);
+    }, [schools]);
+
     // WebSocket для автоматических обновлений финансовой статистики
     useMasterClassesWebSocket({
         userId: 'admin', // Для админ панели используем фиксированный userId
@@ -1077,7 +1085,7 @@ export default function MasterClassesTab({
 
         // Генерируем имя файла: название школы + дата из первого мастер-класса
         const firstSchoolId = Object.keys(classesBySchool)[0];
-        const firstSchool = schools.find(s => s.id === firstSchoolId);
+        const firstSchool = localSchools.find(s => s.id === firstSchoolId);
         const firstSchoolClasses = classesBySchool[firstSchoolId];
         const firstMasterClass = firstSchoolClasses?.[0];
 
@@ -1699,7 +1707,7 @@ export default function MasterClassesTab({
                     ) : (
                         <div className="space-y-4">
                             {groupedMasterClasses.map((group) => {
-                            const school = schools.find(s => s.id === group.schoolId);
+                            const school = localSchools.find(s => s.id === group.schoolId);
                             const schoolName = school?.name || 'Неизвестная школа';
                             const groupKey = `${group.schoolId}_${group.date}`;
                             const isExpanded = expandedSchools.has(groupKey);
@@ -1740,6 +1748,47 @@ export default function MasterClassesTab({
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
+                                                <Button
+                                                    variant={school?.paymentDisabled ? 'default' : 'outline'}
+                                                    size="sm"
+                                                    className="flex items-center gap-2"
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const newPaymentDisabled = !school?.paymentDisabled;
+                                                        
+                                                        // Оптимистичное обновление UI
+                                                        setLocalSchools(prevSchools => 
+                                                            prevSchools.map(s => 
+                                                                s.id === group.schoolId 
+                                                                    ? { ...s, paymentDisabled: newPaymentDisabled }
+                                                                    : s
+                                                            )
+                                                        );
+
+                                                        try {
+                                                            await api.schools.togglePayment(group.schoolId, newPaymentDisabled);
+                                                            toast({
+                                                                title: newPaymentDisabled ? 'Оплата отключена' : 'Оплата включена',
+                                                                description: newPaymentDisabled
+                                                                    ? 'Оплата через Robokassa отключена для всех классов этой школы.'
+                                                                    : 'Родители теперь могут оплачивать мастер-классы через Robokassa.',
+                                                            });
+                                                            // Обновление произойдет автоматически через WebSocket
+                                                        } catch (error) {
+                                                            console.error('Ошибка при переключении оплаты школы:', error);
+                                                            // Откатываем оптимистичное обновление при ошибке
+                                                            setLocalSchools(schools);
+                                                            toast({
+                                                                title: 'Ошибка',
+                                                                description: 'Не удалось изменить статус оплаты. Попробуйте позже.',
+                                                                variant: 'destructive'
+                                                            });
+                                                        }
+                                                    }}
+                                                >
+                                                    <CreditCard className="h-4 w-4" />
+                                                    {school?.paymentDisabled ? 'Подключить оплату' : 'Выключить оплату'}
+                                                </Button>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"

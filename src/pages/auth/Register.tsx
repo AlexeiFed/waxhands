@@ -136,10 +136,35 @@ const Register = () => {
             }
 
             const formData = new FormData(e.target as HTMLFormElement);
+            const phoneNumber = formData.get("parentPhone") as string;
+
+            // Валидация телефона
+            if (!phoneNumber || phoneNumber.length !== 12 || !phoneNumber.startsWith("+7")) {
+                toast({
+                    title: "Ошибка",
+                    description: "Неверный формат телефона. Введите полный номер в формате +7XXXXXXXXXX (10 цифр после +7)",
+                    variant: "destructive",
+                });
+                setIsLoading(false);
+                return;
+            }
+
+            // Проверяем, что после +7 идет 10 цифр
+            const digitsAfterPlus7 = phoneNumber.slice(2).replace(/\D/g, '');
+            if (digitsAfterPlus7.length !== 10) {
+                toast({
+                    title: "Ошибка",
+                    description: "Неверный формат телефона. После +7 должно быть 10 цифр",
+                    variant: "destructive",
+                });
+                setIsLoading(false);
+                return;
+            }
+
             const parentData = {
                 name: formData.get("parentName") as string,
                 surname: formData.get("parentSurname") as string,
-                phone: formData.get("parentPhone") as string,
+                phone: phoneNumber,
                 role: "parent" as const,
                 children: children,
             };
@@ -215,10 +240,24 @@ const Register = () => {
                                     required
                                     disabled={isLoading}
                                     maxLength={12}
+                                    minLength={12}
+                                    pattern="\+7[0-9]{10}"
                                 />
-                                <p className="text-xs text-gray-500">
-                                    Формат: +7XXXXXXXXXX (10 цифр после +7)
-                                </p>
+                                {phone && phone.length < 12 && (
+                                    <p className="text-xs text-red-600">
+                                        ⚠️ Введите полный номер телефона: +7XXXXXXXXXX (10 цифр после +7)
+                                    </p>
+                                )}
+                                {phone && phone.length === 12 && (
+                                    <p className="text-xs text-green-600">
+                                        ✓ Формат телефона корректен
+                                    </p>
+                                )}
+                                {!phone || phone.length === 2 ? (
+                                    <p className="text-xs text-gray-500">
+                                        Формат: +7XXXXXXXXXX (10 цифр после +7)
+                                    </p>
+                                ) : null}
                             </div>
                         </div>
 

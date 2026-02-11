@@ -8,8 +8,10 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, CreditCard, MapPin, Shield, Clock, Users } from 'lucide-react';
+import { useLandingSettings } from '@/hooks/use-landing-settings';
 
 export const DeliveryPaymentSection: React.FC = () => {
+    const { registrationEnabled, isLoading: landingSettingsLoading } = useLandingSettings();
     return (
         <section id="payment" className="py-20">
             <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -190,21 +192,25 @@ export const DeliveryPaymentSection: React.FC = () => {
                         <h3 className="text-2xl font-bold mb-4">
                             Готовы заказать мастер-класс?
                         </h3>
-                        <p className="text-lg mb-6 opacity-90">
-                            Для записи на мастер-класс зарегистрируйтесь на сайте и выберите необходимые варианты ручек и дополнительных услуг
-                        </p>
+                        {registrationEnabled && !landingSettingsLoading && (
+                            <p className="text-lg mb-6 opacity-90">
+                                Для записи на мастер-класс зарегистрируйтесь на сайте и выберите необходимые варианты ручек и дополнительных услуг
+                            </p>
+                        )}
                         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <a
-                                href="/register"
-                                className="bg-white text-orange-600 px-8 py-3 rounded-full font-semibold hover:bg-orange-50 transition-colors"
-                            >
-                                Зарегистрироваться
-                            </a>
+                            {registrationEnabled && !landingSettingsLoading && (
+                                <a
+                                    href="/register"
+                                    className="bg-white text-orange-600 px-8 py-3 rounded-full font-semibold hover:bg-orange-50 transition-colors"
+                                >
+                                    Зарегистрироваться
+                                </a>
+                            )}
                             <a
                                 href="tel:+7-914-545-06-06"
                                 className="bg-transparent border-2 border-white text-white px-8 py-3 rounded-full font-semibold hover:bg-white hover:text-orange-600 transition-colors"
                             >
-                                Позвонить нам
+                                Позвоните нам
                             </a>
                         </div>
                     </div>

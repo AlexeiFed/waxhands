@@ -31,25 +31,25 @@ try {
     # Step 4: Create archive
     Write-Host "`nStep 4: Creating archive..." -ForegroundColor Yellow
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $archiveName = "frontend-update-$timestamp.zip"
-    Compress-Archive -Path "dist\*" -DestinationPath $archiveName -Force
+    $archiveName = "frontend-update-$timestamp.tar.gz"
+    tar -czf $archiveName -C dist .
     $archiveSize = (Get-Item $archiveName).Length / 1MB
     Write-Host "Archive created: $archiveName ($($archiveSize.ToString('0.00')) MB)" -ForegroundColor Green
     
     # Step 5: Upload to server
     Write-Host "`nStep 5: Uploading to server..." -ForegroundColor Yellow
-    scp $archiveName root@147.45.161.83:/tmp/frontend-update.zip
+    scp $archiveName root@147.45.161.83:/tmp/frontend-update.tar.gz
     if ($LASTEXITCODE -ne 0) { throw "Upload failed" }
     Write-Host "Upload successful" -ForegroundColor Green
     
     # Step 6: Update on server
     Write-Host "`nStep 6: Updating on server (FULL cleanup)..." -ForegroundColor Yellow
-    ssh root@147.45.161.83 "cd /var/www/waxhands-app/frontend && rm -rf * && unzip -q /tmp/frontend-update.zip -d . && systemctl reload nginx && echo 'Frontend updated successfully' && ls -lh assets/index-*.js | tail -1"
+    ssh root@147.45.161.83 "cd /var/www/waxhands-app/frontend && rm -rf * && tar -xzf /tmp/frontend-update.tar.gz && systemctl reload nginx && echo 'Frontend updated successfully' && ls -lh assets/index-*.js | tail -1"
     if ($LASTEXITCODE -ne 0) { throw "Server update failed" }
     
     # Step 7: Cleanup old archives
     Write-Host "`nStep 7: Cleaning up old archives..." -ForegroundColor Yellow
-    Get-ChildItem -Filter "frontend-update-*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Force
+    Get-ChildItem -Filter "frontend-update-*.tar.gz" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Force
     Write-Host "Cleanup complete" -ForegroundColor Green
     
     Write-Host "`n=== FRONTEND UPDATE COMPLETED ===" -ForegroundColor Green

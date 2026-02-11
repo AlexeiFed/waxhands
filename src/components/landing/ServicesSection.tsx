@@ -16,11 +16,13 @@ import { ExpandableText } from '@/components/ui/expandable-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { isStyleVisibleForUser, isOptionVisibleForUser } from '@/types/services';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import { useLandingSettings } from '@/hooks/use-landing-settings';
 
 export const ServicesSection: React.FC = () => {
     const { user } = useAuth();
     const { services, loading: servicesLoading } = useServices();
     const navigate = useNavigate();
+    const { registrationEnabled, isLoading: landingSettingsLoading } = useLandingSettings();
     const [selectedMedia, setSelectedMedia] = useState<{ type: 'image' | 'video', src: string, title?: string } | null>(null);
     const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
     const [currentMediaList, setCurrentMediaList] = useState<Array<{ type: 'image' | 'video', src: string, title?: string }>>([]);
@@ -303,16 +305,18 @@ export const ServicesSection: React.FC = () => {
                                     ) : null}
 
                                     {/* Кнопка записи */}
-                                    <div className="text-center px-4">
-                                        <Button
-                                            onClick={() => navigate('/register')}
-                                            className="w-full sm:w-auto px-6 sm:px-8 py-3 text-sm sm:text-lg font-semibold rounded-xl transition-all duration-300 bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105"
-                                        >
-                                            <Hand className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                                            <span className="truncate">Записаться на мастер-класс</span>
-                                            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 ml-2" />
-                                        </Button>
-                                    </div>
+                                    {registrationEnabled && !landingSettingsLoading && (
+                                        <div className="text-center px-4">
+                                            <Button
+                                                onClick={() => navigate('/register')}
+                                                className="w-full sm:w-auto px-6 sm:px-8 py-3 text-sm sm:text-lg font-semibold rounded-xl transition-all duration-300 bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105"
+                                            >
+                                                <Hand className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                                                <span className="truncate">Записаться на мастер-класс</span>
+                                                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 ml-2" />
+                                            </Button>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
                         ))}

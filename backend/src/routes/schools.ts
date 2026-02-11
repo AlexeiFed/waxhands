@@ -6,12 +6,23 @@ import {
     updateSchool,
     deleteSchool,
     getSchoolClasses,
-    searchSchools
+    searchSchools,
+    toggleSchoolPayment
 } from '../controllers/schools.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { db } from '../database/connection.js';
 
 const router = Router();
+
+// Middleware для логирования всех запросов к школам
+router.use((req, res, next) => {
+    console.log(`📝 Schools route: ${req.method} ${req.path}`, {
+        params: req.params,
+        body: req.body,
+        query: req.query
+    });
+    next();
+});
 
 // Публичные маршруты
 router.get('/', getAllSchools);
@@ -102,8 +113,12 @@ router.get('/by-city/:city', async (req, res) => {
     }
 });
 
-router.get('/:id', getSchoolById);
+// Специфичные маршруты должны быть ДО общих маршрутов с :id
 router.get('/:id/classes', getSchoolClasses);
+router.patch('/:id/payment', authenticateToken, requireRole('admin'), toggleSchoolPayment);
+
+// Общие маршруты с :id
+router.get('/:id', getSchoolById);
 
 // Защищенные маршруты (только для администраторов)
 router.post('/', authenticateToken, requireRole('admin'), createSchool);

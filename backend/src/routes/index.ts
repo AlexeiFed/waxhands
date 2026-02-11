@@ -26,6 +26,7 @@ import adminRoutes from './admin.js';
 import privacyPolicyRoutes from './privacy-policy.js';
 import paymentRoutes from './payment.js';
 import paymentSettingsRoutes from './paymentSettings.js';
+import landingSettingsRoutes from './landingSettings.js';
 
 const router = Router();
 
@@ -57,6 +58,7 @@ router.use('/admin', adminRoutes);
 router.use('/privacy-policy', privacyPolicyRoutes);
 router.use('/payment', paymentRoutes);
 router.use('/payment-settings', paymentSettingsRoutes);
+router.use('/landing-settings', landingSettingsRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
@@ -87,6 +89,7 @@ router.get('/', (req, res) => {
             'payment-check': '/payment-check',
             'payment-poller': '/payment-poller',
             'payment-settings': '/payment-settings',
+            'landing-settings': '/landing-settings',
             offers: '/offers',
             'privacy-policy': '/privacy-policy',
             contacts: '/contacts',

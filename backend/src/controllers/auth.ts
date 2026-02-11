@@ -12,6 +12,22 @@ const normalizePhone = (phone: string): string => {
     return phone.replace(/\D/g, '');
 };
 
+// Функция валидации телефона - проверяет формат +7XXXXXXXXXX
+const validatePhone = (phone: string): boolean => {
+    if (!phone) return false;
+    const trimmedPhone = phone.trim();
+    
+    // Проверяем базовые требования
+    if (trimmedPhone.length !== 12) return false;
+    if (!trimmedPhone.startsWith('+7')) return false;
+    
+    // Проверяем, что после +7 идет 10 цифр
+    const digitsAfterPlus7 = trimmedPhone.slice(2).replace(/\D/g, '');
+    if (digitsAfterPlus7.length !== 10) return false;
+    
+    return true;
+};
+
 export const login = async (req: Request, res: Response): Promise<void> => {
     try {
         const credentials: LoginCredentials = req.body;
@@ -191,6 +207,15 @@ export const adminRegisterParent = async (req: Request, res: Response): Promise<
         if (userData.surname) userData.surname = userData.surname.trim();
         if (userData.phone) userData.phone = userData.phone.trim();
 
+        // Валидация телефона
+        if (userData.phone && !validatePhone(userData.phone)) {
+            res.status(400).json({
+                success: false,
+                error: 'Неверный формат телефона. Используйте формат +7XXXXXXXXXX (10 цифр после +7)'
+            });
+            return;
+        }
+
         // Проверяем уникальность телефона с нормализацией
         if (userData.phone) {
             const normalizedPhone = normalizePhone(userData.phone);
@@ -366,6 +391,20 @@ export const adminRegisterParent = async (req: Request, res: Response): Promise<
 export const register = async (req: Request, res: Response): Promise<void> => {
     try {
         const userData: RegisterData = req.body;
+
+        // Нормализуем данные перед регистрацией
+        if (userData.name) userData.name = userData.name.trim();
+        if (userData.surname) userData.surname = userData.surname.trim();
+        if (userData.phone) userData.phone = userData.phone.trim();
+
+        // Валидация телефона
+        if (userData.phone && !validatePhone(userData.phone)) {
+            res.status(400).json({
+                success: false,
+                error: 'Неверный формат телефона. Используйте формат +7XXXXXXXXXX (10 цифр после +7)'
+            });
+            return;
+        }
 
         // Нормализуем данные перед регистрацией
         if (userData.name) userData.name = userData.name.trim();

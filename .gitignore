@@ -105,3 +105,10 @@ src/assets/posters/
 # Temporary files
 tmp/
 temp/
+
+# Deploy/update archives (do not commit)
+backend-*.zip
+backend-update-*.zip
+backend-update-*.tar.gz
+frontend-update-*.zip
+frontend-update-*.tar.gz

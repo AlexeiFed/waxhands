@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +23,7 @@ import { useWebSocketChat } from '@/hooks/use-websocket-chat';
 import { useWorkshopRequestsWebSocket } from '@/hooks/use-workshop-requests-websocket';
 import { useMasterClassesWebSocket } from '@/hooks/use-master-classes-websocket';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
+import { useLandingSettingsAdmin } from '@/hooks/use-landing-settings';
 import { cn } from '@/lib/utils';
 import { useResponsiveLayout } from '@/contexts/ResponsiveLayoutContext';
 import { ResponsiveList } from '@/components/admin/lists/ResponsiveList';
@@ -197,6 +199,9 @@ const DashboardContent: React.FC = () => {
         deleteMasterClass,
         getMasterClassById
     } = useMasterClasses();
+    
+    // Хук для настроек лендинга
+    const { registrationEnabled, isLoading: landingSettingsLoading, toggleRegistration, isUpdating: landingSettingsUpdating } = useLandingSettingsAdmin();
 
     // Отладка импорта логотипа (убрано для оптимизации)
     // console.log('Dashboard: logoImage импортирован:', logoImage);
@@ -495,6 +500,26 @@ const DashboardContent: React.FC = () => {
             unsubscribe();
         };
     }, [user?.id, wsContext?.isConnected, wsContext]);
+
+    // WebSocket для автоматических обновлений школ (изменение оплаты)
+    useEffect(() => {
+        if (!user?.id || !wsContext?.isConnected) return;
+
+        console.log('📡 Админ подписывается на события изменения оплаты школ');
+
+        // Подписываемся на события изменения оплаты школ
+        const unsubscribe = wsContext.subscribe('admin:all', (data) => {
+            if (data.type === 'master_class_update' && data.data?.action === 'school_payment_changed') {
+                console.log('🏫 Событие изменения оплаты школы - обновляем список школ');
+                fetchSchools();
+            }
+        });
+
+        return () => {
+            console.log('📡 Админ отписывается от событий изменения оплаты школ');
+            unsubscribe();
+        };
+    }, [user?.id, wsContext?.isConnected, wsContext, fetchSchools]);
 
     // Автоматическая пометка сообщений как прочитанных при выборе чата (только если вкладка чата активна)
     useEffect(() => {
@@ -1645,6 +1670,8 @@ const DashboardContent: React.FC = () => {
         try {
 
             await fetchMasterClasses({ forceRefresh: true });
+            // Также обновляем список школ для синхронизации данных об оплате
+            await fetchSchools();
             toast({
                 title: "Данные обновлены",
                 description: "Список мастер-классов успешно обновлен",
@@ -2043,6 +2070,52 @@ const DashboardContent: React.FC = () => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Настройки лендинга */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Настройки лендинга</CardTitle>
+                                    <CardDescription>
+                                        Управление доступом к регистрации и входу с главной страницы
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <Label htmlFor="landing-registration" className="text-base">
+                                                Регистрация и вход на лендинге
+                                            </Label>
+                                            <p className="text-sm text-muted-foreground">
+                                                {registrationEnabled 
+                                                    ? 'Пользователи могут регистрироваться и входить в приложение с лендинга'
+                                                    : 'Кнопки регистрации и входа скрыты на лендинге'}
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            id="landing-registration"
+                                            checked={registrationEnabled}
+                                            disabled={landingSettingsLoading || landingSettingsUpdating}
+                                            onCheckedChange={async (checked) => {
+                                                try {
+                                                    await toggleRegistration(checked);
+                                                    toast({
+                                                        title: checked ? 'Регистрация включена' : 'Регистрация отключена',
+                                                        description: checked 
+                                                            ? 'Пользователи теперь могут регистрироваться и входить с лендинга'
+                                                            : 'Кнопки регистрации и входа скрыты на лендинге',
+                                                    });
+                                                } catch (error) {
+                                                    toast({
+                                                        title: 'Ошибка',
+                                                        description: 'Не удалось обновить настройки',
+                                                        variant: 'destructive',
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
                         </TabsContent>
 
                         <TabsContent value="users" className="space-y-4">

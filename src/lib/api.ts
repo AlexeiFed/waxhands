@@ -303,6 +303,20 @@ export const schoolsAPI = {
 
         throw new Error(response.error || 'Failed to get school classes');
     },
+
+    // Переключение оплаты для школы
+    togglePayment: async (id: string, paymentDisabled: boolean): Promise<School> => {
+        const response = await apiRequest<School>(`/schools/${id}/payment`, {
+            method: 'PATCH',
+            body: JSON.stringify({ paymentDisabled })
+        });
+
+        if (response.success && response.data) {
+            return response.data;
+        }
+
+        throw new Error(response.error || 'Failed to toggle school payment');
+    },
 };
 
 // API методы для пользователей
@@ -1150,7 +1164,12 @@ export const workshopRegistrationsAPI = {
     },
 
     // Удалить участника с мастер-класса
-    removeParticipant: async (workshopId: string, participantId: string): Promise<{ success: boolean; message?: string }> => {
+    removeParticipant: async (workshopId: string, participantId: string): Promise<{ 
+        success: boolean; 
+        message?: string; 
+        updatedStatistics?: MasterClassStatistics;
+        deletedParticipant?: unknown;
+    }> => {
         const response = await apiRequest('/workshop-registrations/remove-participant', {
             method: 'POST',
             body: JSON.stringify({
@@ -1161,7 +1180,12 @@ export const workshopRegistrationsAPI = {
 
         // apiRequest уже разворачивает ответ
         if (response && typeof response === 'object') {
-            return response;
+            return response as { 
+                success: boolean; 
+                message?: string; 
+                updatedStatistics?: MasterClassStatistics;
+                deletedParticipant?: unknown;
+            };
         }
 
         throw new Error('Failed to remove participant from workshop');
@@ -1741,6 +1765,50 @@ const paymentSettingsAPI = {
     }
 };
 
+const landingSettingsAPI = {
+    get: async (): Promise<{ registrationEnabled: boolean; updatedAt: string | null }> => {
+        const response = await apiRequest<{ registrationEnabled: boolean; updatedAt: string | null }>('/landing-settings/public');
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || 'Не удалось получить настройки лендинга');
+        }
+
+        return {
+            registrationEnabled: response.data.registrationEnabled,
+            updatedAt: response.data.updatedAt
+        };
+    },
+
+    getAdmin: async (): Promise<{ registrationEnabled: boolean; updatedAt: string | null }> => {
+        const response = await apiRequest<{ registrationEnabled: boolean; updatedAt: string | null }>('/landing-settings');
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || 'Не удалось получить настройки лендинга');
+        }
+
+        return {
+            registrationEnabled: response.data.registrationEnabled,
+            updatedAt: response.data.updatedAt
+        };
+    },
+
+    update: async (payload: { registrationEnabled: boolean }): Promise<{ registrationEnabled: boolean; updatedAt: string | null }> => {
+        const response = await apiRequest<{ registrationEnabled: boolean; updatedAt: string | null }>('/landing-settings', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || 'Не удалось обновить настройки лендинга');
+        }
+
+        return {
+            registrationEnabled: response.data.registrationEnabled,
+            updatedAt: response.data.updatedAt
+        };
+    }
+};
+
 // Экспорт всех API методов
 export const api = {
     auth: authAPI,
@@ -1756,6 +1824,7 @@ export const api = {
     contacts: contactsAPI,
     robokassa: robokassaAPI,
     paymentSettings: paymentSettingsAPI,
+    landingSettings: landingSettingsAPI,
     admin: {
         // Получение списка возвратов
         getRefunds: async (): Promise<{ success: boolean; data?: unknown[]; error?: string }> => {

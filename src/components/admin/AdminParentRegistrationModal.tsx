@@ -206,6 +206,28 @@ export const AdminParentRegistrationModal: React.FC<AdminParentRegistrationModal
             return;
         }
 
+        // Валидация телефона
+        const phoneNumber = parentData.phone.trim();
+        if (phoneNumber.length !== 12 || !phoneNumber.startsWith("+7")) {
+            toast({
+                title: 'Ошибка',
+                description: 'Неверный формат телефона. Введите полный номер в формате +7XXXXXXXXXX (10 цифр после +7)',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        // Проверяем, что после +7 идет 10 цифр
+        const digitsAfterPlus7 = phoneNumber.slice(2).replace(/\D/g, '');
+        if (digitsAfterPlus7.length !== 10) {
+            toast({
+                title: 'Ошибка',
+                description: 'Неверный формат телефона. После +7 должно быть 10 цифр',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         setStep('children');
     };
 
@@ -335,6 +357,15 @@ export const AdminParentRegistrationModal: React.FC<AdminParentRegistrationModal
                                     if (value && !value.startsWith('+7')) {
                                         value = '+7' + value.replace(/^\+?7?/, '');
                                     }
+                                    // Ограничиваем только цифрами после +7
+                                    if (value.startsWith('+7')) {
+                                        const digits = value.slice(2).replace(/\D/g, '');
+                                        if (digits.length <= 10) {
+                                            value = '+7' + digits;
+                                        } else {
+                                            value = '+7' + digits.slice(0, 10);
+                                        }
+                                    }
                                     setParentData(prev => ({ ...prev, phone: value }));
                                 }}
                                 onFocus={(e) => {
@@ -343,9 +374,27 @@ export const AdminParentRegistrationModal: React.FC<AdminParentRegistrationModal
                                         setParentData(prev => ({ ...prev, phone: '+7' }));
                                     }
                                 }}
-                                placeholder="+7 (___) ___-__-__"
+                                placeholder="+7XXXXXXXXXX"
                                 type="tel"
+                                maxLength={12}
+                                minLength={12}
+                                pattern="\+7[0-9]{10}"
                             />
+                            {parentData.phone && parentData.phone.length < 12 && (
+                                <p className="text-xs text-red-600">
+                                    ⚠️ Введите полный номер телефона: +7XXXXXXXXXX (10 цифр после +7)
+                                </p>
+                            )}
+                            {parentData.phone && parentData.phone.length === 12 && (
+                                <p className="text-xs text-green-600">
+                                    ✓ Формат телефона корректен
+                                </p>
+                            )}
+                            {!parentData.phone || parentData.phone.length === 2 ? (
+                                <p className="text-xs text-gray-500">
+                                    Формат: +7XXXXXXXXXX (10 цифр после +7)
+                                </p>
+                            ) : null}
                         </div>
 
                         <div className="flex justify-end space-x-2 pt-4">

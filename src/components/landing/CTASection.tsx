@@ -12,10 +12,12 @@ import { ArrowRight, Hand, Star, Users, Phone, Mail, MapPin, Car } from 'lucide-
 import { useNavigate } from 'react-router-dom';
 import { useContacts } from '@/hooks/use-contacts';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { useLandingSettings } from '@/hooks/use-landing-settings';
 
 export const CTASection: React.FC = () => {
     const navigate = useNavigate();
     const { data: contacts, isLoading: contactsLoading } = useContacts();
+    const { registrationEnabled, isLoading: landingSettingsLoading } = useLandingSettings();
 
     return (
         <section className="py-20">
@@ -25,21 +27,23 @@ export const CTASection: React.FC = () => {
                     <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
                         Готовы создать что-то особенное?
                     </h2>
-                    <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed mb-8">
+                    <p className="text-xl text-white-600 max-w-3xl mx-auto leading-relaxed mb-8">
                         Присоединяйтесь к нашему удивительному миру творчества и создайте
                         уникальный сувенир, который будет радовать вас долгие годы!
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                        <Button
-                            onClick={() => navigate('/register')}
-                            size="lg"
-                            className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
-                        >
-                            <Hand className="w-6 h-6 mr-2" />
-                            Записаться на мастер-класс
-                            <ArrowRight className="w-5 h-5 ml-2" />
-                        </Button>
+                        {registrationEnabled && !landingSettingsLoading && (
+                            <Button
+                                onClick={() => navigate('/register')}
+                                size="lg"
+                                className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+                            >
+                                <Hand className="w-6 h-6 mr-2" />
+                                Записаться на мастер-класс
+                                <ArrowRight className="w-5 h-5 ml-2" />
+                            </Button>
+                        )}
 
                         <Button
                             variant="outline"

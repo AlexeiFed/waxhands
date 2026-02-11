@@ -58,7 +58,8 @@ export const useMasterClassesWebSocket = ({
                     action === 'cash_payment_confirmed' ||
                     action === 'participant_removed' ||
                     action === 'user_created' ||
-                    action === 'payment_settings_changed'
+                    action === 'payment_settings_changed' ||
+                    action === 'school_payment_changed'
                 ) {
                     console.log('📡 WebSocket: получено обновление мастер-класса:', action);
                     onUpdateRef.current?.();

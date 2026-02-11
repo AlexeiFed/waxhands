@@ -11,10 +11,12 @@ import { Menu, X, User, LogIn } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import { useNavigate } from 'react-router-dom';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
+import { useLandingSettings } from '@/hooks/use-landing-settings';
 
 export const LandingHeader: React.FC = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const navigate = useNavigate();
+    const { registrationEnabled, isLoading: landingSettingsLoading } = useLandingSettings();
 
     const menuItems = [
         { label: 'Процесс', href: '#process' },
@@ -66,31 +68,35 @@ export const LandingHeader: React.FC = () => {
 
                     {/* Кнопки действий */}
                     <div className="flex items-center space-x-2 sm:space-x-3">
-                        <PWAInstallButton
-                            variant="ghost"
-                            size="sm"
-                            className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-orange-600 hover:bg-orange-50"
-                        >
-                            <span>Установить</span>
-                        </PWAInstallButton>
+                        {registrationEnabled && !landingSettingsLoading && (
+                            <>
+                                <PWAInstallButton
+                                    variant="ghost"
+                                    size="sm"
+                                    className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                                >
+                                    <span>Установить</span>
+                                </PWAInstallButton>
 
-                        <Button
-                            variant="ghost"
-                            onClick={() => navigate('/login')}
-                            className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-orange-600 hover:bg-orange-50"
-                        >
-                            <LogIn className="w-4 h-4" />
-                            <span>Войти</span>
-                        </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => navigate('/login')}
+                                    className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                                >
+                                    <LogIn className="w-4 h-4" />
+                                    <span>Войти</span>
+                                </Button>
 
-                        <Button
-                            onClick={() => navigate('/register')}
-                            className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-3 sm:px-4 py-2 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 text-sm sm:text-base"
-                        >
-                            <User className="w-4 h-4 mr-1 sm:mr-2" />
-                            <span className="hidden xs:inline">Зарегистрироваться</span>
-                            <span className="xs:hidden">Регистрация</span>
-                        </Button>
+                                <Button
+                                    onClick={() => navigate('/register')}
+                                    className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-600 hover:to-purple-700 text-white px-3 sm:px-4 py-2 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 text-sm sm:text-base"
+                                >
+                                    <User className="w-4 h-4 mr-1 sm:mr-2" />
+                                    <span className="hidden xs:inline">Зарегистрироваться</span>
+                                    <span className="xs:hidden">Регистрация</span>
+                                </Button>
+                            </>
+                        )}
 
                         {/* Мобильное меню */}
                         <Button
@@ -117,25 +123,27 @@ export const LandingHeader: React.FC = () => {
                                     {item.label}
                                 </button>
                             ))}
-                            <div className="pt-2 border-t border-orange-200 space-y-1">
-                                <PWAInstallButton
-                                    variant="ghost"
-                                    className="w-full justify-start text-gray-700 hover:text-orange-600 hover:bg-orange-50"
-                                >
-                                    Установить приложение
-                                </PWAInstallButton>
-                                <Button
-                                    variant="ghost"
-                                    onClick={() => {
-                                        navigate('/login');
-                                        setIsMenuOpen(false);
-                                    }}
-                                    className="w-full justify-start text-gray-700 hover:text-orange-600 hover:bg-orange-50"
-                                >
-                                    <LogIn className="w-4 h-4 mr-2" />
-                                    Войти
-                                </Button>
-                            </div>
+                            {registrationEnabled && !landingSettingsLoading && (
+                                <div className="pt-2 border-t border-orange-200 space-y-1">
+                                    <PWAInstallButton
+                                        variant="ghost"
+                                        className="w-full justify-start text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                                    >
+                                        Установить приложение
+                                    </PWAInstallButton>
+                                    <Button
+                                        variant="ghost"
+                                        onClick={() => {
+                                            navigate('/login');
+                                            setIsMenuOpen(false);
+                                        }}
+                                        className="w-full justify-start text-gray-700 hover:text-orange-600 hover:bg-orange-50"
+                                    >
+                                        <LogIn className="w-4 h-4 mr-2" />
+                                        Войти
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
